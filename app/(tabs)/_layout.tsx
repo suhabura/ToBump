@@ -1,69 +1,85 @@
-import { SymbolView } from 'expo-symbols';
-import { Link, Tabs } from 'expo-router';
-import { Platform, Pressable } from 'react-native';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { Tabs, useRouter } from 'expo-router';
+import { Pressable, View } from 'react-native';
+import { theme } from '@/constants/theme';
+import { useT } from '@/i18n';
 
-import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
-import { useClientOnlyValue } from '@/components/useClientOnlyValue';
+function TabIcon({ name, color }: { name: React.ComponentProps<typeof FontAwesome>['name']; color: string }) {
+  return <FontAwesome size={22} name={name} color={color} style={{ marginBottom: -2 }} />;
+}
+
+function HeaderActions() {
+  const router = useRouter();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12, gap: 4 }}>
+      <Pressable
+        onPress={() => router.push('/shop')}
+        style={{ paddingHorizontal: 10, paddingVertical: 6 }}
+        accessibilityRole="button"
+        accessibilityLabel="Shop">
+        <FontAwesome name="shopping-bag" size={20} color={theme.colors.text} />
+      </Pressable>
+      <Pressable
+        onPress={() => router.push('/notifications')}
+        style={{ paddingHorizontal: 10, paddingVertical: 6 }}
+        accessibilityRole="button"
+        accessibilityLabel="Notifications">
+        <FontAwesome name="bell-o" size={20} color={theme.colors.text} />
+      </Pressable>
+    </View>
+  );
+}
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
+  const t = useT();
 
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme].tint,
-        // Disable the static render of the header on web
-        // to prevent a hydration error in React Navigation v6.
-        headerShown: useClientOnlyValue(false, true),
+        tabBarActiveTintColor: theme.colors.primary,
+        tabBarInactiveTintColor: theme.colors.textMuted,
+        tabBarStyle: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border },
+        headerStyle: { backgroundColor: theme.colors.surface },
+        headerTintColor: theme.colors.text,
+        headerRight: () => <HeaderActions />,
       }}>
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Tab One',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'chevron.left.forwardslash.chevron.right',
-                android: 'code',
-                web: 'code',
-              }}
-              tintColor={color}
-              size={28}
-            />
-          ),
-          headerRight: () => (
-            <Link href="/modal" asChild>
-              <Pressable style={{ marginRight: 15 }}>
-                {({ pressed }) => (
-                  <SymbolView
-                    name={{ ios: 'info.circle', android: 'info', web: 'info' }}
-                    size={25}
-                    tintColor={Colors[colorScheme].text}
-                    style={{ opacity: pressed ? 0.5 : 1 }}
-                  />
-                )}
-              </Pressable>
-            </Link>
-          ),
+          title: t.tabs.events,
+          tabBarIcon: ({ color }) => <TabIcon name="calendar" color={String(color)} />,
         }}
       />
       <Tabs.Screen
-        name="two"
+        name="planner"
         options={{
-          title: 'Tab Two',
-          tabBarIcon: ({ color }) => (
-            <SymbolView
-              name={{
-                ios: 'chevron.left.forwardslash.chevron.right',
-                android: 'code',
-                web: 'code',
-              }}
-              tintColor={color}
-              size={28}
-            />
-          ),
+          title: t.tabs.planner,
+          tabBarIcon: ({ color }) => <TabIcon name="list-alt" color={String(color)} />,
         }}
+      />
+      <Tabs.Screen
+        name="friends"
+        options={{
+          title: t.tabs.friends,
+          tabBarIcon: ({ color }) => <TabIcon name="users" color={String(color)} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: t.tabs.profile,
+          tabBarIcon: ({ color }) => <TabIcon name="user" color={String(color)} />,
+        }}
+      />
+
+      <Tabs.Screen name="activity" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="chat" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="enterprise" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="shop" options={{ href: null, headerShown: false }} />
+      <Tabs.Screen name="groups" options={{ href: null, title: 'Groups', presentation: 'modal' }} />
+      <Tabs.Screen
+        name="notifications"
+        options={{ href: null, title: t.notifications.title, presentation: 'modal' }}
       />
     </Tabs>
   );

@@ -1,56 +1,83 @@
-import { useFonts } from 'expo-font';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { Redirect, Stack, useSegments } from 'expo-router';
+import { DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import 'react-native-reanimated';
 
-import { useColorScheme } from '@/components/useColorScheme';
+import { AuthProvider, useAuth } from '@/contexts/AuthContext';
+import { LocaleProvider, type Locale } from '@/i18n';
+import { theme } from '@/constants/theme';
+import { Loading } from '@/components/ui';
 
-export {
-  // Catch any errors thrown by the Layout component.
-  ErrorBoundary,
-} from 'expo-router';
+export { ErrorBoundary } from 'expo-router';
 
-export const unstable_settings = {
-  // Ensure that reloading on `/modal` keeps a back button present.
-  initialRouteName: '(tabs)',
-};
-
-// Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
-export default function RootLayout() {
-  const [loaded, error] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
-  });
+const NavLight = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: theme.colors.primary,
+    background: theme.colors.background,
+    card: theme.colors.surface,
+    text: theme.colors.text,
+    border: theme.colors.border,
+  },
+};
 
-  // Expo Router uses Error Boundaries to catch errors in the navigation tree.
+function AuthGate({ children }: { children: React.ReactNode }) {
+  const { session, loading } = useAuth();
+  const segments = useSegments();
+  const inAuth = segments[0] === '(auth)';
+
   useEffect(() => {
-    if (error) throw error;
-  }, [error]);
+    SplashScreen.hideAsync();
+  }, []);
 
-  useEffect(() => {
-    if (loaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [loaded]);
+  if (loading) return <Loading />;
 
-  if (!loaded) {
-    return null;
+  if (!session && !inAuth) {
+    return <Redirect href="/(auth)/login" />;
   }
 
-  return <RootLayoutNav />;
+  if (session && inAuth) {
+    return <Redirect href="/(tabs)" />;
+  }
+
+  return <>{children}</>;
 }
 
-function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+function AppI18n({ children }: { children: React.ReactNode }) {
+  const { session, settings, updateSettings } = useAuth();
+  const persist = useCallback(
+    async (locale: Locale) => {
+      if (!session?.user) return;
+      await updateSettings({ locale });
+    },
+    [session?.user, updateSettings]
+  );
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-      </Stack>
-    </ThemeProvider>
+    <LocaleProvider settingsLocale={settings?.locale} onPersistLocale={persist}>
+      {children}
+    </LocaleProvider>
+  );
+}
+
+export default function RootLayout() {
+  return (
+    <AuthProvider>
+      <AppI18n>
+        <ThemeProvider value={NavLight}>
+          <AuthGate>
+            <Stack>
+              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="+not-found" />
+            </Stack>
+          </AuthGate>
+        </ThemeProvider>
+      </AppI18n>
+    </AuthProvider>
   );
 }
