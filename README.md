@@ -5,7 +5,7 @@ Mobilna aplikacija za organizacijo dogodkov — Expo SDK 57 + Supabase.
 ## Lokalni zagon
 
 1. Ustvari projekt na [supabase.com](https://supabase.com).
-2. V SQL Editorju po vrsti zaženi migracije iz `supabase/` (najprej `schema.sql`, nato ostale `.sql` datoteke po potrebi: recurrence, categories, shop, …).
+2. V SQL Editorju po vrsti zaženi migracije iz `supabase/` (najprej `schema.sql`, nato ostale `.sql` po potrebi).
 3. Kopiraj `.env.example` → `.env` in vnesi:
    - `EXPO_PUBLIC_SUPABASE_URL`
    - `EXPO_PUBLIC_SUPABASE_ANON_KEY`
@@ -17,49 +17,58 @@ npm install
 npx expo start
 ```
 
-## Objava online
+## Web online (EAS Hosting)
 
-### 1) Koda na GitHub
-
-```bash
-git remote add origin https://github.com/<tvoj-user>/tobump-mobile.git
-git push -u origin master
-```
-
-`.env` se **ne** committa (samo `.env.example`).
-
-### 2) Web demo (hitro)
-
-```bash
-npx expo export -p web
-```
-
-Mapo `dist/` naloži na [Vercel](https://vercel.com), Netlify ali Cloudflare Pages.  
-Na hostingu nastavi iste `EXPO_PUBLIC_*` spremenljivke kot v `.env`.
-
-### 3) Mobilna app (Expo Go / store)
+Enkratna priprava (Expo račun):
 
 ```bash
 npm i -g eas-cli
 eas login
 eas init
-eas build --platform android
-# ali
-eas build --platform ios
 ```
 
-Za testiranje brez store: `eas update` + Expo Go (zahteva EAS project).
+`eas init` poveže projekt z Expo in v `app.json` doda `extra.eas.projectId`.
+
+Deploy (`.env` mora obstajati — `EXPO_PUBLIC_*` se vgradijo ob exportu):
+
+```bash
+# predogled URL
+npm run deploy:web
+
+# produkcija
+npm run deploy:web:prod
+```
+
+Enako ročno:
+
+```bash
+npx expo export --platform web
+eas deploy --prod
+```
+
+Ob prvem `eas deploy` izberi subdomain (npr. `tobump` → `https://tobump.expo.app`).
+
+### Avtomatski deploy z GitHub
+
+Po `eas init` lahko workflow v `.eas/workflows/deploy-web.yml` ob pushu na `master` objavi web (glej [EAS Workflows](https://docs.expo.dev/eas/workflows/get-started/)).
+
+## Mobilna app (kasneje)
+
+```bash
+eas build --platform android
+eas build --platform ios
+```
 
 ## Funkcije
 
 - Prijava / registracija / pozabljeno geslo
-- Dogodki: ustvari, uredi, pridruži se, vabila, zasebnost, kapaciteta, ponavljanje (z zaključnim datumom)
+- Dogodki: ustvari, uredi, pridruži se, vabila, zasebnost, kapaciteta, ponavljanje
 - Planner + realtime klepet
 - Prijatelji, skupine, obvestila, jezik (EN/SL)
-- Prizorišča, kategorije / podkategorije, komercialni filtri
+- Prizorišča, kategorije, komercialni filtri
 - Trgovina (merchandise) v headerju
-- Push token registracija
 
 ## Opombe
 
-Fotografije / Bump feed **niso** del te aplikacije.
+- `.env` se ne committa — na EAS se vrednosti berejo iz lokalnega `.env` ob `expo export`.
+- Fotografije / Bump feed niso del te aplikacije.

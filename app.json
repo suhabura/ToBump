@@ -29,7 +29,7 @@
     },
     "web": {
       "bundler": "metro",
-      "output": "single",
+      "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
     "plugins": [
@@ -64,11 +64,6 @@
     ],
     "experiments": {
       "typedRoutes": true
-    },
-    "extra": {
-      "eas": {
-        "projectId": "replace-with-eas-project-id"
-      }
     }
   }
 }

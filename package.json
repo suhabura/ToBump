@@ -42,7 +42,9 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "export:web": "expo export -p web"
+    "export:web": "expo export --platform web",
+    "deploy:web": "expo export --platform web && eas deploy",
+    "deploy:web:prod": "expo export --platform web && eas deploy --prod"
   },
   "private": true
 }
