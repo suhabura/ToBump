@@ -444,29 +444,35 @@ export async function processDueRecurringActivities() {
   await supabase.rpc('process_due_recurring_activities');
 }
 
-/** Delete one occurrence (series continues) or the whole series. */
+/** Delete one occurrence (series continues) or the whole series / single event. */
 export async function deleteActivity(activityId: string, mode: DeleteActivityMode = 'series') {
   if (mode === 'occurrence') {
     const { error: skipError } = await supabase.rpc('skip_recurring_occurrence', {
       p_activity_id: activityId,
     });
-    if (!skipError) return;
+    if (!skipError) {
+      await assertActivityGone(activityId);
+      return;
+    }
 
-    // Fallback: delete only this row
     const { error: delError } = await supabase.from('activities').delete().eq('id', activityId);
     if (delError) throw delError;
+    await assertActivityGone(activityId);
     return;
   }
 
   const { error: rpcError } = await supabase.rpc('cancel_activity_series', {
     p_activity_id: activityId,
   });
-  if (!rpcError) return;
+  if (!rpcError) {
+    await assertActivityGone(activityId);
+    return;
+  }
 
-  // Fallback, če RPC še ni v bazi
+  // Fallback if RPC is missing / outdated in Supabase
   const { data: act, error: loadError } = await supabase
     .from('activities')
-    .select('id, series_id, is_recurring')
+    .select('id, series_id, is_recurring, created_by')
     .eq('id', activityId)
     .maybeSingle();
   if (loadError) throw loadError;
@@ -491,11 +497,21 @@ export async function deleteActivity(activityId: string, mode: DeleteActivityMod
       .delete()
       .or(`id.eq.${seriesId},series_id.eq.${seriesId},id.eq.${activityId}`);
     if (delError) throw delError;
+    await assertActivityGone(activityId);
     return;
   }
 
   const { error: delError } = await supabase.from('activities').delete().eq('id', activityId);
   if (delError) throw delError;
+  await assertActivityGone(activityId);
+}
+
+async function assertActivityGone(activityId: string) {
+  const { data, error } = await supabase.from('activities').select('id').eq('id', activityId).maybeSingle();
+  if (error) throw error;
+  if (data) {
+    throw new Error('Could not delete the event. Try again.');
+  }
 }
 
 export async function saveActivity(userId: string, input: ActivityInput, activityId?: string) {

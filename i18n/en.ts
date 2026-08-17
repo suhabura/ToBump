@@ -69,6 +69,8 @@ export const en = {
     deleteThisOnly: 'This event only',
     deleteSeries: 'Entire series',
     deleteRecurringPrompt: 'Delete only this occurrence, or the whole recurring series?',
+    deleteConfirmPrompt: 'Delete this event? This cannot be undone.',
+    deleteFailed: 'Could not delete the event. Try again.',
     report: 'Report',
     reportReason: 'Report reason',
     slots: 'Recurrence',

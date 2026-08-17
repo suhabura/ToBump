@@ -69,6 +69,8 @@ export const sl = {
     deleteThisOnly: 'Samo ta dogodek',
     deleteSeries: 'Celotna serija',
     deleteRecurringPrompt: 'Želite izbrisati samo ta termin ali celotno ponavljajočo serijo?',
+    deleteConfirmPrompt: 'Izbrisati ta dogodek? Tega ni mogoče razveljaviti.',
+    deleteFailed: 'Dogodka ni bilo mogoče izbrisati. Poskusi znova.',
     report: 'Prijavi',
     reportReason: 'Razlog prijave',
     slots: 'Ponavljanje',

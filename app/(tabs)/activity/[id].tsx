@@ -33,6 +33,7 @@ export default function ActivityDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!user || !id) return;
@@ -132,29 +133,25 @@ export default function ActivityDetailScreen() {
 
   async function onDelete() {
     if (!activity) return;
-    if (activity.is_recurring) {
-      setDeleteOpen(true);
-      return;
-    }
-    Alert.alert(t.events.delete, 'Delete this event?', [
-      { text: t.common.cancel, style: 'cancel' },
-      {
-        text: t.events.delete,
-        style: 'destructive',
-        onPress: () => confirmDelete('series'),
-      },
-    ]);
+    setDeleteError(null);
+    setDeleteOpen(true);
   }
 
   async function confirmDelete(mode: DeleteActivityMode) {
     if (!activity) return;
     setDeleting(true);
+    setDeleteError(null);
     setDeleteOpen(false);
     try {
       await deleteActivity(activity.id, mode);
       router.replace('/(tabs)');
     } catch (e) {
-      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+      const msg =
+        e instanceof Error && e.message && !/could not delete/i.test(e.message)
+          ? e.message
+          : t.events.deleteFailed;
+      setDeleteError(msg);
+      Alert.alert(t.common.error, msg);
     } finally {
       setDeleting(false);
     }
@@ -285,7 +282,10 @@ export default function ActivityDetailScreen() {
             />
           ) : null}
           {isOwner ? (
-            <Button label={t.events.delete} variant="danger" onPress={onDelete} />
+            <>
+              {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
+              <Button label={t.events.delete} variant="danger" onPress={onDelete} loading={deleting} />
+            </>
           ) : null}
         </View>
 
@@ -303,21 +303,34 @@ export default function ActivityDetailScreen() {
         <Pressable style={styles.deleteBackdrop} onPress={() => setDeleteOpen(false)}>
           <Pressable style={styles.deleteSheet} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.deleteTitle}>{t.events.delete}</Text>
-            <Muted>{t.events.deleteRecurringPrompt}</Muted>
+            <Muted>
+              {activity.is_recurring ? t.events.deleteRecurringPrompt : t.events.deleteConfirmPrompt}
+            </Muted>
             <View style={{ height: 12 }} />
-            <Button
-              label={t.events.deleteThisOnly}
-              variant="secondary"
-              loading={deleting}
-              onPress={() => confirmDelete('occurrence')}
-            />
-            <View style={{ height: 8 }} />
-            <Button
-              label={t.events.deleteSeries}
-              variant="danger"
-              loading={deleting}
-              onPress={() => confirmDelete('series')}
-            />
+            {activity.is_recurring ? (
+              <>
+                <Button
+                  label={t.events.deleteThisOnly}
+                  variant="secondary"
+                  loading={deleting}
+                  onPress={() => confirmDelete('occurrence')}
+                />
+                <View style={{ height: 8 }} />
+                <Button
+                  label={t.events.deleteSeries}
+                  variant="danger"
+                  loading={deleting}
+                  onPress={() => confirmDelete('series')}
+                />
+              </>
+            ) : (
+              <Button
+                label={t.events.delete}
+                variant="danger"
+                loading={deleting}
+                onPress={() => confirmDelete('series')}
+              />
+            )}
             <View style={{ height: 8 }} />
             <Button label={t.common.cancel} variant="ghost" onPress={() => setDeleteOpen(false)} />
           </Pressable>
@@ -355,5 +368,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: theme.colors.text,
     marginBottom: 8,
+  },
+  deleteError: {
+    color: theme.colors.danger,
+    marginBottom: 8,
+    fontWeight: '600',
   },
 });
