@@ -24,7 +24,10 @@
       },
       "package": "com.tobump.mobile",
       "permissions": [
-        "NOTIFICATIONS"
+        "android.permission.NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "web": {
@@ -64,6 +67,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "76fd313c-16db-4b36-a204-c5cd341e0154"
+      }
+    },
+    "owner": "tobump"
   }
 }

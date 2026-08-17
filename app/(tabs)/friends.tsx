@@ -92,6 +92,7 @@ export default function FriendsScreen() {
       Alert.alert(t.common.error, error.message);
       return;
     }
+    // Notification also created by DB trigger after notify_friend_request.sql is applied
     await createNotification(toUserId, 'friend_request', t.friends.newRequest, {
       from_user_id: user.id,
     });

@@ -549,7 +549,18 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       {privacy === 'invite' ? (
         <View>
           <Text style={styles.section}>{req(t.form.selectFriends)}</Text>
-          <FriendPicker friends={friends} selectedIds={inviteIds} onChange={setInviteIds} />
+          {friends.length === 0 ? <Muted>{t.form.acceptFriendsHint}</Muted> : null}
+          <FriendPicker
+            friends={friends}
+            selectedIds={inviteIds}
+            onChange={setInviteIds}
+            label={t.form.selectFriends}
+            placeholder={t.form.searchFriends}
+            emptyHint={t.form.noFriends}
+            selectAllLabel={t.form.selectAllFriends}
+            clearLabel={t.form.clearFriends}
+            selectedLabel={t.form.friendsSelected}
+          />
         </View>
       ) : null}
 
@@ -746,7 +757,12 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
                 friends={friends}
                 selectedIds={editorIds}
                 onChange={setEditorIds}
-                label="Editor"
+                label={t.form.editors}
+                placeholder={t.form.searchFriends}
+                emptyHint={t.form.noFriends}
+                selectAllLabel={t.form.selectAllFriends}
+                clearLabel={t.form.clearFriends}
+                selectedLabel={t.form.friendsSelected}
               />
               <Text
                 style={[styles.link, { marginTop: 8 }]}

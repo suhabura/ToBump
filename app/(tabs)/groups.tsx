@@ -152,6 +152,11 @@ export default function GroupsScreen() {
         selectedIds={selectedMembers}
         onChange={setSelectedMembers}
         label={t.groups.addMember}
+        placeholder={t.form.searchFriends}
+        emptyHint={t.form.noFriends}
+        selectAllLabel={t.form.selectAllFriends}
+        clearLabel={t.form.clearFriends}
+        selectedLabel={t.form.friendsSelected}
       />
       <Button label={t.groups.create} onPress={createGroup} loading={saving} />
 

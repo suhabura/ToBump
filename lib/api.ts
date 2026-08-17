@@ -51,13 +51,28 @@ async function hydrateCategoryParents(activities: ActivityWithRelations[]) {
   }) as ActivityWithRelations[];
 }
 
-export async function createNotification(userId: string, type: string, message: string, data: Record<string, unknown> = {}) {
-  await supabase.from('notifications').insert({
-    user_id: userId,
-    type,
-    message,
-    data,
+export async function createNotification(
+  userId: string,
+  type: string,
+  message: string,
+  data: Record<string, unknown> = {}
+) {
+  // Prefer RPC so recipient notification prefs are enforced server-side.
+  const { error } = await supabase.rpc('notify_user', {
+    p_user_id: userId,
+    p_type: type,
+    p_message: message,
+    p_data: data,
   });
+  if (error) {
+    // Fallback until notify_user.sql is applied in Supabase
+    await supabase.from('notifications').insert({
+      user_id: userId,
+      type,
+      message,
+      data,
+    });
+  }
 }
 
 export async function fetchActivities(opts: {
