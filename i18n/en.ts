@@ -204,11 +204,12 @@ export const en = {
     openGoogleMaps: 'Open in Google Maps',
   },
   form: {
-    activity: 'Activity (subcategory)',
-    activityPlaceholder: 'e.g. Football, Tennis, Hiking…',
+    activity: 'Activity',
+    activityPlaceholder: 'e.g. Football, Tennis, or any custom activity…',
     knownActivity: 'Known subcategory — nearby providers are filtered by this activity.',
     uncategorizedProviders:
-      'Unknown subcategory — pick a known one (e.g. Football under Sport) or providers without a linked activity.',
+      'Custom / uncategorized activity — category is not saved; enter the venue manually.',
+    uncategorizedVenueHint: 'Enter where the activity takes place (no verified providers for custom activities).',
     needSubcategory: 'Enter a known subcategory (e.g. Football, Concert, Hiking).',
     duration: 'Duration',
     capacityHint: 'Capacity limits attendees, not invites — you can invite unlimited friends.',

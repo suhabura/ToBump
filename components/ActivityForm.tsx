@@ -272,11 +272,16 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       const id = await findCategoryId(title);
       if (cancelled) return;
       setMatchedCategoryId(id);
+      if (!id) {
+        // Uncategorized: free-text venue only (no verified providers)
+        setEnterpriseId(null);
+        setFindProviderOpen(false);
+        return;
+      }
       setEnterpriseId((prev) => {
         if (!prev) return null;
         const ent = enterprises.find((e) => e.id === prev);
         if (!ent?.category_id) return prev;
-        if (!id) return null;
         if (ent.category_id === id) return prev;
         const sub = categories.find((c) => c.id === id);
         const parentId = sub?.parent_id ?? null;
@@ -406,8 +411,10 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     await ensureDefaultCategories();
     const categoryKey = resolveActivityCategoryKey(title, locale);
     const category_id = categoryKey ? await findCategoryId(categoryKey) : null;
-    if (!category_id || !categoryKey) {
-      setFormError(t.form.needSubcategory);
+    // Free-text activities are allowed: title stays as typed, category_id stays null (not written as a category).
+    const titleToSave = (categoryKey ?? title.trim()).trim();
+    if (!titleToSave) {
+      setFormError(t.form.needActivityStart);
       return;
     }
 
@@ -447,7 +454,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       const id = await saveActivity(
         userId,
         {
-          title: categoryKey,
+          title: titleToSave,
           category_id,
           starts_at: startToSave.toISOString(),
           ends_at: null,
@@ -455,8 +462,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           price: Number(priceTrim),
           max_participants: capacityNum,
           privacy,
-          enterprise_id: enterpriseId,
-          venue_text: enterpriseId ? null : venueText.trim() || null,
+          enterprise_id: category_id ? enterpriseId : null,
+          venue_text: enterpriseId && category_id ? null : venueText.trim() || null,
           group_id: selectedGroupId,
           invite_user_ids: inviteIds,
           editor_user_ids: isCreator ? editorIds : undefined,
@@ -593,96 +600,104 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         <Muted>{t.form.fofHint}</Muted>
       ) : null}
 
-      <Text style={styles.section}>{req(t.events.venue)}</Text>
-      <Muted>{t.venue.freeTextHint}</Muted>
-      <Input
-        label={req(t.events.venue)}
-        value={venueText}
-        onChangeText={onVenueTextChange}
-        placeholder={t.form.venuePlaceholder}
-      />
-      {selectedEnterprise ? (
-        <Muted>
-          {t.venue.selected}{' '}
-          {selectedEnterprise.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official} ·{' '}
-          {selectedEnterprise.name}
-          {selectedEnterprise.address ? ` · ${selectedEnterprise.address}` : ''}
-        </Muted>
-      ) : null}
-      {typedVenueMatches.length > 0 ? (
-        <View style={{ marginTop: 8 }}>
-          <Muted>{t.venue.verifiedMatch}</Muted>
-          <View style={styles.rowWrap}>
-            {typedVenueMatches.map((e) => {
-              const origin =
-                profile?.latitude != null && profile?.longitude != null
-                  ? { latitude: profile.latitude, longitude: profile.longitude }
-                  : null;
-              const dist =
-                origin && e.latitude != null && e.longitude != null
-                  ? formatDistance(distanceMeters(origin, { latitude: e.latitude, longitude: e.longitude }))
-                  : null;
-              const kind = e.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official;
-              return (
-                <Chip
-                  key={e.id}
-                  label={`${e.name} · ${kind}${dist ? ` · ${dist}` : ''}`}
-                  active={false}
-                  onPress={() => selectProvider(e)}
-                />
-              );
-            })}
-          </View>
-        </View>
-      ) : null}
-
-      <View style={{ marginTop: 8 }}>
-        <Chip
-          label={t.venue.findProvider}
-          active={findProviderOpen}
-          onPress={() => setFindProviderOpen((v) => !v)}
+      <View>
+        <Text style={styles.section}>{req(t.events.venue)}</Text>
+        <Muted>{isCategorized ? t.venue.freeTextHint : t.form.uncategorizedVenueHint}</Muted>
+        <Input
+          label={req(t.events.venue)}
+          value={venueText}
+          onChangeText={onVenueTextChange}
+          placeholder={t.form.venuePlaceholder}
         />
-      </View>
+        {isCategorized ? (
+          <>
+            {selectedEnterprise ? (
+              <Muted>
+                {t.venue.selected}{' '}
+                {selectedEnterprise.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official} ·{' '}
+                {selectedEnterprise.name}
+                {selectedEnterprise.address ? ` · ${selectedEnterprise.address}` : ''}
+              </Muted>
+            ) : null}
+            {typedVenueMatches.length > 0 ? (
+              <View style={{ marginTop: 8 }}>
+                <Muted>{t.venue.verifiedMatch}</Muted>
+                <View style={styles.rowWrap}>
+                  {typedVenueMatches.map((e) => {
+                    const origin =
+                      profile?.latitude != null && profile?.longitude != null
+                        ? { latitude: profile.latitude, longitude: profile.longitude }
+                        : null;
+                    const dist =
+                      origin && e.latitude != null && e.longitude != null
+                        ? formatDistance(
+                            distanceMeters(origin, { latitude: e.latitude, longitude: e.longitude })
+                          )
+                        : null;
+                    const kind = e.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official;
+                    return (
+                      <Chip
+                        key={e.id}
+                        label={`${e.name} · ${kind}${dist ? ` · ${dist}` : ''}`}
+                        active={false}
+                        onPress={() => selectProvider(e)}
+                      />
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
 
-      {findProviderOpen ? (
-        <View style={{ marginTop: 8 }}>
-          <Muted>{t.venue.providersHint}</Muted>
-          <Text style={styles.ruleSub}>{t.venue.radius}</Text>
-          <View style={styles.rowWrap}>
-            {[10, 30, 50, 100].map((km) => (
+            <View style={{ marginTop: 8 }}>
               <Chip
-                key={km}
-                label={`${km} km`}
-                active={providerRadiusKm === km}
-                onPress={() => setProviderRadiusKm(km)}
+                label={t.venue.findProvider}
+                active={findProviderOpen}
+                onPress={() => setFindProviderOpen((v) => !v)}
               />
-            ))}
-          </View>
-          {profile?.latitude == null || profile?.longitude == null ? (
-            <Muted>{t.venue.needProfileLocation}</Muted>
-          ) : providersInRadius.length === 0 ? (
-            <Muted>{t.venue.noneInRadius}</Muted>
-          ) : (
-            <View style={styles.rowWrap}>
-              {providersInRadius.map(({ enterprise: e, dist }) => {
-                const kind = e.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official;
-                return (
-                  <Chip
-                    key={e.id}
-                    label={`${e.name} · ${kind}${dist != null ? ` · ${formatDistance(dist)}` : ''}`}
-                    active={enterpriseId === e.id}
-                    onPress={() => selectProvider(e)}
-                  />
-                );
-              })}
             </View>
-          )}
-        </View>
-      ) : null}
 
-      {enterpriseId || venueText.trim() ? (
-        <Button label={t.venue.clear} variant="ghost" onPress={clearVenue} />
-      ) : null}
+            {findProviderOpen ? (
+              <View style={{ marginTop: 8 }}>
+                <Muted>{t.venue.providersHint}</Muted>
+                <Text style={styles.ruleSub}>{t.venue.radius}</Text>
+                <View style={styles.rowWrap}>
+                  {[10, 30, 50, 100].map((km) => (
+                    <Chip
+                      key={km}
+                      label={`${km} km`}
+                      active={providerRadiusKm === km}
+                      onPress={() => setProviderRadiusKm(km)}
+                    />
+                  ))}
+                </View>
+                {profile?.latitude == null || profile?.longitude == null ? (
+                  <Muted>{t.venue.needProfileLocation}</Muted>
+                ) : providersInRadius.length === 0 ? (
+                  <Muted>{t.venue.noneInRadius}</Muted>
+                ) : (
+                  <View style={styles.rowWrap}>
+                    {providersInRadius.map(({ enterprise: e, dist }) => {
+                      const kind = e.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official;
+                      return (
+                        <Chip
+                          key={e.id}
+                          label={`${e.name} · ${kind}${dist != null ? ` · ${formatDistance(dist)}` : ''}`}
+                          active={enterpriseId === e.id}
+                          onPress={() => selectProvider(e)}
+                        />
+                      );
+                    })}
+                  </View>
+                )}
+              </View>
+            ) : null}
+          </>
+        ) : null}
+
+        {(enterpriseId && isCategorized) || venueText.trim() ? (
+          <Button label={t.venue.clear} variant="ghost" onPress={clearVenue} />
+        ) : null}
+      </View>
 
       <Text style={styles.section}>{req(t.form.recurrence)}</Text>
       <View style={styles.row}>

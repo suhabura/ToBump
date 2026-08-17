@@ -203,11 +203,12 @@ export const sl = {
     openGoogleMaps: 'Odpri v Google Zemljevidih',
   },
   form: {
-    activity: 'Aktivnost (podkategorija)',
-    activityPlaceholder: 'npr. Nogomet, Tenis, Pohod…',
+    activity: 'Aktivnost',
+    activityPlaceholder: 'npr. Nogomet, Tenis ali poljubna lastna aktivnost…',
     knownActivity: 'Znana podkategorija — bližnji ponudniki so filtrirani po tej aktivnosti.',
     uncategorizedProviders:
-      'Neznana podkategorija — izberite znano (npr. Nogomet pod Šport) ali ponudnike brez povezane aktivnosti.',
+      'Lastna / nekategorizirana aktivnost — kategorija se ne shrani; lokacijo vpiši ročno.',
+    uncategorizedVenueHint: 'Ročno vpiši, kje poteka aktivnost (za lastne aktivnosti ni preverjenih ponudnikov).',
     needSubcategory: 'Vnesite znano podkategorijo (npr. Nogomet, Koncert, Pohod).',
     duration: 'Trajanje',
     capacityHint: 'Kapaciteta omejuje udeležence, ne povabil — povabite lahko neomejeno prijateljev.',
