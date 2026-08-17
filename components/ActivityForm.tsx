@@ -564,9 +564,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             label={t.form.selectFriends}
             placeholder={t.form.searchFriends}
             emptyHint={t.form.noFriends}
-            selectAllLabel={t.form.selectAllFriends}
-            clearLabel={t.form.clearFriends}
-            selectedLabel={t.form.friendsSelected}
           />
         </View>
       ) : null}
@@ -775,9 +772,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
                 label={t.form.editors}
                 placeholder={t.form.searchFriends}
                 emptyHint={t.form.noFriends}
-                selectAllLabel={t.form.selectAllFriends}
-                clearLabel={t.form.clearFriends}
-                selectedLabel={t.form.friendsSelected}
               />
               <Text
                 style={[styles.link, { marginTop: 8 }]}

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useMemo, useRef, useState } from 'react';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Chip, Input, Muted } from '@/components/ui';
 import type { Profile } from '@/lib/types';
 import { displayName } from '@/lib/types';
@@ -12,9 +12,6 @@ type Props = {
   label?: string;
   placeholder?: string;
   emptyHint?: string;
-  selectAllLabel?: string;
-  clearLabel?: string;
-  selectedLabel?: (n: number) => string;
 };
 
 export function FriendPicker({
@@ -24,51 +21,46 @@ export function FriendPicker({
   label = 'Friend',
   placeholder = 'Search by name…',
   emptyHint = 'Add friends first.',
-  selectAllLabel = 'Select all',
-  clearLabel = 'Clear',
-  selectedLabel = (n) => `Selected (${n})`,
 }: Props) {
   const [query, setQuery] = useState('');
+  const picking = useRef(false);
 
-  const sorted = useMemo(
-    () =>
-      [...friends].sort((a, b) =>
-        displayName(a).localeCompare(displayName(b), undefined, { sensitivity: 'base' })
-      ),
-    [friends]
-  );
-
-  const filtered = useMemo(() => {
+  const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return sorted;
-    return sorted.filter((f) => {
-      const name = displayName(f).toLowerCase();
-      const email = (f.email ?? '').toLowerCase();
-      return name.includes(q) || email.includes(q);
-    });
-  }, [sorted, query]);
+    if (!q) return [];
+    return friends
+      .filter((f) => !selectedIds.includes(f.id))
+      .filter((f) => {
+        const name = displayName(f).toLowerCase();
+        const email = (f.email ?? '').toLowerCase();
+        return name.includes(q) || email.includes(q);
+      })
+      .sort((a, b) =>
+        displayName(a).localeCompare(displayName(b), undefined, { sensitivity: 'base' })
+      )
+      .slice(0, 12);
+  }, [friends, query, selectedIds]);
 
   const selected = useMemo(
-    () => sorted.filter((f) => selectedIds.includes(f.id)),
-    [sorted, selectedIds]
+    () =>
+      friends
+        .filter((f) => selectedIds.includes(f.id))
+        .sort((a, b) =>
+          displayName(a).localeCompare(displayName(b), undefined, { sensitivity: 'base' })
+        ),
+    [friends, selectedIds]
   );
 
-  function toggle(id: string) {
-    if (selectedIds.includes(id)) {
-      onChange(selectedIds.filter((x) => x !== id));
-    } else {
-      onChange([...selectedIds, id]);
+  function pick(friend: Profile) {
+    picking.current = true;
+    if (!selectedIds.includes(friend.id)) {
+      onChange([...selectedIds, friend.id]);
     }
+    setQuery('');
   }
 
-  function selectAllVisible() {
-    const ids = new Set(selectedIds);
-    for (const f of filtered) ids.add(f.id);
-    onChange(Array.from(ids));
-  }
-
-  function clearAll() {
-    onChange([]);
+  function remove(id: string) {
+    onChange(selectedIds.filter((x) => x !== id));
   }
 
   if (friends.length === 0) {
@@ -77,97 +69,86 @@ export function FriendPicker({
 
   return (
     <View style={styles.wrap}>
-      <Input label={label} value={query} onChangeText={setQuery} placeholder={placeholder} />
-
-      <View style={styles.actions}>
-        <Chip label={selectAllLabel} onPress={selectAllVisible} />
-        {selectedIds.length > 0 ? <Chip label={clearLabel} onPress={clearAll} /> : null}
-      </View>
-
-      <ScrollView style={styles.list} nestedScrollEnabled keyboardShouldPersistTaps="handled">
-        {filtered.length === 0 ? (
-          <Muted>No matches.</Muted>
-        ) : (
-          filtered.map((f) => {
-            const active = selectedIds.includes(f.id);
-            return (
+      <Input
+        label={label}
+        value={query}
+        onChangeText={setQuery}
+        placeholder={placeholder}
+        onBlur={() => {
+          setTimeout(() => {
+            picking.current = false;
+          }, Platform.OS === 'web' ? 250 : 150);
+        }}
+      />
+      {query.trim() ? (
+        <View style={styles.list}>
+          {matches.length === 0 ? (
+            <Text style={styles.emptyMatch}>No matches</Text>
+          ) : (
+            matches.map((f) => (
               <Pressable
                 key={f.id}
-                style={[styles.item, active && styles.itemActive]}
-                onPress={() => toggle(f.id)}>
-                <View style={[styles.check, active && styles.checkActive]}>
-                  {active ? <Text style={styles.checkMark}>✓</Text> : null}
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.itemText}>{displayName(f)}</Text>
-                  {f.email ? <Text style={styles.email}>{f.email}</Text> : null}
-                </View>
+                style={styles.item}
+                onPressIn={() => pick(f)}
+                {...(Platform.OS === 'web'
+                  ? {
+                      onMouseDown: (e: { preventDefault?: () => void }) => {
+                        e.preventDefault?.();
+                        pick(f);
+                      },
+                    }
+                  : {})}>
+                <Text style={styles.itemText}>{displayName(f)}</Text>
+                {f.email ? <Text style={styles.email}>{f.email}</Text> : null}
               </Pressable>
-            );
-          })
-        )}
-      </ScrollView>
+            ))
+          )}
+        </View>
+      ) : null}
 
       {selected.length > 0 ? (
         <View style={styles.selected}>
-          <Muted>{selectedLabel(selected.length)}</Muted>
           <View style={styles.rowWrap}>
             {selected.map((f) => (
               <Chip
                 key={f.id}
                 label={`${displayName(f)} ×`}
                 active
-                onPress={() => toggle(f.id)}
+                onPress={() => remove(f.id)}
               />
             ))}
           </View>
         </View>
-      ) : (
-        <Muted>No friends selected yet.</Muted>
-      )}
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginBottom: theme.space.md },
-  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: theme.space.sm },
+  wrap: { zIndex: 10, marginBottom: theme.space.md },
   list: {
-    maxHeight: 260,
+    marginTop: -8,
+    marginBottom: theme.space.sm,
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: theme.radius.sm,
+    overflow: 'hidden',
   },
   item: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
-  itemActive: {
-    backgroundColor: theme.colors.primarySoft,
+  emptyMatch: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: theme.colors.textMuted,
   },
-  check: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 1.5,
-    borderColor: theme.colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.surface,
-  },
-  checkActive: {
-    borderColor: theme.colors.primary,
-    backgroundColor: theme.colors.primary,
-  },
-  checkMark: { color: '#fff', fontSize: 13, fontWeight: '800', lineHeight: 16 },
   itemText: { fontSize: 15, color: theme.colors.text, fontWeight: '600' },
-  email: { fontSize: 12, color: theme.colors.textMuted, marginTop: 1 },
-  selected: { marginTop: 8 },
-  rowWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: 6 },
+  email: { fontSize: 12, color: theme.colors.textMuted, marginTop: 2 },
+  selected: { marginTop: 4 },
+  rowWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 4 },
 });
