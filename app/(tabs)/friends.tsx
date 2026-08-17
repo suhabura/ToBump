@@ -4,6 +4,7 @@ import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { createNotification } from '@/lib/api';
+import { dedupeFriendshipsByOther, dedupeProfilesByEmail, friendshipOtherId } from '@/lib/friends';
 import { supabase } from '@/lib/supabase';
 import type { Friendship, Profile } from '@/lib/types';
 import { displayName } from '@/lib/types';
@@ -34,17 +35,34 @@ export default function FriendsScreen() {
       .eq('status', 'accepted')
       .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`);
 
-    const friendRows = (fr ?? []) as Friendship[];
-    const otherIds = friendRows.map((f) => (f.from_user_id === user.id ? f.to_user_id : f.from_user_id));
+    const friendRows = dedupeFriendshipsByOther((fr ?? []) as Friendship[], user.id);
+    const otherIds = friendRows.map((f) => friendshipOtherId(f, user.id));
     const { data: profiles } = otherIds.length
       ? await supabase.from('profiles').select('*').in('id', otherIds)
       : { data: [] as Profile[] };
-    const map = new Map((profiles as Profile[]).map((p) => [p.id, p]));
+    const uniqueProfiles = dedupeProfilesByEmail((profiles as Profile[]) ?? []);
+    const map = new Map(uniqueProfiles.map((p) => [p.id, p]));
+    // Also index by email so duplicate profile ids collapse visually
+    const byEmail = new Map(
+      uniqueProfiles.filter((p) => p.email).map((p) => [p.email!.trim().toLowerCase(), p])
+    );
+    const seenEmails = new Set<string>();
     setFriends(
-      friendRows.map((f) => ({
-        ...f,
-        other: map.get(f.from_user_id === user.id ? f.to_user_id : f.from_user_id) ?? null,
-      }))
+      friendRows
+        .map((f) => {
+          const otherId = friendshipOtherId(f, user.id);
+          const other = map.get(otherId) ?? null;
+          return { ...f, other };
+        })
+        .filter((row) => {
+          const email = row.other?.email?.trim().toLowerCase();
+          if (!email) return true;
+          if (seenEmails.has(email)) return false;
+          seenEmails.add(email);
+          // Prefer canonical profile for that email
+          if (byEmail.has(email)) row.other = byEmail.get(email)!;
+          return true;
+        })
     );
 
     const { data: req } = await supabase
@@ -52,12 +70,14 @@ export default function FriendsScreen() {
       .select('*')
       .eq('to_user_id', user.id)
       .eq('status', 'pending');
-    const reqRows = (req ?? []) as Friendship[];
+    const reqRows = dedupeFriendshipsByOther((req ?? []) as Friendship[], user.id);
     const fromIds = reqRows.map((r) => r.from_user_id);
     const { data: fromProfiles } = fromIds.length
       ? await supabase.from('profiles').select('*').in('id', fromIds)
       : { data: [] as Profile[] };
-    const fromMap = new Map((fromProfiles as Profile[]).map((p) => [p.id, p]));
+    const fromMap = new Map(
+      dedupeProfilesByEmail((fromProfiles as Profile[]) ?? []).map((p) => [p.id, p])
+    );
     setRequests(reqRows.map((r) => ({ ...r, from: fromMap.get(r.from_user_id) ?? null })));
 
     setLoading(false);
@@ -77,36 +97,105 @@ export default function FriendsScreen() {
       .select('*')
       .neq('id', user.id)
       .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,email.ilike.%${q}%`)
-      .limit(20);
-    setResults((data as Profile[]) ?? []);
+      .limit(40);
+    setResults(dedupeProfilesByEmail((data as Profile[]) ?? []).slice(0, 20));
   }
 
   async function sendRequest(toUserId: string) {
     if (!user) return;
+
+    const { data: rpcId, error: rpcError } = await supabase.rpc('send_friend_request', {
+      p_to_user_id: toUserId,
+    });
+
+    if (!rpcError) {
+      if (rpcId) {
+        await createNotification(toUserId, 'friend_request', t.friends.newRequest, {
+          from_user_id: user.id,
+        });
+      }
+      Alert.alert('OK', t.friends.requestSent);
+      setResults([]);
+      setSearch('');
+      load();
+      return;
+    }
+
+    // Fallback until friendships_unique.sql is applied
+    const { data: existing } = await supabase
+      .from('friendships')
+      .select('*')
+      .or(
+        `and(from_user_id.eq.${user.id},to_user_id.eq.${toUserId}),and(from_user_id.eq.${toUserId},to_user_id.eq.${user.id})`
+      )
+      .limit(1)
+      .maybeSingle();
+
+    if (existing) {
+      if (existing.status === 'accepted') {
+        Alert.alert(t.common.error, t.friends.alreadyFriends);
+        return;
+      }
+      if (existing.status === 'pending') {
+        if (existing.to_user_id === user.id) {
+          await respond(existing.id, 'accepted', existing.from_user_id);
+          return;
+        }
+        Alert.alert(t.common.error, t.friends.alreadyPending);
+        return;
+      }
+    }
+
     const { error } = await supabase.from('friendships').insert({
       from_user_id: user.id,
       to_user_id: toUserId,
       status: 'pending',
     });
     if (error) {
-      Alert.alert(t.common.error, error.message);
+      const msg = /duplicate|unique/i.test(error.message)
+        ? t.friends.alreadyPending
+        : error.message;
+      Alert.alert(t.common.error, msg);
       return;
     }
-    // Notification also created by DB trigger after notify_friend_request.sql is applied
     await createNotification(toUserId, 'friend_request', t.friends.newRequest, {
       from_user_id: user.id,
     });
     Alert.alert('OK', t.friends.requestSent);
+    setResults([]);
+    setSearch('');
     load();
   }
 
   async function respond(id: string, status: 'accepted' | 'rejected', fromUserId: string) {
     if (!user) return;
-    await supabase.from('friendships').update({ status, updated_at: new Date().toISOString() }).eq('id', id);
+
     if (status === 'accepted') {
+      const { error: rpcError } = await supabase.rpc('accept_friend_request', {
+        p_friendship_id: id,
+      });
+      if (rpcError) {
+        await supabase
+          .from('friendships')
+          .update({ status: 'accepted', updated_at: new Date().toISOString() })
+          .eq('id', id);
+        // Best-effort: remove reverse duplicate
+        await supabase
+          .from('friendships')
+          .delete()
+          .neq('id', id)
+          .or(
+            `and(from_user_id.eq.${user.id},to_user_id.eq.${fromUserId}),and(from_user_id.eq.${fromUserId},to_user_id.eq.${user.id})`
+          );
+      }
       await createNotification(fromUserId, 'friend_accepted', t.friends.requestAccepted, {
         user_id: user.id,
       });
+    } else {
+      await supabase
+        .from('friendships')
+        .update({ status: 'rejected', updated_at: new Date().toISOString() })
+        .eq('id', id);
     }
     load();
   }
@@ -158,7 +247,7 @@ export default function FriendsScreen() {
         <Subtitle>{t.friends.title}</Subtitle>
         <FlatList
           data={friends}
-          keyExtractor={(i) => i.id}
+          keyExtractor={(i) => i.other?.email?.trim().toLowerCase() || i.id}
           ListEmptyComponent={<EmptyState title={t.friends.empty} />}
           renderItem={({ item }) => (
             <View style={styles.row}>

@@ -109,6 +109,8 @@ export const sl = {
     noRequests: 'Ni prošenj',
     manageGroups: 'Upravljaj skupine',
     requestSent: 'Prošnja poslana',
+    alreadyFriends: 'Že sta prijatelja.',
+    alreadyPending: 'Prošnja za prijateljstvo že čaka.',
     newRequest: 'Nova prošnja za prijateljstvo',
     requestAccepted: 'Prošnja sprejeta',
   },

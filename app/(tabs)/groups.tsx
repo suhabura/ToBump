@@ -5,6 +5,7 @@ import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/c
 import { FriendPicker } from '@/components/FriendPicker';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
+import { dedupeProfilesByEmail, friendshipOtherId } from '@/lib/friends';
 import type { FriendGroup, Profile } from '@/lib/types';
 import { displayName } from '@/lib/types';
 import { useT, type Translations } from '@/i18n';
@@ -70,8 +71,12 @@ export default function GroupsScreen() {
         .or(`from_user_id.eq.${user.id},to_user_id.eq.${user.id}`);
       if (fErr) throw fErr;
 
-      const otherIds = (fr ?? []).map((f: { from_user_id: string; to_user_id: string }) =>
-        f.from_user_id === user.id ? f.to_user_id : f.from_user_id
+      const otherIds = Array.from(
+        new Set(
+          (fr ?? []).map((f: { from_user_id: string; to_user_id: string }) =>
+            friendshipOtherId(f, user.id)
+          )
+        )
       );
       if (otherIds.length) {
         const { data: profiles, error: pErr } = await supabase
@@ -79,7 +84,7 @@ export default function GroupsScreen() {
           .select('*')
           .in('id', otherIds);
         if (pErr) throw pErr;
-        setFriends((profiles as Profile[]) ?? []);
+        setFriends(dedupeProfilesByEmail((profiles as Profile[]) ?? []));
       } else {
         setFriends([]);
       }

@@ -13,6 +13,7 @@ import {
   saveActivity,
   type ActivityInput,
 } from '@/lib/api';
+import { dedupeProfilesByEmail } from '@/lib/friends';
 import { distanceMeters, formatDistance, venueMatchScore } from '@/lib/geo';
 import { formatDuration, formatRecurrence, formatTime, hydrateRules, isoWeekday, normalizeRules, rulesFromLegacy, WEEKDAY_OPTIONS, type RecurrenceRule } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
@@ -256,12 +257,16 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         .select('*')
         .eq('status', 'accepted')
         .or(`from_user_id.eq.${userId},to_user_id.eq.${userId}`);
-      const otherIds = (fr ?? []).map((f: { from_user_id: string; to_user_id: string }) =>
-        f.from_user_id === userId ? f.to_user_id : f.from_user_id
+      const otherIds = Array.from(
+        new Set(
+          (fr ?? []).map((f: { from_user_id: string; to_user_id: string }) =>
+            f.from_user_id === userId ? f.to_user_id : f.from_user_id
+          )
+        )
       );
       if (otherIds.length) {
         const { data: profiles } = await supabase.from('profiles').select('*').in('id', otherIds);
-        setFriends((profiles as Profile[]) ?? []);
+        setFriends(dedupeProfilesByEmail((profiles as Profile[]) ?? []));
       }
     })();
   }, [userId]);

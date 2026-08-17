@@ -109,6 +109,8 @@ export const en = {
     noRequests: 'No requests',
     manageGroups: 'Manage groups',
     requestSent: 'Request sent',
+    alreadyFriends: 'You are already friends.',
+    alreadyPending: 'Friend request already pending.',
     newRequest: 'New friend request',
     requestAccepted: 'Friend request accepted',
   },

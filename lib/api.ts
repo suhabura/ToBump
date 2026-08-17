@@ -140,8 +140,12 @@ export async function fetchActivities(opts: {
   const joinedIds = new Set((joins ?? []).map((j) => j.activity_id));
   const invitedIds = new Set((invites ?? []).map((i) => i.activity_id));
   const friendIds = new Set(
-    (friendships ?? []).map((f: { from_user_id: string; to_user_id: string }) =>
-      f.from_user_id === opts.userId ? f.to_user_id : f.from_user_id
+    Array.from(
+      new Set(
+        (friendships ?? []).map((f: { from_user_id: string; to_user_id: string }) =>
+          f.from_user_id === opts.userId ? f.to_user_id : f.from_user_id
+        )
+      )
     )
   );
 
@@ -564,8 +568,12 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
       .select('from_user_id, to_user_id')
       .eq('status', 'accepted')
       .or(`from_user_id.eq.${userId},to_user_id.eq.${userId}`);
-    inviteIds = (fr ?? []).map((f: { from_user_id: string; to_user_id: string }) =>
-      f.from_user_id === userId ? f.to_user_id : f.from_user_id
+    inviteIds = Array.from(
+      new Set(
+        (fr ?? []).map((f: { from_user_id: string; to_user_id: string }) =>
+          f.from_user_id === userId ? f.to_user_id : f.from_user_id
+        )
+      )
     );
   }
 
