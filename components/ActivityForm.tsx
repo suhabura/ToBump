@@ -408,16 +408,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       }
     }
 
-    await ensureDefaultCategories();
-    const categoryKey = resolveActivityCategoryKey(title, locale);
-    const category_id = categoryKey ? await findCategoryId(categoryKey) : null;
-    // Free-text activities are allowed: title stays as typed, category_id stays null (not written as a category).
-    const titleToSave = (categoryKey ?? title.trim()).trim();
-    if (!titleToSave) {
-      setFormError(t.form.needActivityStart);
-      return;
-    }
-
     if (privacy === 'group' && !selectedGroupId) {
       setFormError(t.form.needGroup);
       return;
@@ -451,6 +441,17 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
     setLoading(true);
     try {
+      const categoryKey = resolveActivityCategoryKey(title, locale);
+      // Prefer already-resolved category; only one lookup if still pending.
+      const category_id = categoryKey
+        ? matchedCategoryId ?? (await findCategoryId(categoryKey))
+        : null;
+      const titleToSave = (categoryKey ?? title.trim()).trim();
+      if (!titleToSave) {
+        setFormError(t.form.needActivityStart);
+        return;
+      }
+
       const id = await saveActivity(
         userId,
         {

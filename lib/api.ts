@@ -268,7 +268,11 @@ export async function findCategoryId(name: string): Promise<string | null> {
 }
 
 /** Ensure top-level + subcategory seed exists (idempotent). Prefer running category_hierarchy.sql. */
+let categoriesSeedPromise: Promise<void> | null = null;
+
 export async function ensureDefaultCategories() {
+  if (categoriesSeedPromise) return categoriesSeedPromise;
+  categoriesSeedPromise = (async () => {
   try {
     const probe = await supabase.from('categories').select('id, parent_id').limit(1);
     const hasParentCol = !probe.error;
@@ -291,39 +295,50 @@ export async function ensureDefaultCategories() {
     ];
 
     const parentIds = new Map<string, string>();
-    for (const m of mains) {
-      const { data } = await supabase
-        .from('categories')
-        .select('id')
-        .ilike('name', m.name)
-        .is('parent_id', null)
-        .limit(1);
-      let id = data?.[0]?.id as string | undefined;
-      if (!id) {
-        const inserted = await supabase
+    // Parallel lookups for main categories
+    const mainRows = await Promise.all(
+      mains.map(async (m) => {
+        const { data } = await supabase
           .from('categories')
-          .insert({ name: m.name, icon: m.icon, parent_id: null })
           .select('id')
+          .ilike('name', m.name)
+          .is('parent_id', null)
           .limit(1);
-        id = inserted.data?.[0]?.id;
-      }
-      if (id) parentIds.set(m.name, id);
+        let id = data?.[0]?.id as string | undefined;
+        if (!id) {
+          const inserted = await supabase
+            .from('categories')
+            .insert({ name: m.name, icon: m.icon, parent_id: null })
+            .select('id')
+            .limit(1);
+          id = inserted.data?.[0]?.id;
+        }
+        return { name: m.name, id };
+      })
+    );
+    for (const row of mainRows) {
+      if (row.id) parentIds.set(row.name, row.id);
     }
 
-    for (const [name, parentName] of Object.entries(SUBCATEGORY_PARENT)) {
-      const parentId = parentIds.get(parentName);
-      if (!parentId) continue;
-      const { data } = await supabase.from('categories').select('id, parent_id').ilike('name', name).limit(1);
-      const row = data?.[0] as { id: string; parent_id: string | null } | undefined;
-      if (!row?.id) {
-        await supabase.from('categories').insert({ name, parent_id: parentId });
-      } else if (!row.parent_id) {
-        await supabase.from('categories').update({ parent_id: parentId }).eq('id', row.id);
-      }
-    }
+    await Promise.all(
+      Object.entries(SUBCATEGORY_PARENT).map(async ([name, parentName]) => {
+        const parentId = parentIds.get(parentName);
+        if (!parentId) return;
+        const { data } = await supabase.from('categories').select('id, parent_id').ilike('name', name).limit(1);
+        const row = data?.[0] as { id: string; parent_id: string | null } | undefined;
+        if (!row?.id) {
+          await supabase.from('categories').insert({ name, parent_id: parentId });
+        } else if (!row.parent_id) {
+          await supabase.from('categories').update({ parent_id: parentId }).eq('id', row.id);
+        }
+      })
+    );
   } catch {
-    // ignore seed errors
+    // ignore seed errors — allow retry on next call
+    categoriesSeedPromise = null;
   }
+  })();
+  return categoriesSeedPromise;
 }
 
 /** Top-level categories only (Sport, Culture…). Never returns subcategories. */
@@ -636,6 +651,14 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
       await syncActivityEditors(activityId, userId, input.editor_user_ids ?? [], input.title);
     }
   } else {
+    const newId =
+      typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : undefined;
+    if (newId) {
+      payload.id = newId;
+      payload.series_id = newId;
+    }
     if (input.is_recurring) {
       payload.series_privacy = input.privacy;
       payload.series_group_id = input.privacy === 'group' ? input.group_id || null : null;
@@ -648,9 +671,13 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     const { data, error } = await supabase.from('activities').insert(payload).select('id').single();
     if (error) throw error;
     id = data.id;
-    await supabase.from('activities').update({ series_id: id }).eq('id', id);
-    await supabase.from('activity_joins').insert({ activity_id: id!, user_id: userId });
-    await syncActivityEditors(id!, userId, input.editor_user_ids ?? [], input.title);
+    if (!newId) {
+      await supabase.from('activities').update({ series_id: id }).eq('id', id);
+    }
+    await Promise.all([
+      supabase.from('activity_joins').insert({ activity_id: id!, user_id: userId }),
+      syncActivityEditors(id!, userId, input.editor_user_ids ?? [], input.title),
+    ]);
   }
 
   if (inviteIds.length && id) {
@@ -661,9 +688,12 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
       invited_by: userId,
     }));
     await supabase.from('activity_invites').upsert(rows, { onConflict: 'activity_id,user_id' });
-    for (const uid of unique) {
-      await createNotification(uid, 'invite', `Invite to event: ${input.title}`, { activity_id: id });
-    }
+    // Notifications must not block returning to the event screen
+    void Promise.all(
+      unique.map((uid) =>
+        createNotification(uid, 'invite', `Invite to event: ${input.title}`, { activity_id: id })
+      )
+    );
   }
 
   return id!;
@@ -695,11 +725,14 @@ async function syncActivityEditors(
   });
   if (error) throw error;
 
-  for (const uid of unique) {
-    if (!prevIds.has(uid)) {
-      await createNotification(uid, 'editor', `You can edit the event: ${title}`, {
-        activity_id: activityId,
-      });
-    }
+  const newcomers = unique.filter((uid) => !prevIds.has(uid));
+  if (newcomers.length) {
+    void Promise.all(
+      newcomers.map((uid) =>
+        createNotification(uid, 'editor', `You can edit the event: ${title}`, {
+          activity_id: activityId,
+        })
+      )
+    );
   }
 }
