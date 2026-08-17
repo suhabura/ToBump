@@ -210,16 +210,15 @@ export default function ActivityDetailScreen() {
           const location = activityLocationLabel(activity);
           if (!location) return <Muted>{t.events.locationUnset}</Muted>;
           const ent = activity.enterprises;
-          const mapsUrl =
-            ent?.latitude != null && ent?.longitude != null
+          const address = ent?.address?.trim() || (!ent ? activity.venue_text?.trim() : '') || '';
+          // Only offer Maps when an actual address was entered (not just a provider name).
+          const mapsUrl = address
+            ? ent?.latitude != null && ent?.longitude != null
               ? `https://www.google.com/maps?q=${ent.latitude},${ent.longitude}`
-              : ent?.address
-                ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                    `${ent.name}, ${ent.address}`
-                  )}`
-                : activity.venue_text?.trim()
-                  ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(activity.venue_text.trim())}`
-                  : null;
+              : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+                  ent ? `${ent.name}, ${address}` : address
+                )}`
+            : null;
           return (
             <View>
               <Muted>
