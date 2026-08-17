@@ -8,6 +8,11 @@ import {
   addDays,
   addMonths,
   subMonths,
+  addYears,
+  subYears,
+  setMonth as setMonthOfYear,
+  setYear,
+  getYear,
   isSameDay,
   isSameMonth,
   isBefore,
@@ -16,13 +21,16 @@ import {
   setSeconds,
   setMilliseconds,
 } from 'date-fns';
-import { enUS } from 'date-fns/locale';
+import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useMemo, useState } from 'react';
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '@/constants/theme';
-import { useT } from '@/i18n';
+import { useLocale, useT } from '@/i18n';
 
 const MINUTE_STEP = 15;
+const MONTH_SHORT = Array.from({ length: 12 }, (_, i) => i);
+
+type CalView = 'days' | 'months' | 'years';
 
 type Props = {
   label: string;
@@ -44,15 +52,18 @@ export function DateTimeField({
   mode = 'datetime',
 }: Props) {
   const t = useT();
+  const { locale } = useLocale();
+  const dfLocale = locale === 'sl' ? slLocale : enUS;
   const min = minimumDate ?? new Date();
   const [open, setOpen] = useState(false);
+  const [calView, setCalView] = useState<CalView>('days');
   const [month, setMonth] = useState(value ?? min);
   const [draft, setDraft] = useState(value ?? nextSlot(min));
 
   const display = value
     ? mode === 'date'
-      ? format(value, 'EEE, d MMM yyyy', { locale: enUS })
-      : format(value, 'EEE, d MMM yyyy · HH:mm', { locale: enUS })
+      ? format(value, 'EEE, d MMM yyyy', { locale: dfLocale })
+      : format(value, 'EEE, d MMM yyyy · HH:mm', { locale: dfLocale })
     : optional
       ? t.common.notSet
       : mode === 'date'
@@ -63,6 +74,7 @@ export function DateTimeField({
     const base = value && !isBefore(value, startOfDay(min)) ? value : mode === 'date' ? startOfDay(min) : nextSlot(min);
     setDraft(base);
     setMonth(base);
+    setCalView('days');
     setOpen(true);
   }
 
@@ -77,6 +89,20 @@ export function DateTimeField({
       if (isBefore(next, min)) next = nextSlot(min);
       return next;
     });
+  }
+
+  function selectMonth(monthIndex: number) {
+    const next = startOfMonth(setMonthOfYear(month, monthIndex));
+    if (isMonthFullyPast(next, min)) return;
+    setMonth(next);
+    setCalView('days');
+  }
+
+  function selectYear(year: number) {
+    const next = startOfMonth(setYear(month, year));
+    if (isYearFullyPast(next, min)) return;
+    setMonth(next);
+    setCalView('months');
   }
 
   function bumpHour(delta: number) {
@@ -114,11 +140,64 @@ export function DateTimeField({
     setOpen(false);
   }
 
+  function goPrev() {
+    if (calView === 'days') {
+      if (!canPrevMonth) return;
+      setMonth((m) => subMonths(m, 1));
+      return;
+    }
+    if (calView === 'months') {
+      if (!canPrevYear) return;
+      setMonth((m) => subYears(m, 1));
+      return;
+    }
+    if (!canPrevDecade) return;
+    setMonth((m) => subYears(m, 10));
+  }
+
+  function goNext() {
+    if (calView === 'days') {
+      setMonth((m) => addMonths(m, 1));
+      return;
+    }
+    if (calView === 'months') {
+      setMonth((m) => addYears(m, 1));
+      return;
+    }
+    setMonth((m) => addYears(m, 10));
+  }
+
+  function onHeaderPress() {
+    if (calView === 'days') setCalView('months');
+    else if (calView === 'months') setCalView('years');
+  }
+
   const days = useMemo(() => buildCalendarDays(month), [month]);
   const canPrevMonth = !isBefore(endOfMonth(subMonths(month, 1)), startOfDay(min));
+  const canPrevYear = !isBefore(endOfMonth(setMonthOfYear(subYears(month, 1), 11)), startOfDay(min));
+  const decadeStart = Math.floor(getYear(month) / 10) * 10;
+  const canPrevDecade = !isBefore(
+    endOfMonth(setMonthOfYear(setYear(month, decadeStart - 1), 11)),
+    startOfDay(min)
+  );
+  const canPrev =
+    calView === 'days' ? canPrevMonth : calView === 'months' ? canPrevYear : canPrevDecade;
+
+  const headerLabel =
+    calView === 'days'
+      ? format(month, 'LLLL yyyy', { locale: dfLocale })
+      : calView === 'months'
+        ? format(month, 'yyyy', { locale: dfLocale })
+        : `${decadeStart} – ${decadeStart + 9}`;
+
+  const headerClickable = calView !== 'years';
   const quickTimes = useMemo(() => buildQuickTimes(draft, min), [draft, min]);
   const hour = draft.getHours();
   const minute = draft.getMinutes();
+  const yearCells = useMemo(() => {
+    // Outlook-style: one year before decade + decade + one after
+    return Array.from({ length: 12 }, (_, i) => decadeStart - 1 + i);
+  }, [decadeStart]);
 
   return (
     <View style={styles.wrap}>
@@ -135,51 +214,130 @@ export function DateTimeField({
 
             <View style={styles.monthRow}>
               <Pressable
-                onPress={() => canPrevMonth && setMonth((m) => subMonths(m, 1))}
-                style={[styles.monthBtn, !canPrevMonth && styles.monthBtnDisabled]}
-                disabled={!canPrevMonth}>
-                <Text style={[styles.monthBtnText, !canPrevMonth && styles.muted]}>‹</Text>
+                onPress={goPrev}
+                style={[styles.monthBtn, !canPrev && styles.monthBtnDisabled]}
+                disabled={!canPrev}>
+                <Text style={[styles.monthBtnText, !canPrev && styles.muted]}>‹</Text>
               </Pressable>
-              <Text style={styles.monthLabel}>{format(month, 'LLLL yyyy', { locale: enUS })}</Text>
-              <Pressable onPress={() => setMonth((m) => addMonths(m, 1))} style={styles.monthBtn}>
+              <Pressable
+                onPress={onHeaderPress}
+                disabled={!headerClickable}
+                style={styles.monthLabelBtn}
+                accessibilityRole="button"
+                accessibilityLabel={headerLabel}>
+                <Text style={[styles.monthLabel, headerClickable && styles.monthLabelClickable]}>
+                  {headerLabel}
+                </Text>
+              </Pressable>
+              <Pressable onPress={goNext} style={styles.monthBtn}>
                 <Text style={styles.monthBtnText}>›</Text>
               </Pressable>
             </View>
 
-            <View style={styles.weekHeader}>
-              {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
-                <Text key={`${d}-${i}`} style={styles.weekDay}>
-                  {d}
-                </Text>
-              ))}
-            </View>
-
-            <View style={styles.grid}>
-              {days.map((day) => {
-                const selected = isSameDay(day, draft);
-                const inMonth = isSameMonth(day, month);
-                const past = isPastDay(day, min);
-                return (
-                  <Pressable
-                    key={day.toISOString()}
-                    disabled={past}
-                    style={[styles.dayCell, selected && !past && styles.daySelected, past && styles.dayDisabled]}
-                    onPress={() => selectDay(day)}>
-                    <Text
-                      style={[
-                        styles.dayText,
-                        !inMonth && styles.dayMuted,
-                        past && styles.dayPast,
-                        selected && !past && styles.dayTextSelected,
-                      ]}>
-                      {format(day, 'd')}
+            {calView === 'days' ? (
+              <>
+                <View style={styles.weekHeader}>
+                  {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
+                    <Text key={`${d}-${i}`} style={styles.weekDay}>
+                      {d}
                     </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
+                  ))}
+                </View>
 
-            {mode === 'datetime' ? (
+                <View style={styles.grid}>
+                  {days.map((day) => {
+                    const selected = isSameDay(day, draft);
+                    const inMonth = isSameMonth(day, month);
+                    const past = isPastDay(day, min);
+                    return (
+                      <Pressable
+                        key={day.toISOString()}
+                        disabled={past}
+                        style={[styles.dayCell, selected && !past && styles.daySelected, past && styles.dayDisabled]}
+                        onPress={() => selectDay(day)}>
+                        <Text
+                          style={[
+                            styles.dayText,
+                            !inMonth && styles.dayMuted,
+                            past && styles.dayPast,
+                            selected && !past && styles.dayTextSelected,
+                          ]}>
+                          {format(day, 'd')}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </>
+            ) : null}
+
+            {calView === 'months' ? (
+              <View style={styles.pickerGrid}>
+                {MONTH_SHORT.map((mIndex) => {
+                  const cell = startOfMonth(setMonthOfYear(month, mIndex));
+                  const past = isMonthFullyPast(cell, min);
+                  const selected = isSameMonth(cell, draft);
+                  const current = isSameMonth(cell, new Date());
+                  return (
+                    <Pressable
+                      key={mIndex}
+                      disabled={past}
+                      style={[
+                        styles.pickerCell,
+                        selected && !past && styles.daySelected,
+                        past && styles.dayDisabled,
+                      ]}
+                      onPress={() => selectMonth(mIndex)}>
+                      <Text
+                        style={[
+                          styles.pickerCellText,
+                          past && styles.dayPast,
+                          selected && !past && styles.dayTextSelected,
+                          current && !selected && styles.pickerCurrent,
+                        ]}>
+                        {format(cell, 'LLL', { locale: dfLocale })}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+
+            {calView === 'years' ? (
+              <View style={styles.pickerGrid}>
+                {yearCells.map((year) => {
+                  const cell = startOfMonth(setYear(setMonthOfYear(month, 0), year));
+                  const past = isYearFullyPast(cell, min);
+                  const selected = getYear(draft) === year;
+                  const inDecade = year >= decadeStart && year <= decadeStart + 9;
+                  const current = getYear(new Date()) === year;
+                  return (
+                    <Pressable
+                      key={year}
+                      disabled={past}
+                      style={[
+                        styles.pickerCell,
+                        selected && !past && styles.daySelected,
+                        past && styles.dayDisabled,
+                      ]}
+                      onPress={() => selectYear(year)}>
+                      <Text
+                        style={[
+                          styles.pickerCellText,
+                          !inDecade && styles.dayMuted,
+                          past && styles.dayPast,
+                          selected && !past && styles.dayTextSelected,
+                          current && !selected && styles.pickerCurrent,
+                        ]}>
+                        {String(year)}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+
+            {mode === 'datetime' && calView === 'days' ? (
               <>
                 <Text style={styles.timeLabel}>Time</Text>
                 <View style={styles.steppers}>
@@ -276,6 +434,14 @@ function isPastDay(day: Date, min: Date) {
   return isBefore(startOfDay(day), startOfDay(min));
 }
 
+function isMonthFullyPast(month: Date, min: Date) {
+  return isBefore(endOfMonth(month), startOfDay(min));
+}
+
+function isYearFullyPast(yearDate: Date, min: Date) {
+  return isBefore(endOfMonth(setMonthOfYear(yearDate, 11)), startOfDay(min));
+}
+
 function addHoursSafe(d: Date, delta: number) {
   return setHours(d, (d.getHours() + delta + 24) % 24);
 }
@@ -367,11 +533,16 @@ const styles = StyleSheet.create({
   monthBtnDisabled: { opacity: 0.35 },
   monthBtnText: { fontSize: 24, color: theme.colors.primary, fontWeight: '600' },
   muted: { color: theme.colors.textMuted },
+  monthLabelBtn: { flex: 1, alignItems: 'center', paddingVertical: 6, paddingHorizontal: 8 },
   monthLabel: {
     fontSize: 16,
     fontWeight: '700',
     color: theme.colors.text,
     textTransform: 'capitalize',
+    textAlign: 'center',
+  },
+  monthLabelClickable: {
+    color: theme.colors.primary,
   },
   weekHeader: { flexDirection: 'row', marginBottom: 4 },
   weekDay: {
@@ -395,6 +566,29 @@ const styles = StyleSheet.create({
   dayMuted: { color: theme.colors.textMuted },
   dayPast: { color: theme.colors.textMuted, textDecorationLine: 'line-through' },
   dayTextSelected: { color: '#fff', fontWeight: '700' },
+  pickerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    minHeight: 220,
+    alignContent: 'center',
+  },
+  pickerCell: {
+    width: '33.33%',
+    paddingVertical: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: theme.radius.md,
+  },
+  pickerCellText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: theme.colors.text,
+    textTransform: 'capitalize',
+  },
+  pickerCurrent: {
+    color: theme.colors.primary,
+    fontWeight: '800',
+  },
   timeLabel: {
     marginTop: 12,
     marginBottom: 8,

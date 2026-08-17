@@ -752,11 +752,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         </View>
       ) : null}
 
-      <View style={{ height: 16 }} />
-      <Button label={t.events.save} onPress={onSave} loading={loading} />
-
       {isCreator ? (
-        <View style={{ marginTop: 24 }}>
+        <View style={{ marginTop: 16 }}>
           {!showEditors ? (
             <Text style={styles.link} onPress={() => setShowEditors(true)}>
               {t.form.addEditors}
@@ -785,6 +782,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           )}
         </View>
       ) : null}
+
+      <View style={{ height: 16 }} />
+      <Button label={t.events.save} onPress={onSave} loading={loading} />
     </ScrollView>
   );
 }
