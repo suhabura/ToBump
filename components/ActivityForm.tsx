@@ -100,6 +100,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [editorIds, setEditorIds] = useState<string[]>(initial?.editor_user_ids ?? []);
   const [showEditors, setShowEditors] = useState(Boolean(initial?.editor_user_ids?.length));
   const [isRecurring, setIsRecurring] = useState(Boolean(initial?.is_recurring));
+  const [financeEnabled, setFinanceEnabled] = useState(Boolean(initial?.finance_enabled));
   const [rules, setRules] = useState<RecurrenceRule[]>(() => initialRules(initial));
   const [recurrenceUntil, setRecurrenceUntil] = useState<Date | null>(() => {
     const raw = (initial as { recurrence_until?: string | null } | undefined)?.recurrence_until;
@@ -425,6 +426,10 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       setFormError(t.form.needInviteFriends);
       return;
     }
+    if (privacy === 'friends_of_friends' && inviteIds.length === 0 && !selectedGroupId) {
+      setFormError(t.form.fofNeedInviteOrGroup);
+      return;
+    }
 
     const priceTrim = price.trim();
     if (priceTrim === '' || Number.isNaN(Number(priceTrim)) || Number(priceTrim) < 0) {
@@ -474,6 +479,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           invite_user_ids: inviteIds,
           editor_user_ids: isCreator ? editorIds : undefined,
           is_recurring: isRecurring,
+          finance_enabled: financeEnabled,
           recurrence_rules: isRecurring ? normalized : [],
           recurrence_until: isRecurring && recurrenceUntil ? formatDay(recurrenceUntil) : null,
         },
@@ -482,8 +488,12 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       router.replace(`/activity/${id}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : t.common.error;
-      setFormError(msg);
-      Alert.alert(t.common.error, msg);
+      const friendly =
+        /activities_privacy_check|friends_of_friends/i.test(msg)
+          ? t.form.fofDbFix
+          : msg;
+      setFormError(friendly);
+      Alert.alert(t.common.error, friendly);
     } finally {
       setLoading(false);
     }
@@ -600,7 +610,35 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       ) : null}
 
       {privacy === 'friends_of_friends' ? (
-        <Muted>{t.form.fofHint}</Muted>
+        <View>
+          <Muted>{t.form.fofHint}</Muted>
+          <Text style={styles.section}>{req(t.form.selectFriends)}</Text>
+          {friends.length === 0 ? <Muted>{t.form.acceptFriendsHint}</Muted> : null}
+          <FriendPicker
+            friends={friends}
+            selectedIds={inviteIds}
+            onChange={setInviteIds}
+            label={t.form.selectFriends}
+            placeholder={t.form.searchFriends}
+            emptyHint={t.form.noFriends}
+          />
+          <Text style={styles.section}>{t.form.orSelectGroup}</Text>
+          {groups.length === 0 ? (
+            <Muted>{t.form.noGroups}</Muted>
+          ) : (
+            <View style={styles.rowWrap}>
+              {groups.map((g) => (
+                <Chip
+                  key={g.id}
+                  label={g.name}
+                  active={selectedGroupId === g.id}
+                  onPress={() => setSelectedGroupId(selectedGroupId === g.id ? null : g.id)}
+                />
+              ))}
+            </View>
+          )}
+          <Button label={t.form.manageGroups} variant="secondary" onPress={() => router.push('/groups')} />
+        </View>
       ) : null}
 
       <View>
@@ -757,6 +795,21 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           />
         </View>
       ) : null}
+
+      <Text style={styles.section}>{t.form.finance}</Text>
+      <Muted>{t.form.financeHint}</Muted>
+      <View style={styles.row}>
+        <Chip
+          label={t.form.financeOff}
+          active={!financeEnabled}
+          onPress={() => setFinanceEnabled(false)}
+        />
+        <Chip
+          label={t.form.financeOn}
+          active={financeEnabled}
+          onPress={() => setFinanceEnabled(true)}
+        />
+      </View>
 
       {isCreator ? (
         <View style={{ marginTop: 16 }}>

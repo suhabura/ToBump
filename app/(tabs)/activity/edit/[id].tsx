@@ -28,6 +28,7 @@ export default function EditActivityScreen() {
     invite_user_ids?: string[];
     editor_user_ids?: string[];
     is_recurring?: boolean;
+    finance_enabled?: boolean;
     recurrence_rules?: RecurrenceRule[];
     recurrence_until?: string | null;
     duration_minutes?: number | null;
@@ -76,6 +77,7 @@ export default function EditActivityScreen() {
         invite_user_ids: (invites ?? []).map((i: { user_id: string }) => i.user_id),
         editor_user_ids: (editors ?? []).map((e: { user_id: string }) => e.user_id),
         is_recurring: act.is_recurring,
+        finance_enabled: Boolean(act.finance_enabled),
         recurrence_rules: rules,
         recurrence_until: act.recurrence_until ?? null,
         duration_minutes: act.duration_minutes,

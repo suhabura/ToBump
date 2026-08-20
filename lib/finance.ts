@@ -24,17 +24,26 @@ function round2(n: number): number {
 export async function fetchSeriesMemberProfiles(seriesId: string): Promise<Profile[]> {
   const { data: acts } = await supabase
     .from('activities')
-    .select('id, created_by')
+    .select('id, created_by, series_invite_user_ids')
     .or(`id.eq.${seriesId},series_id.eq.${seriesId}`);
   const ids = (acts ?? []).map((a: { id: string }) => a.id);
   const ownerIds = (acts ?? []).map((a: { created_by: string }) => a.created_by);
+  const seriesInviteIds = (acts ?? []).flatMap(
+    (a: { series_invite_user_ids?: string[] | null }) => a.series_invite_user_ids ?? []
+  );
   if (!ids.length) return [];
 
-  const { data: joins } = await supabase.from('activity_joins').select('user_id').in('activity_id', ids);
+  const [{ data: joins }, { data: invites }] = await Promise.all([
+    supabase.from('activity_joins').select('user_id').in('activity_id', ids),
+    supabase.from('activity_invites').select('user_id').in('activity_id', ids),
+  ]);
+
   const userIds = Array.from(
     new Set([
       ...ownerIds,
+      ...seriesInviteIds,
       ...(joins ?? []).map((j: { user_id: string }) => j.user_id),
+      ...(invites ?? []).map((i: { user_id: string }) => i.user_id),
     ])
   );
   if (!userIds.length) return [];
@@ -42,6 +51,35 @@ export async function fetchSeriesMemberProfiles(seriesId: string): Promise<Profi
   const { data: profiles } = await supabase.from('profiles').select('*').in('id', userIds);
   return ((profiles as Profile[]) ?? []).sort((a, b) =>
     displayName(a).localeCompare(displayName(b), undefined, { sensitivity: 'base' })
+  );
+}
+
+/** Invitees for the series (includes series_invite_user_ids + activity_invites). */
+export async function fetchSeriesInviteeIds(seriesId: string): Promise<string[]> {
+  const { data: acts } = await supabase
+    .from('activities')
+    .select('id, created_by, series_invite_user_ids')
+    .or(`id.eq.${seriesId},series_id.eq.${seriesId}`);
+  const ids = (acts ?? []).map((a: { id: string }) => a.id);
+  const ownerIds = (acts ?? []).map((a: { created_by: string }) => a.created_by);
+  const seriesInviteIds = (acts ?? []).flatMap(
+    (a: { series_invite_user_ids?: string[] | null }) => a.series_invite_user_ids ?? []
+  );
+  if (!ids.length) {
+    return Array.from(new Set([...ownerIds, ...seriesInviteIds]));
+  }
+
+  const { data: invites } = await supabase
+    .from('activity_invites')
+    .select('user_id')
+    .in('activity_id', ids);
+
+  return Array.from(
+    new Set([
+      ...ownerIds,
+      ...seriesInviteIds,
+      ...(invites ?? []).map((i: { user_id: string }) => i.user_id),
+    ])
   );
 }
 

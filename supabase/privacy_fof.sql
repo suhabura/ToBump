@@ -1,5 +1,19 @@
 -- FoF: prijatelji vseh, ki so se že prijavili, lahko vidijo in se pridružijo
--- Prilepi v Supabase SQL Editor → Run
+-- Run in Supabase SQL Editor → Run
+-- Also fixes activities_privacy_check so 'friends_of_friends' can be saved.
+
+alter table public.activities drop constraint if exists activities_privacy_check;
+alter table public.activities
+  add constraint activities_privacy_check
+  check (privacy in ('invite', 'friends', 'group', 'friends_of_friends'));
+
+alter table public.activities drop constraint if exists activities_series_privacy_check;
+alter table public.activities
+  add constraint activities_series_privacy_check
+  check (
+    series_privacy is null
+    or series_privacy in ('invite', 'friends', 'group', 'friends_of_friends')
+  );
 
 create or replace function public.can_view_activity(act public.activities)
 returns boolean
@@ -12,7 +26,7 @@ as $$
     act.created_by = auth.uid()
     or (act.privacy = 'friends' and public.are_friends(act.created_by, auth.uid()))
     or (
-      -- Prijatelji prijateljev: vsi prijatelji tistih, ki so že na dogodku (join)
+      -- Participants' friends: friends of anyone who already joined (incl. organizer)
       act.privacy = 'friends_of_friends'
       and exists (
         select 1
@@ -39,7 +53,6 @@ as $$
     );
 $$;
 
--- Prijava na dogodek: dovoljena, če lahko dogodek vidiš (isti pogoj)
 drop policy if exists "joins_insert" on public.activity_joins;
 create policy "joins_insert" on public.activity_joins for insert to authenticated
   with check (

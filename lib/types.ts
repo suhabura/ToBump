@@ -140,6 +140,7 @@ export type Activity = {
   chat_enabled: boolean;
   status: ActivityStatus;
   is_recurring: boolean;
+  finance_enabled?: boolean;
   recurrence_weekdays: number[];
   recurrence_rules: { weekday: number; hour: number; minute: number; duration_minutes: number }[];
   duration_minutes: number | null;
@@ -237,6 +238,8 @@ export type ActivityWithRelations = Activity & {
   is_joined?: boolean;
   is_invited?: boolean;
   is_from_friend?: boolean;
+  /** FoF / friends-privacy event visible to you without a formal invite */
+  is_open_to_you?: boolean;
   is_commercial?: boolean;
   distance_m?: number | null;
   sort_group?: number;

@@ -179,20 +179,22 @@ export default function ActivityDetailScreen() {
           {categoryLabel(activity.categories) ?? `${activity.title} (${t.events.uncategorized})`}
         </Title>
 
-        <View style={styles.tabRow}>
-          <Chip
-            label={t.finance.details}
-            active={tab === 'details'}
-            onPress={() => setTab('details')}
-          />
-          <Chip
-            label={t.finance.tab}
-            active={tab === 'finance'}
-            onPress={() => setTab('finance')}
-          />
-        </View>
+        {activity.finance_enabled ? (
+          <View style={styles.tabRow}>
+            <Chip
+              label={t.finance.details}
+              active={tab === 'details'}
+              onPress={() => setTab('details')}
+            />
+            <Chip
+              label={t.finance.tab}
+              active={tab === 'finance'}
+              onPress={() => setTab('finance')}
+            />
+          </View>
+        ) : null}
 
-        {tab === 'finance' && user ? (
+        {tab === 'finance' && activity.finance_enabled && user ? (
           <ActivityFinancePanel
             activity={activity}
             userId={user.id}

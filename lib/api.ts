@@ -153,6 +153,10 @@ export async function fetchActivities(opts: {
     const is_invited = invitedIds.has(a.id);
     const is_mine = a.created_by === opts.userId;
     const is_from_friend = friendIds.has(a.created_by) && !is_mine;
+    // Visible via FoF / friends privacy (RLS already filtered); show under "For you"
+    const is_open_to_you =
+      !is_mine &&
+      (a.privacy === 'friends_of_friends' || (a.privacy === 'friends' && is_from_friend));
     const is_commercial =
       Number(a.price) > 0 ||
       Boolean(a.enterprise_id) ||
@@ -180,15 +184,16 @@ export async function fetchActivities(opts: {
       is_joined: joinedIds.has(a.id),
       is_invited,
       is_from_friend,
+      is_open_to_you,
       is_commercial,
       distance_m,
-      // 0 = vabljen, 1 = moji, 2 = komercialni, 3 = ostalo
-      sort_group: is_invited ? 0 : is_mine ? 1 : is_commercial ? 2 : 3,
+      // 0 = for you (invited / FoF / friends), 1 = mine, 2 = commercial, 3 = other
+      sort_group: is_invited || is_open_to_you ? 0 : is_mine ? 1 : is_commercial ? 2 : 3,
     };
   });
 
   if (opts.filter === 'invited') {
-    result = result.filter((a) => a.is_invited);
+    result = result.filter((a) => a.is_invited || Boolean(a.is_open_to_you));
   } else if (opts.filter === 'mine') {
     result = result.filter((a) => a.created_by === opts.userId);
   } else if (opts.filter === 'commercial') {
@@ -434,6 +439,8 @@ export type ActivityInput = {
   /** Friends granted edit rights (managed by creator only) */
   editor_user_ids?: string[];
   is_recurring?: boolean;
+  /** Enable Tricount-style shared expenses for this event / series */
+  finance_enabled?: boolean;
   recurrence_rules?: RecurrenceRule[];
   /** Last calendar day for the series (YYYY-MM-DD), required when recurring */
   recurrence_until?: string | null;
@@ -585,9 +592,24 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     inviteIds = (members ?? []).map((m: { user_id: string }) => m.user_id).filter((uid) => uid !== userId);
   }
 
-  // FoF: ni masovnih vabil – dogodek je odprt za prijatelje udeležencev / FoF
+  // FoF: seed with invited friends and/or a group; expands to friends of non-organizer joiners
   if (input.privacy === 'friends_of_friends') {
-    inviteIds = [];
+    const seeded = Array.from(new Set(input.invite_user_ids ?? [])).filter((uid) => uid !== userId);
+    if (input.group_id) {
+      const { data: members } = await supabase
+        .from('friend_group_members')
+        .select('user_id')
+        .eq('group_id', input.group_id);
+      const fromGroup = (members ?? [])
+        .map((m: { user_id: string }) => m.user_id)
+        .filter((uid) => uid !== userId);
+      inviteIds = Array.from(new Set([...seeded, ...fromGroup]));
+    } else {
+      inviteIds = seeded;
+    }
+    if (!inviteIds.length) {
+      throw new Error('Invite at least one friend or select a group.');
+    }
   }
 
   const capacity = input.max_participants;
@@ -627,6 +649,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     chat_enabled: input.chat_enabled ?? true,
     created_by: userId,
     is_recurring: Boolean(input.is_recurring),
+    finance_enabled: Boolean(input.finance_enabled),
     recurrence_weekdays: weekdays,
     recurrence_rules: rules,
     recurrence_until: input.is_recurring ? input.recurrence_until || null : null,

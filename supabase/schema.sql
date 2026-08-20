@@ -224,7 +224,7 @@ as $$
     or act.privacy = 'public'
     or (act.privacy = 'friends' and public.are_friends(act.created_by, auth.uid()))
     or (
-      -- FoF: prijatelji vseh, ki so že na dogodku (creator je prvi join)
+      -- FoF: prijatelji vseh, ki so že na dogodku (vključno z organizatorjem)
       act.privacy = 'friends_of_friends'
       and exists (
         select 1 from public.activity_joins j

@@ -36,7 +36,7 @@ export const en = {
     invites: 'Invites',
     mine: 'Mine',
     all: 'All',
-    invited: 'Invited',
+    invited: 'For you',
     commercial: 'Commercial',
     commercialRadius: 'Distance',
     commercialCategory: 'Category',
@@ -230,7 +230,11 @@ export const en = {
     editors: 'Event editors',
     editorsHint: 'Creator can grant full edit rights to friends. Only the creator can change this list.',
     fofHint:
-      "Attendance is open to friends of anyone who has already joined. Since you're the first participant, your friends can join first; when someone joins, their friends can join too.",
+      'Invite friends or a group (required). Anyone who joins opens the event to their friends — including your friends once you are a participant.',
+    fofNeedInviteOrGroup: 'Invite at least one friend or select a group.',
+    fofDbFix:
+      'Participants’ friends is not enabled in the database yet. Run supabase/privacy_fof.sql in Supabase SQL Editor, then try again.',
+    orSelectGroup: 'Or select a group',
     recurrence: 'Recurrence',
     recurrenceHint:
       "Set start and duration for each day. When an occurrence starts, it's removed and the next opens; chat carries over.",
@@ -254,6 +258,11 @@ export const en = {
     needInviteFriends: 'Select at least one friend to invite.',
     needPrice: 'Price is required (use 0 for free).',
     addEditors: 'Event editors',
+    finance: 'Shared expenses (Finance)',
+    financeHint:
+      'Like Tricount: track who paid, split costs, and settle balances among participants.',
+    financeOn: 'Enable Finance',
+    financeOff: 'No Finance',
   },
   finance: {
     title: 'Finance',
@@ -269,6 +278,9 @@ export const en = {
     paidBy: 'Paid by',
     paidByName: (name: string) => `Paid by ${name}`,
     splitAmong: 'Split among',
+    splitAllInvitees: 'All invitees',
+    splitAttendees: 'Attendees only',
+    splitCustom: 'Custom',
     splitN: (n: number, share: number) =>
       `Split ${n} ways · ${share.toFixed(2)} € each`,
     createExpense: 'Save expense',
@@ -291,7 +303,8 @@ export const en = {
     paidByYou: 'You paid',
     someoneElsePaid: 'Someone else paid',
     noObligations: 'No shared expenses yet.',
-    runSql: 'Run supabase/activity_finance.sql in Supabase first.',
+    runSql:
+      'Run supabase/activity_finance.sql and supabase/activity_finance_enabled.sql in Supabase first.',
     needMembers: 'Select at least one person to split with.',
     needAmount: 'Enter a valid amount.',
     needTitle: 'Enter what the expense was for.',

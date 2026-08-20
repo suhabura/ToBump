@@ -36,7 +36,7 @@ export const sl = {
     invites: 'Povabila',
     mine: 'Moji',
     all: 'Vsi',
-    invited: 'Povabljeni',
+    invited: 'Zate',
     commercial: 'Komercialni',
     commercialRadius: 'Razdalja',
     commercialCategory: 'Kategorija',
@@ -229,7 +229,11 @@ export const sl = {
     editors: 'Uredniki dogodka',
     editorsHint: 'Ustvarjalec lahko podeli pravice urejanja prijateljem. Seznam lahko spremeni samo ustvarjalec.',
     fofHint:
-      'Pridružitev je odprta prijateljem vsakogar, ki je že pridružen. Ker ste prvi udeleženec, se lahko najprej pridružijo vaši prijatelji; ko se kdo pridruži, tudi njihovi.',
+      'Povabi prijatelje ali skupino (obvezno). Vsak, ki se pridruži, odpre dogodek tudi svojim prijateljem — tudi tvojim, ker si ti udeleženec.',
+    fofNeedInviteOrGroup: 'Povabi vsaj enega prijatelja ali izberi skupino.',
+    fofDbFix:
+      'Način »Prijatelji udeležencev« še ni omogočen v bazi. V Supabase SQL Editorju zaženi supabase/privacy_fof.sql in poskusi znova.',
+    orSelectGroup: 'Ali izberi skupino',
     recurrence: 'Ponavljanje',
     recurrenceHint:
       'Nastavite začetek in trajanje za vsak dan. Ko se termin začne, se zapre in odpre naslednji; klepet se prenese.',
@@ -253,6 +257,11 @@ export const sl = {
     needInviteFriends: 'Izberite vsaj enega prijatelja za povabilo.',
     needPrice: 'Cena je obvezna (za brezplačno vnesite 0).',
     addEditors: 'Uredniki dogodka',
+    finance: 'Skupni stroški (Finance)',
+    financeHint:
+      'Kot Tricount: sledi, kdo je plačal, deli stroške in poravnaj bilance med udeleženci.',
+    financeOn: 'Vklopi Finance',
+    financeOff: 'Brez Finance',
   },
   finance: {
     title: 'Finance',
@@ -268,6 +277,9 @@ export const sl = {
     paidBy: 'Plačal',
     paidByName: (name: string) => `Plačal: ${name}`,
     splitAmong: 'Delitev med',
+    splitAllInvitees: 'Vsi povabljeni',
+    splitAttendees: 'Samo prisotni',
+    splitCustom: 'Po meri',
     splitN: (n: number, share: number) =>
       `Delitev na ${n} · ${share.toFixed(2)} € na osebo`,
     createExpense: 'Shrani strošek',
@@ -290,7 +302,8 @@ export const sl = {
     paidByYou: 'Ti si plačal',
     someoneElsePaid: 'Plačal je kdo drug',
     noObligations: 'Še ni skupnih stroškov.',
-    runSql: 'Najprej v Supabase zaženi supabase/activity_finance.sql.',
+    runSql:
+      'Najprej v Supabase zaženi supabase/activity_finance.sql in activity_finance_enabled.sql.',
     needMembers: 'Izberi vsaj eno osebo za delitev.',
     needAmount: 'Vnesi veljaven znesek.',
     needTitle: 'Vnesi, za kaj gre strošek.',

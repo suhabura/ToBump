@@ -5,7 +5,9 @@ import {
   computeBalances,
   createExpense,
   deleteExpense,
+  fetchActivityAttendeeIds,
   fetchSeriesExpenses,
+  fetchSeriesInviteeIds,
   fetchSeriesMemberProfiles,
   fetchSeriesSettlements,
   recordSettlement,
@@ -28,6 +30,7 @@ type Props = {
 };
 
 type Tab = 'balances' | 'expenses';
+type SplitPreset = 'invitees' | 'attendees' | 'custom';
 
 export function ActivityFinancePanel({ activity, userId, canManage, attendees }: Props) {
   const t = useT();
@@ -35,6 +38,9 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const [tab, setTab] = useState<Tab>('balances');
   const [expenses, setExpenses] = useState<ExpenseWithMeta[]>([]);
   const [members, setMembers] = useState<Profile[]>([]);
+  const [inviteeIds, setInviteeIds] = useState<string[]>([]);
+  const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
+  const [splitPreset, setSplitPreset] = useState<SplitPreset>('invitees');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,20 +69,51 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     [expenses]
   );
 
+  const applyPreset = useCallback(
+    (preset: SplitPreset, invitees: string[], attendeesList: string[], people: Profile[]) => {
+      setSplitPreset(preset);
+      if (preset === 'invitees') {
+        const ids = invitees.length ? invitees : people.map((p) => p.id);
+        setSelectedIds(ids);
+      } else if (preset === 'attendees') {
+        const ids = attendeesList.length ? attendeesList : people.map((p) => p.id);
+        setSelectedIds(ids);
+      }
+    },
+    []
+  );
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [exps, mems, settles] = await Promise.all([
+      const [exps, mems, settles, invites, attendeesForEvent] = await Promise.all([
         fetchSeriesExpenses(sid),
         fetchSeriesMemberProfiles(sid),
         fetchSeriesSettlements(sid),
+        fetchSeriesInviteeIds(sid),
+        fetchActivityAttendeeIds(activity.id),
       ]);
       const people = mems.length ? mems : attendees;
+      const inviteSet = invites.length
+        ? invites
+        : [
+            activity.created_by,
+            ...(activity.series_invite_user_ids ?? []),
+            ...people.map((p) => p.id),
+          ];
+      const uniqueInvites = Array.from(new Set(inviteSet));
       setExpenses(exps);
       setMembers(people);
+      setInviteeIds(uniqueInvites);
+      setAttendeeIds(attendeesForEvent);
       setSettlements(settles);
-      setSelectedIds((prev) => (prev.length ? prev : people.map((p) => p.id)));
+      setSelectedIds((prev) => {
+        if (prev.length) return prev.filter((id) => people.some((p) => p.id === id));
+        return uniqueInvites.filter((id) => people.some((p) => p.id === id)).length
+          ? uniqueInvites.filter((id) => people.some((p) => p.id === id))
+          : people.map((p) => p.id);
+      });
       if (!people.some((p) => p.id === paidBy)) {
         setPaidBy(userId);
       }
@@ -86,7 +123,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     } finally {
       setLoading(false);
     }
-  }, [sid, attendees, userId, paidBy, t.common.error, t.finance.runSql]);
+  }, [sid, activity.id, activity.created_by, activity.series_invite_user_ids, attendees, userId, paidBy, t.common.error, t.finance.runSql]);
 
   useEffect(() => {
     load();
@@ -117,7 +154,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         seriesId: sid,
         title: title.trim(),
         amount: n,
-        splitMode: 'selected',
+        splitMode: splitPreset === 'attendees' ? 'equal_attendees' : splitPreset === 'invitees' ? 'equal_all' : 'selected',
         memberIds: selectedIds,
         paidBy,
         activityId: activity.id,
@@ -207,6 +244,23 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
           </View>
           <Muted>{t.finance.splitAmong}</Muted>
           <View style={styles.rowWrap}>
+            <Chip
+              label={t.finance.splitAllInvitees}
+              active={splitPreset === 'invitees'}
+              onPress={() => applyPreset('invitees', inviteeIds, attendeeIds, members)}
+            />
+            <Chip
+              label={t.finance.splitAttendees}
+              active={splitPreset === 'attendees'}
+              onPress={() => applyPreset('attendees', inviteeIds, attendeeIds, members)}
+            />
+            <Chip
+              label={t.finance.splitCustom}
+              active={splitPreset === 'custom'}
+              onPress={() => setSplitPreset('custom')}
+            />
+          </View>
+          <View style={styles.rowWrap}>
             {members.map((m) => {
               const on = selectedIds.includes(m.id);
               return (
@@ -214,11 +268,12 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
                   key={m.id}
                   label={displayName(m)}
                   active={on}
-                  onPress={() =>
+                  onPress={() => {
+                    setSplitPreset('custom');
                     setSelectedIds((prev) =>
                       on ? prev.filter((id) => id !== m.id) : [...prev, m.id]
-                    )
-                  }
+                    );
+                  }}
                 />
               );
             })}
