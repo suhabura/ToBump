@@ -150,6 +150,10 @@ export default function TabLayout() {
       <Tabs.Screen name="shop" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="groups" options={{ href: null, title: 'Groups', presentation: 'modal' }} />
       <Tabs.Screen
+        name="payments"
+        options={{ href: null, title: t.finance.myPayments, presentation: 'modal' }}
+      />
+      <Tabs.Screen
         name="notifications"
         options={{ href: null, title: t.notifications.title, presentation: 'modal' }}
       />

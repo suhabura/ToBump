@@ -1,6 +1,7 @@
 import * as ImagePicker from 'expo-image-picker';
 import { useEffect, useState } from 'react';
 import { Alert, Image, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
+import { useRouter } from 'expo-router';
 import { Button, Chip, Input, Muted, Screen, Subtitle, Title } from '@/components/ui';
 import { LocationField } from '@/components/LocationField';
 import { useAuth } from '@/contexts/AuthContext';
@@ -12,6 +13,7 @@ export default function ProfileScreen() {
   const t = useT();
   const { locale, setLocale } = useLocale();
   const { profile, settings, updateProfile, updateSettings, signOut, user, refreshProfile } = useAuth();
+  const router = useRouter();
   const [firstName, setFirstName] = useState(profile?.first_name ?? '');
   const [lastName, setLastName] = useState(profile?.last_name ?? '');
   const [location, setLocation] = useState(profile?.location ?? '');
@@ -156,6 +158,13 @@ export default function ProfileScreen() {
           label={t.profile.notifyInvites}
           value={settings?.notify_invite ?? true}
           onChange={(v) => updateSettings({ notify_invite: v })}
+        />
+
+        <View style={{ height: 16 }} />
+        <Button
+          label={t.finance.myPayments}
+          variant="secondary"
+          onPress={() => router.push('/payments')}
         />
 
         <View style={{ height: 16 }} />

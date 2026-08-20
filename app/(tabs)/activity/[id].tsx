@@ -4,7 +4,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { Button, EmptyState, Loading, Muted, Screen, Subtitle, Title } from '@/components/ui';
+import { Button, Chip, EmptyState, Loading, Muted, Screen, Subtitle, Title } from '@/components/ui';
+import { ActivityFinancePanel } from '@/components/ActivityFinancePanel';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   deleteActivity,
@@ -34,6 +35,7 @@ export default function ActivityDetailScreen() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [tab, setTab] = useState<'details' | 'finance'>('details');
 
   const load = useCallback(async () => {
     if (!user || !id) return;
@@ -176,6 +178,31 @@ export default function ActivityDetailScreen() {
         <Title>
           {categoryLabel(activity.categories) ?? `${activity.title} (${t.events.uncategorized})`}
         </Title>
+
+        {activity.is_recurring ? (
+          <View style={styles.tabRow}>
+            <Chip
+              label={t.finance.details}
+              active={tab === 'details'}
+              onPress={() => setTab('details')}
+            />
+            <Chip
+              label={t.finance.tab}
+              active={tab === 'finance'}
+              onPress={() => setTab('finance')}
+            />
+          </View>
+        ) : null}
+
+        {tab === 'finance' && activity.is_recurring && user ? (
+          <ActivityFinancePanel
+            activity={activity}
+            userId={user.id}
+            canManage={isOwner || canEdit}
+            attendees={participants}
+          />
+        ) : (
+          <>
         <Muted>
           {format(new Date(activity.starts_at), 'EEEE, d MMMM yyyy · HH:mm', { locale: enUS })}
           {activity.ends_at
@@ -296,6 +323,8 @@ export default function ActivityDetailScreen() {
             </Text>
           ))}
         </View>
+          </>
+        )}
       </ScrollView>
 
       <Modal visible={deleteOpen} transparent animationType="fade" onRequestClose={() => setDeleteOpen(false)}>
@@ -350,6 +379,13 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     fontWeight: '600',
     marginTop: 4,
+  },
+  tabRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 12,
   },
   deleteBackdrop: {
     flex: 1,

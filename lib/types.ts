@@ -1,5 +1,56 @@
 export type Privacy = 'invite' | 'friends' | 'group' | 'friends_of_friends';
 export type FriendshipStatus = 'pending' | 'accepted' | 'rejected';
+
+export type FundingMode = 'per_event' | 'monthly' | 'annual';
+export type ExpenseType = 'per_event' | 'monthly' | 'annual' | 'manual';
+export type SplitMode = 'equal_all' | 'equal_attendees' | 'selected';
+export type ObligationStatus = 'unpaid' | 'partial' | 'paid' | 'waived';
+
+export type SeriesFinanceSettings = {
+  series_id: string;
+  funding_mode: FundingMode;
+  amount: number;
+  currency: string;
+  updated_by: string | null;
+  updated_at: string;
+  created_at: string;
+};
+
+export type ActivityExpense = {
+  id: string;
+  series_id: string;
+  activity_id: string | null;
+  expense_type: ExpenseType;
+  title: string;
+  amount: number;
+  period_key: string | null;
+  split_mode: SplitMode;
+  created_by: string;
+  created_at: string;
+};
+
+export type ActivityObligation = {
+  id: string;
+  expense_id: string;
+  series_id: string;
+  user_id: string;
+  amount_due: number;
+  amount_paid: number;
+  status: ObligationStatus;
+  due_date: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ActivityPayment = {
+  id: string;
+  obligation_id: string;
+  amount: number;
+  note: string | null;
+  recorded_by: string;
+  created_at: string;
+};
 export type ActivityStatus = 'active' | 'cancelled' | 'completed';
 
 export type FriendGroup = {
