@@ -5,7 +5,7 @@ import { useCallback, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import { EmptyState, Loading, Muted, Screen, Subtitle, Title } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
-import { fetchMyFinance, obligationOpenAmount, type PersonalFinance } from '@/lib/finance';
+import { fetchMyFinance, type PersonalFinance } from '@/lib/finance';
 import { useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
@@ -27,7 +27,7 @@ export default function MyPaymentsScreen() {
       setData(await fetchMyFinance(user.id));
     } catch (e) {
       const msg = e instanceof Error ? e.message : t.common.error;
-      setError(/relation|does not exist|function/i.test(msg) ? t.finance.runSql : msg);
+      setError(/relation|does not exist|function|column/i.test(msg) ? t.finance.runSql : msg);
       setData(null);
     } finally {
       setLoading(false);
@@ -50,50 +50,33 @@ export default function MyPaymentsScreen() {
       {data ? (
         <View style={styles.summary}>
           <View style={styles.card}>
-            <Muted>{t.finance.paidThisYear}</Muted>
-            <Text style={styles.value}>{data.paidThisYear.toFixed(2)} €</Text>
+            <Muted>{t.finance.youOweTotal}</Muted>
+            <Text style={[styles.value, styles.negative]}>{data.youOwe.toFixed(2)} €</Text>
           </View>
           <View style={styles.card}>
-            <Muted>{t.finance.openObligations}</Muted>
-            <Text style={styles.value}>{data.openAmount.toFixed(2)} €</Text>
+            <Muted>{t.finance.youAreOwedTotal}</Muted>
+            <Text style={[styles.value, styles.positive]}>{data.youAreOwed.toFixed(2)} €</Text>
           </View>
           <View style={styles.card}>
-            <Muted>{t.finance.nextDue}</Muted>
-            <Text style={styles.value}>
-              {data.nextDueDate
-                ? format(new Date(`${data.nextDueDate}T12:00:00`), 'd MMM yyyy', { locale: dfLocale })
-                : '—'}
-            </Text>
+            <Muted>{t.finance.involved}</Muted>
+            <Text style={styles.value}>{data.expensesInvolved}</Text>
           </View>
         </View>
       ) : null}
 
-      <Subtitle>{t.finance.open}</Subtitle>
-      {!data?.obligations.length ? <EmptyState title={t.finance.noObligations} /> : null}
-      {data?.obligations.map((o) => {
-        const open = obligationOpenAmount(o);
-        if (open <= 0.001 && o.status !== 'waived') return null;
-        return (
-          <View key={o.id} style={styles.row}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.name}>{o.activity_expenses?.title ?? '—'}</Text>
-              <Muted>
-                {open.toFixed(2)} € ·{' '}
-                {o.status === 'waived'
-                  ? t.finance.statusWaived
-                  : o.status === 'partial'
-                    ? t.finance.statusPartial
-                    : o.status === 'paid'
-                      ? t.finance.statusPaid
-                      : t.finance.statusUnpaid}
-                {o.due_date
-                  ? ` · ${format(new Date(`${o.due_date}T12:00:00`), 'd MMM yyyy', { locale: dfLocale })}`
-                  : ''}
-              </Muted>
-            </View>
+      <Subtitle>{t.finance.recent}</Subtitle>
+      {!data?.recent.length ? <EmptyState title={t.finance.noObligations} /> : null}
+      {data?.recent.map((e, idx) => (
+        <View key={`${e.seriesId}-${e.createdAt}-${idx}`} style={styles.row}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.name}>{e.title}</Text>
+            <Muted>
+              {e.amount.toFixed(2)} € · {e.paidByYou ? t.finance.paidByYou : t.finance.someoneElsePaid}
+              {` · ${format(new Date(e.createdAt), 'd MMM yyyy', { locale: dfLocale })}`}
+            </Muted>
           </View>
-        );
-      })}
+        </View>
+      ))}
 
       <Text style={styles.back} onPress={() => router.back()}>
         {t.common.cancel}
@@ -112,6 +95,8 @@ const styles = StyleSheet.create({
     padding: theme.space.md,
   },
   value: { fontSize: 20, fontWeight: '800', color: theme.colors.text, marginTop: 4 },
+  positive: { color: theme.colors.success },
+  negative: { color: theme.colors.danger },
   row: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
@@ -121,6 +106,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   name: { fontWeight: '700', color: theme.colors.text },
-  error: { color: theme.colors.danger, fontWeight: '600', marginVertical: 8 },
   back: { marginTop: 16, color: theme.colors.primary, fontWeight: '700' },
+  error: { color: theme.colors.danger, fontWeight: '600', marginBottom: 8 },
 });

@@ -25,6 +25,18 @@ export type ActivityExpense = {
   amount: number;
   period_key: string | null;
   split_mode: SplitMode;
+  paid_by: string | null;
+  created_by: string;
+  created_at: string;
+};
+
+export type ActivitySettlement = {
+  id: string;
+  series_id: string;
+  from_user_id: string;
+  to_user_id: string;
+  amount: number;
+  note: string | null;
   created_by: string;
   created_at: string;
 };

@@ -179,22 +179,20 @@ export default function ActivityDetailScreen() {
           {categoryLabel(activity.categories) ?? `${activity.title} (${t.events.uncategorized})`}
         </Title>
 
-        {activity.is_recurring ? (
-          <View style={styles.tabRow}>
-            <Chip
-              label={t.finance.details}
-              active={tab === 'details'}
-              onPress={() => setTab('details')}
-            />
-            <Chip
-              label={t.finance.tab}
-              active={tab === 'finance'}
-              onPress={() => setTab('finance')}
-            />
-          </View>
-        ) : null}
+        <View style={styles.tabRow}>
+          <Chip
+            label={t.finance.details}
+            active={tab === 'details'}
+            onPress={() => setTab('details')}
+          />
+          <Chip
+            label={t.finance.tab}
+            active={tab === 'finance'}
+            onPress={() => setTab('finance')}
+          />
+        </View>
 
-        {tab === 'finance' && activity.is_recurring && user ? (
+        {tab === 'finance' && user ? (
           <ActivityFinancePanel
             activity={activity}
             userId={user.id}
