@@ -16,6 +16,7 @@ import {
   userCanEditActivity,
   type DeleteActivityMode,
 } from '@/lib/api';
+import { fetchActivityGuests, removeGuestAttendance, type GuestAttendanceWithGuest } from '@/lib/guests';
 import { formatRecurrence, hydrateRules, rulesFromLegacy } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations, Profile } from '@/lib/types';
@@ -30,6 +31,7 @@ export default function ActivityDetailScreen() {
   const router = useRouter();
   const [activity, setActivity] = useState<ActivityWithRelations | null>(null);
   const [participants, setParticipants] = useState<Profile[]>([]);
+  const [guests, setGuests] = useState<GuestAttendanceWithGuest[]>([]);
   const [joined, setJoined] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -109,6 +111,12 @@ export default function ActivityDetailScreen() {
       const { data: people } = await supabase.from('profiles').select('*').in('id', ids);
       setParticipants((people as Profile[]) ?? []);
     } else setParticipants([]);
+
+    try {
+      setGuests(await fetchActivityGuests(id));
+    } catch {
+      setGuests([]);
+    }
     setLoading(false);
   }, [id, user?.id, router]);
 
@@ -170,8 +178,18 @@ export default function ActivityDetailScreen() {
   }
 
   const isOwner = user?.id === activity.created_by;
+  const participantCount = participants.length + guests.length;
   const full =
-    activity.max_participants != null && participants.length >= activity.max_participants;
+    activity.max_participants != null && participantCount >= activity.max_participants;
+
+  async function onRemoveGuest(attendanceId: string) {
+    try {
+      await removeGuestAttendance(attendanceId);
+      await load();
+    } catch (e) {
+      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    }
+  }
 
   return (
     <Screen>
@@ -280,7 +298,7 @@ export default function ActivityDetailScreen() {
           {activity.price && Number(activity.price) > 0 ? `${activity.price} €` : t.common.free}
         </Muted>
         <Muted>
-          {t.events.participants}: {participants.length}
+          {t.events.participants}: {participantCount}
           {activity.max_participants ? ` / ${activity.max_participants}` : ''}
         </Muted>
 
@@ -341,11 +359,28 @@ export default function ActivityDetailScreen() {
               {displayName(p)}
             </Text>
           ))}
+          {guests.map((g) => {
+            const gName = g.activity_guests?.name ?? '—';
+            return (
+              <View key={g.id} style={styles.guestRow}>
+                <Text style={styles.guestName}>
+                  {gName}{' '}
+                  <Text style={styles.guestTag}>({t.guests.guest})</Text>
+                </Text>
+                {isOwner || canEdit ? (
+                  <Pressable onPress={() => onRemoveGuest(g.id)}>
+                    <Text style={styles.guestRemove}>{t.guests.remove}</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            );
+          })}
         </View>
 
         <ActivityGuestsPanel
           activity={activity}
           canManage={isOwner || canEdit}
+          guestsOnEvent={guests}
           onChanged={load}
         />
           </>
@@ -399,6 +434,28 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
     color: theme.colors.text,
+  },
+  guestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  guestName: {
+    flex: 1,
+    color: theme.colors.text,
+  },
+  guestTag: {
+    color: theme.colors.textMuted,
+    fontWeight: '600',
+  },
+  guestRemove: {
+    color: theme.colors.danger,
+    fontWeight: '600',
+    fontSize: 13,
   },
   mapsLink: {
     color: theme.colors.primary,

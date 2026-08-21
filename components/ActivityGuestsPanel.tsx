@@ -1,11 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import { Button, Chip, Input, Muted, Subtitle } from '@/components/ui';
 import {
   addGuestToActivity,
-  fetchActivityGuests,
   fetchSeriesGuests,
-  removeGuestAttendance,
   type GuestAttendanceWithGuest,
   type SeriesGuestWithStats,
 } from '@/lib/guests';
@@ -17,15 +15,14 @@ import { theme } from '@/constants/theme';
 type Props = {
   activity: ActivityWithRelations;
   canManage: boolean;
+  guestsOnEvent?: GuestAttendanceWithGuest[];
   onChanged?: () => void;
 };
 
-export function ActivityGuestsPanel({ activity, canManage, onChanged }: Props) {
+export function ActivityGuestsPanel({ activity, canManage, guestsOnEvent = [], onChanged }: Props) {
   const t = useT();
   const sid = seriesKey(activity);
-  const [attendances, setAttendances] = useState<GuestAttendanceWithGuest[]>([]);
   const [seriesGuests, setSeriesGuests] = useState<SeriesGuestWithStats[]>([]);
-  const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showAdd, setShowAdd] = useState(false);
   const [name, setName] = useState('');
@@ -34,28 +31,22 @@ export function ActivityGuestsPanel({ activity, canManage, onChanged }: Props) {
   const [feeTreatment, setFeeTreatment] = useState<GuestFeeTreatment>('split_all');
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const hereIds = new Set(guestsOnEvent.map((a) => a.guest_id));
+
+  const loadSeries = useCallback(async () => {
     setError(null);
     try {
-      const [atts, series] = await Promise.all([
-        fetchActivityGuests(activity.id),
-        fetchSeriesGuests(sid),
-      ]);
-      setAttendances(atts);
-      const here = new Set(atts.map((a) => a.guest_id));
-      setSeriesGuests(series.map((g) => ({ ...g, attended_this: here.has(g.id) })));
+      const series = await fetchSeriesGuests(sid);
+      setSeriesGuests(series.map((g) => ({ ...g, attended_this: hereIds.has(g.id) })));
     } catch (e) {
       const msg = e instanceof Error ? e.message : t.common.error;
       setError(/relation|does not exist|function/i.test(msg) ? t.guests.runSql : msg);
-    } finally {
-      setLoading(false);
     }
-  }, [activity.id, sid, t.common.error, t.guests.runSql]);
+  }, [sid, t.common.error, t.guests.runSql, guestsOnEvent]);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    if (canManage) void loadSeries();
+  }, [canManage, loadSeries]);
 
   async function submitGuest(guestName: string) {
     const n = guestName.trim();
@@ -89,7 +80,6 @@ export function ActivityGuestsPanel({ activity, canManage, onChanged }: Props) {
       setAmount('');
       setIsFree(true);
       setShowAdd(false);
-      await load();
       onChanged?.();
     } catch (e) {
       const msg = e instanceof Error ? e.message : t.common.error;
@@ -102,64 +92,22 @@ export function ActivityGuestsPanel({ activity, canManage, onChanged }: Props) {
     }
   }
 
-  async function onRemove(attendanceId: string) {
-    setBusy(true);
-    try {
-      await removeGuestAttendance(attendanceId);
-      await load();
-      onChanged?.();
-    } catch (e) {
-      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (loading) return <Muted>{t.common.loading}</Muted>;
+  if (!canManage) return null;
   if (error) return <Text style={styles.error}>{error}</Text>;
 
   const knownNotHere = seriesGuests.filter((g) => !g.attended_this);
 
   return (
-    <View style={{ gap: 10, marginTop: 8 }}>
+    <View style={{ gap: 10, marginTop: 16 }}>
       <View style={styles.headerRow}>
         <Subtitle>{t.guests.title}</Subtitle>
-        {canManage ? (
-          <Text style={styles.link} onPress={() => setShowAdd((v) => !v)}>
-            {showAdd ? t.common.cancel : t.guests.add}
-          </Text>
-        ) : null}
+        <Text style={styles.link} onPress={() => setShowAdd((v) => !v)}>
+          {showAdd ? t.common.cancel : t.guests.add}
+        </Text>
       </View>
       <Muted>{t.guests.hint}</Muted>
 
-      {attendances.length === 0 ? <Muted>{t.guests.empty}</Muted> : null}
-      {attendances.map((a) => {
-        const gName = a.activity_guests?.name ?? '—';
-        return (
-          <View key={a.id} style={styles.row}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.name}>
-                {gName} <Text style={styles.guestTag}>({t.guests.guest})</Text>
-              </Text>
-              <Muted>
-                {a.is_free
-                  ? t.guests.free
-                  : t.guests.pays(Number(a.amount))}
-                {!a.is_free && a.fee_treatment === 'split_all'
-                  ? ` · ${t.guests.splitAll}`
-                  : ''}
-              </Muted>
-            </View>
-            {canManage ? (
-              <Pressable onPress={() => onRemove(a.id)} disabled={busy}>
-                <Text style={styles.remove}>{t.guests.remove}</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        );
-      })}
-
-      {canManage && knownNotHere.length > 0 ? (
+      {knownNotHere.length > 0 ? (
         <View style={{ gap: 6 }}>
           <Muted>{t.guests.seriesGuests}</Muted>
           <View style={styles.chipRow}>
@@ -177,7 +125,7 @@ export function ActivityGuestsPanel({ activity, canManage, onChanged }: Props) {
         </View>
       ) : null}
 
-      {canManage && showAdd ? (
+      {showAdd ? (
         <View style={styles.form}>
           <Input label={t.guests.name} value={name} onChangeText={setName} placeholder={t.guests.nameHint} />
           <Muted>{t.guests.payment}</Muted>
@@ -193,7 +141,7 @@ export function ActivityGuestsPanel({ activity, canManage, onChanged }: Props) {
                 onChangeText={setAmount}
                 keyboardType="decimal-pad"
               />
-              {(activity.is_recurring || activity.finance_enabled) ? (
+              {activity.is_recurring || activity.finance_enabled ? (
                 <>
                   <Muted>{t.guests.feeMeaning}</Muted>
                   <View style={styles.chipRow}>
@@ -227,19 +175,6 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   link: { color: theme.colors.primary, fontWeight: '700' },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.sm,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    padding: 12,
-  },
-  name: { fontWeight: '700', color: theme.colors.text, fontSize: 15 },
-  guestTag: { fontWeight: '600', color: theme.colors.textMuted, fontSize: 13 },
-  remove: { color: theme.colors.danger, fontWeight: '600', fontSize: 13 },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   form: {
     gap: 8,
