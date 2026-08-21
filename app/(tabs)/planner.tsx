@@ -123,14 +123,16 @@ export default function PlannerScreen() {
                 {location ? <Muted>{t.events.location}: {location}</Muted> : null}
               </Pressable>
               <View style={styles.actions}>
-                {item.chat_enabled ? (
+                <View style={{ flex: 1 }}>
                   <Button
-                    label={t.events.openChat}
+                    label={t.events.chat}
                     variant="secondary"
                     onPress={() => router.push(`/chat/${item.id}`)}
                   />
-                ) : null}
-                <Button label={t.events.leave} variant="ghost" onPress={() => onLeave(item.id)} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Button label={t.events.leave} variant="danger" onPress={() => onLeave(item.id)} />
+                </View>
               </View>
             </View>
           );

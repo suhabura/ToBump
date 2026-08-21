@@ -2,10 +2,10 @@ import { format } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
-import { fetchActivities } from '@/lib/api';
+import { fetchActivities, joinActivity, leaveActivity } from '@/lib/api';
 import { formatDistance } from '@/lib/geo';
 import type { ActivityWithRelations } from '@/lib/types';
 import { activityLocationLabel, categoryLabel, displayName } from '@/lib/types';
@@ -20,6 +20,7 @@ export default function EventsScreen() {
   const [items, setItems] = useState<ActivityWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const userId = user?.id;
 
@@ -49,6 +50,34 @@ export default function EventsScreen() {
       void load();
     }, [load])
   );
+
+  async function onJoin(item: ActivityWithRelations) {
+    if (!user) return;
+    const full = item.max_participants != null && (item.join_count ?? 0) >= item.max_participants;
+    if (full) return;
+    setBusyId(item.id);
+    try {
+      await joinActivity(item.id, user.id, item.created_by, item.title);
+      await load();
+    } catch (e) {
+      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function onLeave(item: ActivityWithRelations) {
+    if (!user) return;
+    setBusyId(item.id);
+    try {
+      await leaveActivity(item.id, user.id);
+      await load();
+    } catch (e) {
+      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    } finally {
+      setBusyId(null);
+    }
+  }
 
   if (!configured) {
     return (
@@ -87,52 +116,84 @@ export default function EventsScreen() {
           ListEmptyComponent={<EmptyState title={t.events.empty} />}
           renderItem={({ item }) => {
             const isOrganizer = item.created_by === user?.id;
+            const joined = Boolean(item.is_joined);
+            const full =
+              item.max_participants != null && (item.join_count ?? 0) >= item.max_participants;
             const location = activityLocationLabel(item);
             const priceNum = Number(item.price ?? 0);
             const cat = categoryLabel(item.categories) ?? `${item.title} (${t.events.uncategorized})`;
+            const busy = busyId === item.id;
             return (
-              <Pressable
-                style={[styles.card, isOrganizer ? styles.cardMine : null]}
-                onPress={() => router.push(`/activity/${item.id}`)}>
-                {isOrganizer ? (
-                  <View style={styles.organizerRow}>
-                    <Text style={styles.organizerBadge}>{t.events.organizing}</Text>
-                  </View>
-                ) : null}
-                <Subtitle>{cat}</Subtitle>
-                <Muted>
-                  {format(new Date(item.starts_at), 'EEE, d MMM yyyy · HH:mm', { locale: enUS })}
-                </Muted>
-                {location ? (
+              <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
+                <Pressable onPress={() => router.push(`/activity/${item.id}`)}>
+                  {isOrganizer ? (
+                    <View style={styles.organizerRow}>
+                      <Text style={styles.organizerBadge}>{t.events.organizing}</Text>
+                    </View>
+                  ) : null}
+                  <Subtitle>{cat}</Subtitle>
                   <Muted>
-                    {t.events.location}: {location}
-                    {item.distance_m != null ? ` · ${formatDistance(item.distance_m)}` : ''}
+                    {format(new Date(item.starts_at), 'EEE, d MMM yyyy · HH:mm', { locale: enUS })}
                   </Muted>
-                ) : null}
-                <Muted>
-                  {t.events.price}: {priceNum > 0 ? `${priceNum} €` : t.common.free}
-                  {isOrganizer ? null : ` · ${displayName(item.profiles)}`}
-                </Muted>
-                <View style={styles.meta}>
-                  {!isOrganizer && item.is_invited ? (
-                    <Text style={[styles.badge, styles.invited]}>{t.events.invitedBadge}</Text>
+                  {location ? (
+                    <Muted>
+                      {t.events.location}: {location}
+                      {item.distance_m != null ? ` · ${formatDistance(item.distance_m)}` : ''}
+                    </Muted>
                   ) : null}
-                  {!isOrganizer && item.is_open_to_you && !item.is_invited ? (
-                    <Text style={[styles.badge, styles.friend]}>{t.events.openToYou}</Text>
-                  ) : null}
-                  {!isOrganizer && item.is_from_friend && !item.is_invited && !item.is_open_to_you ? (
-                    <Text style={[styles.badge, styles.friend]}>{t.events.friend}</Text>
-                  ) : null}
-                  <Text style={styles.badge}>
-                    {item.join_count ?? 0}
-                    {item.max_participants ? `/${item.max_participants}` : ''}{' '}
-                    {t.events.participants.toLowerCase()}
-                  </Text>
-                  {item.is_joined && !isOrganizer ? (
-                    <Text style={[styles.badge, styles.joined]}>{t.events.joined}</Text>
-                  ) : null}
+                  <Muted>
+                    {t.events.price}: {priceNum > 0 ? `${priceNum} €` : t.common.free}
+                    {isOrganizer ? null : ` · ${displayName(item.profiles)}`}
+                  </Muted>
+                  <View style={styles.meta}>
+                    {!isOrganizer && item.is_invited ? (
+                      <Text style={[styles.badge, styles.invited]}>{t.events.invitedBadge}</Text>
+                    ) : null}
+                    {!isOrganizer && item.is_open_to_you && !item.is_invited ? (
+                      <Text style={[styles.badge, styles.friend]}>{t.events.openToYou}</Text>
+                    ) : null}
+                    {!isOrganizer && item.is_from_friend && !item.is_invited && !item.is_open_to_you ? (
+                      <Text style={[styles.badge, styles.friend]}>{t.events.friend}</Text>
+                    ) : null}
+                    <Text style={styles.badge}>
+                      {item.join_count ?? 0}
+                      {item.max_participants ? `/${item.max_participants}` : ''}{' '}
+                      {t.events.participants.toLowerCase()}
+                    </Text>
+                  </View>
+                </Pressable>
+
+                <View style={styles.actions}>
+                  {joined ? (
+                    <>
+                      <View style={styles.actionFlex}>
+                        <Button
+                          label={t.events.chat}
+                          variant="secondary"
+                          onPress={() => router.push(`/chat/${item.id}`)}
+                        />
+                      </View>
+                      <View style={styles.actionFlex}>
+                        <Button
+                          label={t.events.leave}
+                          variant="danger"
+                          loading={busy}
+                          onPress={() => onLeave(item)}
+                        />
+                      </View>
+                    </>
+                  ) : (
+                    <View style={styles.actionFlex}>
+                      <Button
+                        label={full ? t.events.full : t.events.join}
+                        disabled={full}
+                        loading={busy}
+                        onPress={() => onJoin(item)}
+                      />
+                    </View>
+                  )}
                 </View>
-              </Pressable>
+              </View>
             );
           }}
         />
@@ -182,7 +243,8 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-  joined: { backgroundColor: '#DCFCE7', color: theme.colors.success },
   invited: { backgroundColor: '#FEF3C7', color: '#92400E' },
   friend: { backgroundColor: '#DBEAFE', color: '#1E40AF' },
+  actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  actionFlex: { flex: 1 },
 });

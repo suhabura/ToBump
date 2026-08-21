@@ -285,7 +285,18 @@ export default function ActivityDetailScreen() {
 
         <View style={{ marginTop: 16, gap: 8 }}>
           {joined ? (
-            <Button label={t.events.leave} variant="secondary" onPress={onLeave} />
+            <View style={styles.actionRow}>
+              <View style={styles.actionFlex}>
+                <Button
+                  label={t.events.chat}
+                  variant="secondary"
+                  onPress={() => router.push(`/chat/${activity.id}`)}
+                />
+              </View>
+              <View style={styles.actionFlex}>
+                <Button label={t.events.leave} variant="danger" onPress={onLeave} />
+              </View>
+            </View>
           ) : (
             <Button
               label={full ? t.events.full : t.events.join}
@@ -293,13 +304,6 @@ export default function ActivityDetailScreen() {
               disabled={full}
             />
           )}
-          {(joined || isOwner || canEdit) && activity.chat_enabled ? (
-            <Button
-              label={t.events.openChat}
-              variant="secondary"
-              onPress={() => router.push(`/chat/${activity.id}`)}
-            />
-          ) : null}
           {canEdit ? (
             <Button
               label={t.events.edit}
@@ -409,4 +413,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontWeight: '600',
   },
+  actionRow: { flexDirection: 'row', gap: 8 },
+  actionFlex: { flex: 1 },
 });

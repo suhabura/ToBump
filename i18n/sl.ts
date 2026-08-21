@@ -81,6 +81,7 @@ export const sl = {
     recurring: 'Ponavljajoče',
     once: 'Enkratno',
     chat: 'Klepet',
+    chat: 'Klepet',
     openChat: 'Odpri klepet',
     location: 'Lokacija',
     locationUnset: 'Lokacija: ni nastavljena',
