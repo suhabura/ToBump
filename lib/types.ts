@@ -311,14 +311,12 @@ export function displayName(p?: Pick<Profile, 'first_name' | 'last_name'> | null
 
 import { categoryDisplayName } from '@/i18n/runtime';
 
-/** Display "Sport · Football" in the active UI language */
+/** Display subcategory only (e.g. "Running"), not "Sport · Running". */
 export function categoryLabel(
   c?: Pick<Category, 'name'> & { parent?: Pick<Category, 'name'> | null } | null
 ): string | null {
   if (!c?.name) return null;
-  const sub = categoryDisplayName(c.name);
-  if (c.parent?.name) return `${categoryDisplayName(c.parent.name)} · ${sub}`;
-  return sub;
+  return categoryDisplayName(c.name);
 }
 
 /** Prizorišče / lokacija za izpis dogodka */
