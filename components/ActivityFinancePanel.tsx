@@ -3,6 +3,7 @@ import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button, Chip, Input, Muted, Subtitle } from '@/components/ui';
 import {
   computeBalances,
+  computeBudget,
   createExpense,
   deleteExpense,
   ensureFundingExpenses,
@@ -12,6 +13,7 @@ import {
   fetchSeriesInviteeIds,
   fetchSeriesMemberProfiles,
   fetchSeriesSettlements,
+  isActualExpense,
   recordSettlement,
   seriesKey,
   suggestTransfers,
@@ -34,6 +36,8 @@ type Props = {
 
 type Tab = 'balances' | 'expenses';
 type SplitPreset = 'invitees' | 'attendees' | 'custom';
+/** Person id, or special token for budget pot. */
+type PayerChoice = string | 'budget';
 
 export function ActivityFinancePanel({ activity, userId, canManage, attendees }: Props) {
   const t = useT();
@@ -60,7 +64,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const [showAdd, setShowAdd] = useState(false);
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState(userId);
+  const [paidBy, setPaidBy] = useState<PayerChoice>(userId);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const profilesById = useMemo(() => {
@@ -76,9 +80,11 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     [expenses, settlements, profilesById]
   );
   const transfers = useMemo(() => suggestTransfers(balances), [balances]);
+  const budget = useMemo(() => computeBudget(expenses), [expenses]);
+  const actualExpenses = useMemo(() => expenses.filter(isActualExpense), [expenses]);
   const totalSpent = useMemo(
-    () => expenses.reduce((s, e) => s + (Number(e.amount) || 0), 0),
-    [expenses]
+    () => actualExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0),
+    [actualExpenses]
   );
 
   const applyPreset = useCallback(
@@ -194,6 +200,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
 
   async function onAddExpense() {
     const n = Number(amount.replace(',', '.'));
+    const fromBudget = paidBy === 'budget';
     if (!title.trim()) {
       Alert.alert(t.common.error, t.finance.needTitle);
       return;
@@ -202,7 +209,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       Alert.alert(t.common.error, t.finance.needAmount);
       return;
     }
-    if (!selectedIds.length) {
+    if (!fromBudget && !selectedIds.length) {
       Alert.alert(t.common.error, t.finance.needMembers);
       return;
     }
@@ -216,9 +223,19 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         seriesId: sid,
         title: title.trim(),
         amount: n,
-        splitMode: splitPreset === 'attendees' ? 'equal_attendees' : splitPreset === 'invitees' ? 'equal_all' : 'selected',
-        memberIds: selectedIds,
-        paidBy,
+        splitMode:
+          splitPreset === 'attendees'
+            ? 'equal_attendees'
+            : splitPreset === 'invitees'
+              ? 'equal_all'
+              : 'selected',
+        memberIds: fromBudget
+          ? selectedIds.length
+            ? selectedIds
+            : [activity.created_by]
+          : selectedIds,
+        paidBy: fromBudget ? null : paidBy,
+        paidFromBudget: fromBudget,
         activityId: activity.id,
       });
       setTitle('');
@@ -267,8 +284,12 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   return (
     <View style={{ gap: 12 }}>
       <View style={styles.summaryRow}>
+        <SummaryCard label={t.finance.budget} value={`${budget.remaining.toFixed(2)} €`} />
         <SummaryCard label={t.finance.totalSpent} value={`${totalSpent.toFixed(2)} €`} />
-        <SummaryCard label={t.finance.expenses} value={String(expenses.length)} />
+      </View>
+      <View style={styles.summaryRow}>
+        <SummaryCard label={t.finance.budgetIn} value={`${budget.funded.toFixed(2)} €`} />
+        <SummaryCard label={t.finance.budgetOut} value={`${budget.spent.toFixed(2)} €`} />
       </View>
 
       {financeSettings && fundingMeta && Number(financeSettings.amount) > 0 ? (
@@ -292,7 +313,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
               value={`${fundingMeta.perPerson.toFixed(2)} €`}
             />
           </View>
-          <Muted>{t.finance.paysOrganizer}</Muted>
+          <Muted>{t.finance.feesToBudget}</Muted>
         </View>
       ) : null}
 
@@ -326,6 +347,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       ) : (
         <View style={styles.card}>
           <Subtitle>{t.finance.addExpense}</Subtitle>
+          <Muted>{t.finance.expenseHint}</Muted>
           <Input
             label={t.finance.expenseTitle}
             value={title}
@@ -340,6 +362,11 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
           />
           <Muted>{t.finance.paidBy}</Muted>
           <View style={styles.rowWrap}>
+            <Chip
+              label={t.finance.fromBudget}
+              active={paidBy === 'budget'}
+              onPress={() => setPaidBy('budget')}
+            />
             {members.map((m) => (
               <Chip
                 key={m.id}
@@ -349,42 +376,48 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
               />
             ))}
           </View>
-          <Muted>{t.finance.splitAmong}</Muted>
-          <View style={styles.rowWrap}>
-            <Chip
-              label={t.finance.splitAllInvitees}
-              active={splitPreset === 'invitees'}
-              onPress={() => applyPreset('invitees', inviteeIds, attendeeIds, members)}
-            />
-            <Chip
-              label={t.finance.splitAttendees}
-              active={splitPreset === 'attendees'}
-              onPress={() => applyPreset('attendees', inviteeIds, attendeeIds, members)}
-            />
-            <Chip
-              label={t.finance.splitCustom}
-              active={splitPreset === 'custom'}
-              onPress={() => setSplitPreset('custom')}
-            />
-          </View>
-          <View style={styles.rowWrap}>
-            {members.map((m) => {
-              const on = selectedIds.includes(m.id);
-              return (
+          {paidBy !== 'budget' ? (
+            <>
+              <Muted>{t.finance.splitAmong}</Muted>
+              <View style={styles.rowWrap}>
                 <Chip
-                  key={m.id}
-                  label={displayName(m)}
-                  active={on}
-                  onPress={() => {
-                    setSplitPreset('custom');
-                    setSelectedIds((prev) =>
-                      on ? prev.filter((id) => id !== m.id) : [...prev, m.id]
-                    );
-                  }}
+                  label={t.finance.splitAllInvitees}
+                  active={splitPreset === 'invitees'}
+                  onPress={() => applyPreset('invitees', inviteeIds, attendeeIds, members)}
                 />
-              );
-            })}
-          </View>
+                <Chip
+                  label={t.finance.splitAttendees}
+                  active={splitPreset === 'attendees'}
+                  onPress={() => applyPreset('attendees', inviteeIds, attendeeIds, members)}
+                />
+                <Chip
+                  label={t.finance.splitCustom}
+                  active={splitPreset === 'custom'}
+                  onPress={() => setSplitPreset('custom')}
+                />
+              </View>
+              <View style={styles.rowWrap}>
+                {members.map((m) => {
+                  const on = selectedIds.includes(m.id);
+                  return (
+                    <Chip
+                      key={m.id}
+                      label={displayName(m)}
+                      active={on}
+                      onPress={() => {
+                        setSplitPreset('custom');
+                        setSelectedIds((prev) =>
+                          on ? prev.filter((id) => id !== m.id) : [...prev, m.id]
+                        );
+                      }}
+                    />
+                  );
+                })}
+              </View>
+            </>
+          ) : (
+            <Muted>{t.finance.fromBudgetHint}</Muted>
+          )}
           <Button label={t.finance.createExpense} onPress={onAddExpense} loading={busy} />
           <Text style={[styles.link, { marginTop: 4 }]} onPress={() => setShowAdd(false)}>
             {t.common.cancel}
@@ -403,7 +436,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         />
       ) : (
         <ExpensesView
-          expenses={expenses}
+          expenses={actualExpenses}
           userId={userId}
           canManage={canManage}
           busy={busy}
@@ -499,7 +532,8 @@ function ExpensesView({
     <View style={{ gap: 8 }}>
       <Subtitle>{t.finance.expenses}</Subtitle>
       {expenses.map((e) => {
-        const payerName = displayName(e.payer ?? null);
+        const fromBudget = Boolean(e.paid_from_budget);
+        const payerName = fromBudget ? t.finance.fromBudget : displayName(e.payer ?? null);
         const n = (e.members ?? []).length || 1;
         const share = (Number(e.amount) || 0) / n;
         const canDelete = canManage || e.created_by === userId;
@@ -508,7 +542,9 @@ function ExpensesView({
             <Text style={styles.name}>{e.title}</Text>
             <Text style={styles.amount}>{Number(e.amount).toFixed(2)} €</Text>
             <Muted>
-              {t.finance.paidByName(payerName)} · {t.finance.splitN(n, share)}
+              {fromBudget
+                ? t.finance.paidFromBudget
+                : `${t.finance.paidByName(payerName)} · ${t.finance.splitN(n, share)}`}
             </Muted>
             {canDelete ? (
               <Pressable disabled={busy} onPress={() => onDelete(e.id)}>

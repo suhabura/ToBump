@@ -28,6 +28,8 @@ export type ActivityExpense = {
   period_key: string | null;
   split_mode: SplitMode;
   paid_by: string | null;
+  /** When true, paid from event budget pot; paid_by is null. */
+  paid_from_budget?: boolean;
   created_by: string;
   created_at: string;
 };

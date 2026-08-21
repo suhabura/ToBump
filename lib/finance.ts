@@ -151,6 +151,32 @@ export async function fetchSeriesSettlements(seriesId: string): Promise<Settleme
   }));
 }
 
+/** Funding fee expenses (participant contributions into the budget pot). */
+export function isFundingExpense(e: Pick<ActivityExpense, 'period_key'>): boolean {
+  const key = e.period_key ?? '';
+  return key === 'fixed' || key.startsWith('event:') || key.startsWith('month:');
+}
+
+/** Actual costs (not participant fee contributions). */
+export function isActualExpense(e: Pick<ActivityExpense, 'period_key'>): boolean {
+  return !isFundingExpense(e);
+}
+
+export function computeBudget(expenses: ExpenseWithMeta[]): {
+  funded: number;
+  spent: number;
+  remaining: number;
+} {
+  let funded = 0;
+  let spent = 0;
+  for (const e of expenses) {
+    const amount = Number(e.amount) || 0;
+    if (isFundingExpense(e)) funded = round2(funded + amount);
+    else if (e.paid_from_budget) spent = round2(spent + amount);
+  }
+  return { funded, spent, remaining: round2(funded - spent) };
+}
+
 /** Positive = owed money; negative = owes money. */
 export type PersonBalance = {
   userId: string;
@@ -178,6 +204,8 @@ export function computeBalances(
   };
 
   for (const e of expenses) {
+    // Paid from budget pot — no person-to-person debt
+    if (e.paid_from_budget) continue;
     const amount = Number(e.amount) || 0;
     const payer = e.paid_by ?? e.created_by;
     const memberIds = (e.members ?? []).map((m) => m.user_id);
@@ -251,11 +279,14 @@ export async function createExpense(input: {
   amount: number;
   splitMode: SplitMode;
   memberIds: string[];
-  paidBy: string;
+  /** Person who paid; omit / null when paidFromBudget. */
+  paidBy?: string | null;
+  paidFromBudget?: boolean;
   activityId?: string | null;
   periodKey?: string | null;
   dueDate?: string | null;
 }): Promise<string> {
+  const fromBudget = Boolean(input.paidFromBudget);
   const { data, error } = await supabase.rpc('create_series_expense', {
     p_series_id: input.seriesId,
     p_expense_type: input.expenseType ?? 'manual',
@@ -266,7 +297,8 @@ export async function createExpense(input: {
     p_activity_id: input.activityId ?? null,
     p_period_key: input.periodKey ?? null,
     p_due_date: input.dueDate ?? null,
-    p_paid_by: input.paidBy,
+    p_paid_by: fromBudget ? null : input.paidBy ?? null,
+    p_paid_from_budget: fromBudget,
   });
   if (error) throw error;
   return data as string;
@@ -442,7 +474,7 @@ function monthKey(iso: string): string {
 /**
  * Create/sync funding expenses from series settings (idempotent).
  * `settings.amount` = fee **per person**. Expense total = perPerson × payers.
- * Paid by organizer; each payer owes perPerson.
+ * Fees go into the event **budget** pot (organizer collects; payers owe perPerson).
  * - per_event: one expense per occurrence
  * - monthly: one expense per calendar month
  * - fixed: one expense for the whole series
