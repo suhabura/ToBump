@@ -9,6 +9,7 @@ import {
   type TextInputProps,
   type ViewStyle,
 } from 'react-native';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { theme } from '@/constants/theme';
 
 export function Screen({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
@@ -37,46 +38,65 @@ export function Button({
   variant = 'primary',
   disabled,
   loading,
+  size = 'md',
+  icon,
 }: {
   label: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'danger' | 'dangerOutline' | 'ghost';
   disabled?: boolean;
   loading?: boolean;
+  size?: 'md' | 'sm';
+  icon?: React.ComponentProps<typeof FontAwesome>['name'];
 }) {
+  const isLight = variant === 'secondary' || variant === 'ghost' || variant === 'dangerOutline';
+  const iconColor =
+    variant === 'dangerOutline'
+      ? theme.colors.danger
+      : isLight
+        ? theme.colors.primary
+        : '#fff';
+
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.btn,
+        size === 'sm' && styles.btnSm,
         variant === 'primary' && styles.btnPrimary,
         variant === 'secondary' && styles.btnSecondary,
         variant === 'danger' && styles.btnDanger,
+        variant === 'dangerOutline' && styles.btnDangerOutline,
         variant === 'ghost' && styles.btnGhost,
         (disabled || loading) && { opacity: 0.5 },
-        pressed && { opacity: 0.85 },
+        pressed && { opacity: 0.88, transform: [{ scale: 0.985 }] },
       ]}>
       {loading ? (
-        <ActivityIndicator color={variant === 'secondary' || variant === 'ghost' ? theme.colors.primary : '#fff'} />
+        <ActivityIndicator color={iconColor} />
       ) : (
-        <Text
-          style={[
-            styles.btnText,
-            (variant === 'secondary' || variant === 'ghost') && { color: theme.colors.primary },
-            variant === 'danger' && { color: '#fff' },
-          ]}>
-          {label}
-        </Text>
+        <View style={styles.btnInner}>
+          {icon ? <FontAwesome name={icon} size={size === 'sm' ? 13 : 15} color={iconColor} /> : null}
+          <Text
+            style={[
+              styles.btnText,
+              size === 'sm' && styles.btnTextSm,
+              (variant === 'secondary' || variant === 'ghost') && { color: theme.colors.primary },
+              variant === 'dangerOutline' && { color: theme.colors.danger },
+              variant === 'danger' && { color: '#fff' },
+            ]}>
+            {label}
+          </Text>
+        </View>
       )}
     </Pressable>
   );
 }
 
-export function Input(props: TextInputProps & { label?: string; error?: string }) {
-  const { label, error, style, ...rest } = props;
+export function Input(props: TextInputProps & { label?: string; error?: string; containerStyle?: ViewStyle }) {
+  const { label, error, style, containerStyle, ...rest } = props;
   return (
-    <View style={{ marginBottom: theme.space.md }}>
+    <View style={[{ marginBottom: theme.space.md }, containerStyle]}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <TextInput
         placeholderTextColor={theme.colors.textMuted}
@@ -107,9 +127,7 @@ export function Chip({
   onPress?: () => void;
 }) {
   return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.chip, active && styles.chipActive]}>
+    <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
       <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
     </Pressable>
   );
@@ -136,18 +154,21 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     marginBottom: theme.space.md,
+    ...theme.shadow.card,
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
     color: theme.colors.text,
     marginBottom: theme.space.sm,
+    letterSpacing: -0.3,
   },
   subtitle: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 17,
+    fontWeight: '700',
     color: theme.colors.text,
     marginBottom: theme.space.xs,
+    letterSpacing: -0.2,
   },
   muted: {
     color: theme.colors.textMuted,
@@ -180,20 +201,37 @@ const styles = StyleSheet.create({
   },
   btn: {
     borderRadius: theme.radius.sm,
-    paddingVertical: 14,
+    paddingVertical: 13,
     paddingHorizontal: 16,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 48,
+  },
+  btnSm: {
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    minHeight: 42,
+  },
+  btnInner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
   btnPrimary: {
     backgroundColor: theme.colors.primary,
   },
   btnSecondary: {
     backgroundColor: theme.colors.primarySoft,
+    borderWidth: 1,
+    borderColor: theme.colors.primaryMuted,
   },
   btnDanger: {
     backgroundColor: theme.colors.danger,
+  },
+  btnDangerOutline: {
+    backgroundColor: theme.colors.dangerSoft,
+    borderWidth: 1,
+    borderColor: '#F0B4AD',
   },
   btnGhost: {
     backgroundColor: 'transparent',
@@ -201,7 +239,10 @@ const styles = StyleSheet.create({
   btnText: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 16,
+    fontSize: 15,
+  },
+  btnTextSm: {
+    fontSize: 14,
   },
   empty: {
     paddingVertical: 48,

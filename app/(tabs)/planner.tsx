@@ -127,11 +127,19 @@ export default function PlannerScreen() {
                   <Button
                     label={t.events.chat}
                     variant="secondary"
+                    size="sm"
+                    icon="comments"
                     onPress={() => router.push(`/chat/${item.id}`)}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Button label={t.events.leave} variant="danger" onPress={() => onLeave(item.id)} />
+                  <Button
+                    label={t.events.leave}
+                    variant="dangerOutline"
+                    size="sm"
+                    icon="sign-out"
+                    onPress={() => onLeave(item.id)}
+                  />
                 </View>
               </View>
             </View>
@@ -150,6 +158,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     marginBottom: theme.space.sm,
+    ...theme.shadow.card,
   },
-  actions: { marginTop: 12, gap: 8 },
+  actions: {
+    marginTop: 12,
+    flexDirection: 'row',
+    gap: 8,
+    paddingTop: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.border,
+  },
 });

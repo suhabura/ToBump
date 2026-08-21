@@ -3,6 +3,7 @@ import { enUS } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchActivities, joinActivity, leaveActivity } from '@/lib/api';
@@ -89,20 +90,21 @@ export default function EventsScreen() {
 
   return (
     <Screen style={{ paddingBottom: 0 }}>
-      <View style={styles.row}>
-        <View style={{ flex: 1 }}>
-          <Input
-            placeholder={t.events.search}
-            value={search}
-            onChangeText={setSearch}
-            onSubmitEditing={load}
-            style={{ marginBottom: 0 }}
-          />
-        </View>
+      <View style={styles.toolbar}>
+        <Input
+          placeholder={t.events.search}
+          value={search}
+          onChangeText={setSearch}
+          onSubmitEditing={load}
+          containerStyle={{ marginBottom: 0 }}
+        />
+        <Button
+          label={t.events.create}
+          icon="plus"
+          size="sm"
+          onPress={() => router.push('/activity/create')}
+        />
       </View>
-
-      <Button label={t.events.create} onPress={() => router.push('/activity/create')} />
-      <View style={{ height: 12 }} />
 
       {loading ? (
         <Loading />
@@ -112,7 +114,7 @@ export default function EventsScreen() {
         <FlatList
           data={items}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: 32 }}
+          contentContainerStyle={{ paddingBottom: 32, paddingTop: 4 }}
           ListEmptyComponent={<EmptyState title={t.events.empty} />}
           renderItem={({ item }) => {
             const isOrganizer = item.created_by === user?.id;
@@ -125,42 +127,41 @@ export default function EventsScreen() {
             const busy = busyId === item.id;
             return (
               <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
-                <Pressable onPress={() => router.push(`/activity/${item.id}`)}>
-                  {isOrganizer ? (
-                    <View style={styles.organizerRow}>
+                <Pressable onPress={() => router.push(`/activity/${item.id}`)} style={styles.cardBody}>
+                  <View style={styles.cardTop}>
+                    {isOrganizer ? (
                       <Text style={styles.organizerBadge}>{t.events.organizing}</Text>
-                    </View>
-                  ) : null}
-                  <Subtitle>{cat}</Subtitle>
-                  <Muted>
-                    {format(new Date(item.starts_at), 'EEE, d MMM yyyy · HH:mm', { locale: enUS })}
-                  </Muted>
-                  {location ? (
-                    <Muted>
-                      {t.events.location}: {location}
-                      {item.distance_m != null ? ` · ${formatDistance(item.distance_m)}` : ''}
-                    </Muted>
-                  ) : null}
-                  <Muted>
-                    {t.events.price}: {priceNum > 0 ? `${priceNum} €` : t.common.free}
-                    {isOrganizer ? null : ` · ${displayName(item.profiles)}`}
-                  </Muted>
-                  <View style={styles.meta}>
-                    {!isOrganizer && item.is_invited ? (
-                      <Text style={[styles.badge, styles.invited]}>{t.events.invitedBadge}</Text>
-                    ) : null}
-                    {!isOrganizer && item.is_open_to_you && !item.is_invited ? (
-                      <Text style={[styles.badge, styles.friend]}>{t.events.openToYou}</Text>
-                    ) : null}
-                    {!isOrganizer && item.is_from_friend && !item.is_invited && !item.is_open_to_you ? (
-                      <Text style={[styles.badge, styles.friend]}>{t.events.friend}</Text>
-                    ) : null}
-                    <Text style={styles.badge}>
+                    ) : item.is_invited ? (
+                      <Text style={[styles.tag, styles.tagInvited]}>{t.events.invitedBadge}</Text>
+                    ) : item.is_open_to_you ? (
+                      <Text style={[styles.tag, styles.tagOpen]}>{t.events.openToYou}</Text>
+                    ) : item.is_from_friend ? (
+                      <Text style={[styles.tag, styles.tagOpen]}>{t.events.friend}</Text>
+                    ) : (
+                      <View />
+                    )}
+                    <Text style={styles.count}>
+                      <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
                       {item.join_count ?? 0}
-                      {item.max_participants ? `/${item.max_participants}` : ''}{' '}
-                      {t.events.participants.toLowerCase()}
+                      {item.max_participants ? `/${item.max_participants}` : ''}
                     </Text>
                   </View>
+
+                  <Subtitle>{cat}</Subtitle>
+                  <Text style={styles.when}>
+                    {format(new Date(item.starts_at), 'EEE, d MMM · HH:mm', { locale: enUS })}
+                  </Text>
+                  {location ? (
+                    <Text style={styles.metaLine} numberOfLines={1}>
+                      <FontAwesome name="map-marker" size={12} color={theme.colors.textMuted} />{' '}
+                      {location}
+                      {item.distance_m != null ? ` · ${formatDistance(item.distance_m)}` : ''}
+                    </Text>
+                  ) : null}
+                  <Text style={styles.metaLine}>
+                    {priceNum > 0 ? `${priceNum} €` : t.common.free}
+                    {isOrganizer ? null : ` · ${displayName(item.profiles)}`}
+                  </Text>
                 </Pressable>
 
                 <View style={styles.actions}>
@@ -170,27 +171,31 @@ export default function EventsScreen() {
                         <Button
                           label={t.events.chat}
                           variant="secondary"
+                          size="sm"
+                          icon="comments"
                           onPress={() => router.push(`/chat/${item.id}`)}
                         />
                       </View>
                       <View style={styles.actionFlex}>
                         <Button
                           label={t.events.leave}
-                          variant="danger"
+                          variant="dangerOutline"
+                          size="sm"
+                          icon="sign-out"
                           loading={busy}
                           onPress={() => onLeave(item)}
                         />
                       </View>
                     </>
                   ) : (
-                    <View style={styles.actionFlex}>
-                      <Button
-                        label={full ? t.events.full : t.events.join}
-                        disabled={full}
-                        loading={busy}
-                        onPress={() => onJoin(item)}
-                      />
-                    </View>
+                    <Button
+                      label={full ? t.events.full : t.events.join}
+                      disabled={full}
+                      loading={busy}
+                      size="sm"
+                      icon="check"
+                      onPress={() => onJoin(item)}
+                    />
                   )}
                 </View>
               </View>
@@ -203,48 +208,88 @@ export default function EventsScreen() {
 }
 
 const styles = StyleSheet.create({
-  row: { marginBottom: theme.space.sm },
+  toolbar: {
+    gap: 10,
+    marginBottom: theme.space.sm,
+  },
   card: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
-    padding: theme.space.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    marginBottom: theme.space.sm,
+    marginBottom: 12,
+    overflow: 'hidden',
+    ...theme.shadow.card,
   },
   cardMine: {
-    borderColor: theme.colors.primary,
-    borderWidth: 2,
-    borderLeftWidth: 6,
-    backgroundColor: theme.colors.primarySoft,
+    borderColor: theme.colors.primaryMuted,
+    backgroundColor: '#F3FAF7',
   },
-  organizerRow: { marginBottom: 8 },
+  cardBody: {
+    padding: theme.space.md,
+    paddingBottom: 12,
+  },
+  cardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    gap: 8,
+  },
   organizerBadge: {
-    alignSelf: 'flex-start',
     backgroundColor: theme.colors.primary,
     color: '#fff',
     paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 6,
+    paddingVertical: 4,
+    borderRadius: 999,
     overflow: 'hidden',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
-    letterSpacing: 0.3,
+    letterSpacing: 0.4,
     textTransform: 'uppercase',
   },
-  meta: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 8 },
-  badge: {
-    backgroundColor: theme.colors.primarySoft,
-    color: theme.colors.primaryDark,
-    paddingHorizontal: 8,
+  tag: {
+    paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 6,
+    borderRadius: 999,
     overflow: 'hidden',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  tagInvited: {
+    backgroundColor: theme.colors.warningSoft,
+    color: '#92400E',
+  },
+  tagOpen: {
+    backgroundColor: theme.colors.infoSoft,
+    color: theme.colors.info,
+  },
+  count: {
+    color: theme.colors.textMuted,
     fontSize: 12,
     fontWeight: '600',
   },
-  invited: { backgroundColor: '#FEF3C7', color: '#92400E' },
-  friend: { backgroundColor: '#DBEAFE', color: '#1E40AF' },
-  actions: { flexDirection: 'row', gap: 8, marginTop: 12 },
+  when: {
+    color: theme.colors.primaryDark,
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  metaLine: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
+  },
+  actions: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: theme.space.md,
+    paddingBottom: theme.space.md,
+    paddingTop: 4,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.border,
+    backgroundColor: '#FBFCFB',
+  },
   actionFlex: { flex: 1 },
 });

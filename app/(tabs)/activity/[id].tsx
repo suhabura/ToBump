@@ -283,23 +283,30 @@ export default function ActivityDetailScreen() {
           {activity.max_participants ? ` / ${activity.max_participants}` : ''}
         </Muted>
 
-        <View style={{ marginTop: 16, gap: 8 }}>
+        <View style={{ marginTop: 20, gap: 10 }}>
           {joined ? (
             <View style={styles.actionRow}>
               <View style={styles.actionFlex}>
                 <Button
                   label={t.events.chat}
                   variant="secondary"
+                  icon="comments"
                   onPress={() => router.push(`/chat/${activity.id}`)}
                 />
               </View>
               <View style={styles.actionFlex}>
-                <Button label={t.events.leave} variant="danger" onPress={onLeave} />
+                <Button
+                  label={t.events.leave}
+                  variant="dangerOutline"
+                  icon="sign-out"
+                  onPress={onLeave}
+                />
               </View>
             </View>
           ) : (
             <Button
               label={full ? t.events.full : t.events.join}
+              icon="check"
               onPress={onJoin}
               disabled={full}
             />
@@ -308,13 +315,20 @@ export default function ActivityDetailScreen() {
             <Button
               label={t.events.edit}
               variant="secondary"
+              icon="pencil"
               onPress={() => router.push(`/activity/edit/${activity.id}`)}
             />
           ) : null}
           {isOwner ? (
             <>
               {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
-              <Button label={t.events.delete} variant="danger" onPress={onDelete} loading={deleting} />
+              <Button
+                label={t.events.delete}
+                variant="dangerOutline"
+                icon="trash"
+                onPress={onDelete}
+                loading={deleting}
+              />
             </>
           ) : null}
         </View>
