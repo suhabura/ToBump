@@ -91,8 +91,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [venueText, setVenueText] = useState(initial?.venue_text ?? '');
   const [venueLatitude, setVenueLatitude] = useState<number | null>(initial?.venue_latitude ?? null);
   const [venueLongitude, setVenueLongitude] = useState<number | null>(initial?.venue_longitude ?? null);
-  const [findProviderOpen, setFindProviderOpen] = useState(false);
-  const [providerRadiusKm, setProviderRadiusKm] = useState(30);
+  const [venueDraft, setVenueDraft] = useState(initial?.venue_text ?? '');
   const [matchedCategoryId, setMatchedCategoryId] = useState<string | null>(initial?.category_id ?? null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [enterprises, setEnterprises] = useState<Enterprise[]>([]);
@@ -136,45 +135,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
   const isCategorized = Boolean(matchedCategoryId);
 
-  const availableEnterprises = useMemo(() => {
-    let list = enterprises.filter((e) => e.is_approved !== false);
-    if (matchedCategoryId) {
-      const sub = categories.find((c) => c.id === matchedCategoryId);
-      const parentId = sub?.parent_id ?? null;
-      list = list.filter((e) => {
-        if (!e.category_id) return true;
-        if (e.category_id === matchedCategoryId) return true;
-        if (parentId && e.category_id === parentId) return true;
-        const entCat = categories.find((c) => c.id === e.category_id);
-        if (parentId && entCat?.parent_id === parentId) return true;
-        return false;
-      });
-    }
-
-    const origin =
-      profile?.latitude != null && profile?.longitude != null
-        ? { latitude: profile.latitude, longitude: profile.longitude }
-        : null;
-    if (!origin) return list;
-
-    return [...list].sort((a, b) => {
-      const da =
-        a.latitude != null && a.longitude != null
-          ? distanceMeters(origin, { latitude: a.latitude, longitude: a.longitude })
-          : Number.POSITIVE_INFINITY;
-      const db =
-        b.latitude != null && b.longitude != null
-          ? distanceMeters(origin, { latitude: b.latitude, longitude: b.longitude })
-          : Number.POSITIVE_INFINITY;
-      return da - db;
-    });
-  }, [enterprises, matchedCategoryId, categories, profile?.latitude, profile?.longitude]);
-
   const typedVenueMatches = useMemo(() => {
-    const q = venueText.trim();
+    const q = venueDraft.trim();
     if (q.length < 2 || enterpriseId) return [];
-    // Search all verified providers (not only category-filtered), so "Vogu"
-    // still finds "Rekreacijsko društvo Vogu".
     const list = enterprises.filter((e) => e.is_approved !== false);
     const origin =
       profile?.latitude != null && profile?.longitude != null
@@ -195,29 +158,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       .sort((a, b) => a.score - b.score || a.dist - b.dist)
       .slice(0, 8)
       .map((row) => row.enterprise);
-  }, [enterprises, venueText, enterpriseId, profile?.latitude, profile?.longitude]);
-
-  const providersInRadius = useMemo(() => {
-    const origin =
-      profile?.latitude != null && profile?.longitude != null
-        ? { latitude: profile.latitude, longitude: profile.longitude }
-        : null;
-    const maxM = providerRadiusKm * 1000;
-    return availableEnterprises
-      .map((e) => {
-        const dist =
-          origin && e.latitude != null && e.longitude != null
-            ? distanceMeters(origin, { latitude: e.latitude, longitude: e.longitude })
-            : null;
-        return { enterprise: e, dist };
-      })
-      .filter((row) => {
-        if (!origin) return true;
-        if (row.dist == null) return false;
-        return row.dist <= maxM;
-      })
-      .sort((a, b) => (a.dist ?? Number.POSITIVE_INFINITY) - (b.dist ?? Number.POSITIVE_INFINITY));
-  }, [availableEnterprises, profile?.latitude, profile?.longitude, providerRadiusKm]);
+  }, [enterprises, venueDraft, enterpriseId, profile?.latitude, profile?.longitude]);
 
   const selectedEnterprise = enterprises.find((e) => e.id === enterpriseId) ?? null;
 
@@ -240,10 +181,11 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
   function selectProvider(e: Enterprise) {
     setEnterpriseId(e.id);
-    setVenueText(e.name);
+    const label = e.address?.trim() ? `${e.name} · ${e.address.trim()}` : e.name;
+    setVenueText(label);
+    setVenueDraft(label);
     setVenueLatitude(e.latitude ?? null);
     setVenueLongitude(e.longitude ?? null);
-    setFindProviderOpen(false);
   }
 
   function onVenueLocationChange(next: {
@@ -255,21 +197,24 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     setVenueText(next.address);
     setVenueLatitude(next.latitude);
     setVenueLongitude(next.longitude);
+    if (next.address.trim()) setVenueDraft(next.address);
   }
 
   function clearVenue() {
     setEnterpriseId(null);
     setVenueText('');
+    setVenueDraft('');
     setVenueLatitude(null);
     setVenueLongitude(null);
-    setFindProviderOpen(false);
   }
 
   useEffect(() => {
     if (!enterpriseId || venueText.trim()) return;
     const ent = enterprises.find((e) => e.id === enterpriseId);
     if (ent) {
-      setVenueText(ent.name);
+      const label = ent.address?.trim() ? `${ent.name} · ${ent.address.trim()}` : ent.name;
+      setVenueText(label);
+      setVenueDraft(label);
       setVenueLatitude(ent.latitude ?? null);
       setVenueLongitude(ent.longitude ?? null);
     }
@@ -313,9 +258,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       if (cancelled) return;
       setMatchedCategoryId(id);
       if (!id) {
-        // Uncategorized: free-text venue only (no verified providers)
         setEnterpriseId(null);
-        setFindProviderOpen(false);
         return;
       }
       setEnterpriseId((prev) => {
@@ -478,11 +421,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     }
     const capacityNum = Number(capacityTrim);
 
-    if (!enterpriseId) {
-      if (!venueText.trim() || venueLatitude == null || venueLongitude == null) {
-        setFormError(t.profile.locationRequired);
-        return;
-      }
+    if (!enterpriseId && !venueText.trim()) {
+      setFormError(t.form.needVenue);
+      return;
     }
 
     setLoading(true);
@@ -688,88 +629,42 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           latitude={venueLat}
           longitude={venueLng}
           relativeTo={profileOrigin}
+          showMyLocation={false}
+          allowManualConfirm
+          onDraftChange={setVenueDraft}
           onChange={onVenueLocationChange}
         />
-        {isCategorized ? (
-          <>
-            {selectedEnterprise ? (
-              <Muted>
-                {t.venue.selected}{' '}
-                {selectedEnterprise.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official} ·{' '}
-                {selectedEnterprise.name}
-                {selectedEnterprise.address ? ` · ${selectedEnterprise.address}` : ''}
-              </Muted>
-            ) : null}
-            {typedVenueMatches.length > 0 ? (
-              <View style={{ marginTop: 8 }}>
-                <Muted>{t.venue.verifiedMatch}</Muted>
-                <View style={styles.rowWrap}>
-                  {typedVenueMatches.map((e) => {
-                    const origin = profileOrigin;
-                    const dist =
-                      origin && e.latitude != null && e.longitude != null
-                        ? formatDistance(
-                            distanceMeters(origin, { latitude: e.latitude, longitude: e.longitude })
-                          )
-                        : null;
-                    const kind = e.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official;
-                    return (
-                      <Chip
-                        key={e.id}
-                        label={`${e.name} · ${kind}${dist ? ` · ${dist}` : ''}`}
-                        active={false}
-                        onPress={() => selectProvider(e)}
-                      />
-                    );
-                  })}
-                </View>
-              </View>
-            ) : null}
-
-            <View style={{ marginTop: 8 }}>
-              <Chip
-                label={t.venue.findProvider}
-                active={findProviderOpen}
-                onPress={() => setFindProviderOpen((v) => !v)}
-              />
+        {isCategorized && typedVenueMatches.length > 0 ? (
+          <View style={{ marginTop: 8 }}>
+            <Muted>{t.venue.verifiedMatch}</Muted>
+            <View style={styles.rowWrap}>
+              {typedVenueMatches.map((e) => {
+                const origin = profileOrigin;
+                const dist =
+                  origin && e.latitude != null && e.longitude != null
+                    ? formatDistance(
+                        distanceMeters(origin, { latitude: e.latitude, longitude: e.longitude })
+                      )
+                    : null;
+                const kind = e.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official;
+                return (
+                  <Chip
+                    key={e.id}
+                    label={`${e.name} · ${kind}${dist ? ` · ${dist}` : ''}`}
+                    active={false}
+                    onPress={() => selectProvider(e)}
+                  />
+                );
+              })}
             </View>
-
-            {findProviderOpen ? (
-              <View style={{ marginTop: 8 }}>
-                <Muted>{t.venue.providersHint}</Muted>
-                <Text style={styles.ruleSub}>{t.venue.radius}</Text>
-                <View style={styles.rowWrap}>
-                  {[10, 30, 50, 100].map((km) => (
-                    <Chip
-                      key={km}
-                      label={`${km} km`}
-                      active={providerRadiusKm === km}
-                      onPress={() => setProviderRadiusKm(km)}
-                    />
-                  ))}
-                </View>
-                {profile?.latitude == null || profile?.longitude == null ? (
-                  <Muted>{t.venue.needProfileLocation}</Muted>
-                ) : providersInRadius.length === 0 ? (
-                  <Muted>{t.venue.noneInRadius}</Muted>
-                ) : (
-                  <View style={styles.rowWrap}>
-                    {providersInRadius.map(({ enterprise: e, dist }) => {
-                      const kind = e.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official;
-                      return (
-                        <Chip
-                          key={e.id}
-                          label={`${e.name} · ${kind}${dist != null ? ` · ${formatDistance(dist)}` : ''}`}
-                          active={enterpriseId === e.id}
-                          onPress={() => selectProvider(e)}
-                        />
-                      );
-                    })}
-                  </View>
-                )}
-              </View>
-            ) : null}
-          </>
+          </View>
+        ) : null}
+        {selectedEnterprise ? (
+          <Muted>
+            {t.venue.selected}{' '}
+            {selectedEnterprise.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official} ·{' '}
+            {selectedEnterprise.name}
+          </Muted>
         ) : null}
 
         {(enterpriseId && isCategorized) || venueText.trim() ? (

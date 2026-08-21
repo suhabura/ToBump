@@ -192,7 +192,7 @@ export const sl = {
     clear: 'Počisti prizorišče',
     pickMode: 'Izberite način vnosa ali pustite prazno.',
     freeTextHint:
-      'Išči kraj kot v profilu (izberi predlog ali Moja lokacija). Spodaj lahko še vedno izbereš preverjenega ponudnika.',
+      'Izberi naslov s predloga ali vpiši ime in pritisni Enter (brez koordinat). Če se ujema s preverjenim ponudnikom, ga lahko tapneš spodaj.',
     providersHint: 'Preverjeni ponudniki v izbranem radiju (glede na lokacijo v profilu).',
     pickFromList: 'Izberite ponudnika s seznama.',
     noneMatch: 'Noben ponudnik ne ustreza iskanju.',
@@ -218,7 +218,7 @@ export const sl = {
     uncategorizedProviders:
       'Lastna / nekategorizirana aktivnost — kategorija se ne shrani; lokacijo vpiši ročno.',
     uncategorizedVenueHint:
-      'Išči in izberi lokacijo kot v profilu (predlog ali Moja lokacija). Za lastne aktivnosti ni preverjenih ponudnikov.',
+      'Izberi naslov s predloga ali vpiši ime in pritisni Enter (brez koordinat).',
     needSubcategory: 'Vnesite znano podkategorijo (npr. Nogomet, Koncert, Pohod).',
     duration: 'Trajanje',
     capacityHint: 'Kapaciteta omejuje udeležence, ne povabil — povabite lahko neomejeno prijateljev.',
@@ -363,6 +363,11 @@ export const sl = {
   },
   location: {
     placeholder: 'Išči kraj, klub ali naslov…',
+    venuePlaceholder: 'Išči naslov ali vpiši ime in pritisni Enter…',
+    venueHint: 'Izberi predlog (z zemljevidom) ali pritisni Enter za ročni vpis (brez koordinat).',
+    noResultsManual: 'Ni naslovov — pritisni Enter, da uporabiš to besedilo kot prizorišče.',
+    selected: 'Izbrana lokacija',
+    manualNoCoords: 'Ročni vpis — koordinate niso nastavljene.',
     searching: 'Iščem…',
     noResults: 'Ni zadetkov — poskusi ime kraja (npr. Stražišče) ali uporabi Moja lokacija.',
     searchFailed: 'Iskanje lokacije ni uspelo.',

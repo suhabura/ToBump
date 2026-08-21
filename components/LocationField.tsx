@@ -24,6 +24,15 @@ type Props = {
   required?: boolean;
   /** Za prikaz razdalje (npr. od profila). */
   relativeTo?: GeoPoint | null;
+  /** Show “My location” (default true — profile). */
+  showMyLocation?: boolean;
+  /**
+   * Venue mode: Enter confirms free text without coordinates.
+   * Draft typing does not count as selected until Enter or a suggestion pick.
+   */
+  allowManualConfirm?: boolean;
+  /** Live draft text (for verified-provider chips while typing). */
+  onDraftChange?: (text: string) => void;
 };
 
 export function LocationField({
@@ -34,6 +43,9 @@ export function LocationField({
   onChange,
   required,
   relativeTo,
+  showMyLocation = true,
+  allowManualConfirm = false,
+  onDraftChange,
 }: Props) {
   const t = useT();
   const [query, setQuery] = useState(address);
@@ -58,7 +70,6 @@ export function LocationField({
     }
   }, [latitude, longitude]);
 
-  // Soft GPS bias for better nearby rankings (does not require picking "My location")
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -91,6 +102,11 @@ export function LocationField({
       setResults([]);
       return;
     }
+    // Manual selection without coords: don't keep searching the confirmed label
+    if (allowManualConfirm && address.trim() && q === address.trim() && latitude == null) {
+      setResults([]);
+      return;
+    }
     timer.current = setTimeout(async () => {
       setSearching(true);
       setError(null);
@@ -107,7 +123,7 @@ export function LocationField({
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [query, focused, address, latitude, longitude, bias, t.location.searchFailed]);
+  }, [query, focused, address, latitude, longitude, bias, allowManualConfirm, t.location.searchFailed]);
 
   function pick(place: GeoPlace) {
     picking.current = true;
@@ -117,6 +133,17 @@ export function LocationField({
       latitude: place.latitude,
       longitude: place.longitude,
     });
+    onDraftChange?.(place.label);
+    setResults([]);
+    setFocused(false);
+  }
+
+  function confirmManual() {
+    const n = query.trim();
+    if (!n) return;
+    picking.current = true;
+    onChange({ address: n, latitude: null, longitude: null });
+    onDraftChange?.(n);
     setResults([]);
     setFocused(false);
   }
@@ -136,6 +163,7 @@ export function LocationField({
       const label = await reverseGeocode(point);
       setQuery(label);
       onChange({ address: label, latitude: point.latitude, longitude: point.longitude });
+      onDraftChange?.(label);
     } catch {
       setError(t.location.gpsFailed);
     } finally {
@@ -144,6 +172,7 @@ export function LocationField({
   }
 
   const hasCoords = latitude != null && longitude != null && !Number.isNaN(latitude) && !Number.isNaN(longitude);
+  const hasSelection = Boolean(address.trim());
   const dist =
     hasCoords && relativeTo
       ? formatDistance(distanceMeters(relativeTo, { latitude: latitude!, longitude: longitude! }))
@@ -156,11 +185,29 @@ export function LocationField({
         value={query}
         onChangeText={(text) => {
           setQuery(text);
-          if (text.trim() !== address.trim()) {
+          onDraftChange?.(text);
+          if (allowManualConfirm) {
+            if (address.trim() && text.trim() !== address.trim()) {
+              onChange({ address: '', latitude: null, longitude: null });
+            }
+          } else if (text.trim() !== address.trim()) {
             onChange({ address: text, latitude: null, longitude: null });
           }
         }}
-        placeholder={t.location.placeholder}
+        placeholder={
+          allowManualConfirm ? t.location.venuePlaceholder : t.location.placeholder
+        }
+        returnKeyType="done"
+        onSubmitEditing={() => {
+          if (allowManualConfirm) confirmManual();
+        }}
+        onKeyPress={(e) => {
+          if (allowManualConfirm && e.nativeEvent.key === 'Enter') {
+            e.preventDefault?.();
+            confirmManual();
+          }
+        }}
+        blurOnSubmit={allowManualConfirm}
         onFocus={() => {
           picking.current = false;
           setFocused(true);
@@ -176,7 +223,9 @@ export function LocationField({
         <View style={styles.list}>
           {searching ? <Text style={styles.hint}>{t.location.searching}</Text> : null}
           {!searching && results.length === 0 ? (
-            <Text style={styles.hint}>{t.location.noResults}</Text>
+            <Text style={styles.hint}>
+              {allowManualConfirm ? t.location.noResultsManual : t.location.noResults}
+            </Text>
           ) : null}
           {results.map((r) => (
             <Pressable
@@ -197,17 +246,44 @@ export function LocationField({
         </View>
       ) : null}
 
-      <View style={styles.actions}>
-        <Button
-          label={gpsLoading ? t.location.gettingGps : t.location.myLocation}
-          variant="secondary"
-          onPress={useMyLocation}
-        />
-      </View>
+      {showMyLocation ? (
+        <View style={styles.actions}>
+          <Button
+            label={gpsLoading ? t.location.gettingGps : t.location.myLocation}
+            variant="secondary"
+            onPress={useMyLocation}
+          />
+        </View>
+      ) : null}
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      {hasCoords ? (
+      {allowManualConfirm ? (
+        hasSelection ? (
+          <View style={styles.selectedBox}>
+            <Text style={styles.selectedLabel}>{t.location.selected}</Text>
+            <Text style={styles.selectedValue}>{address}</Text>
+            {hasCoords ? (
+              <Muted>
+                {t.location.coords}: {latitude!.toFixed(5)}, {longitude!.toFixed(5)}
+                {dist ? ` · ${dist}` : ''}
+                {' · '}
+                <Text
+                  style={styles.link}
+                  onPress={() =>
+                    Linking.openURL(mapsUrl({ latitude: latitude!, longitude: longitude! }))
+                  }>
+                  {t.location.openMaps}
+                </Text>
+              </Muted>
+            ) : (
+              <Muted>{t.location.manualNoCoords}</Muted>
+            )}
+          </View>
+        ) : (
+          <Muted>{t.location.venueHint}</Muted>
+        )
+      ) : hasCoords ? (
         <Muted>
           {t.location.coords}: {latitude!.toFixed(5)}, {longitude!.toFixed(5)}
           {dist ? ` · ${dist}` : ''}
@@ -248,4 +324,24 @@ const styles = StyleSheet.create({
   actions: { marginBottom: 8 },
   error: { color: theme.colors.danger, marginBottom: 6, fontWeight: '600' },
   link: { color: theme.colors.primary, fontWeight: '600' },
+  selectedBox: {
+    marginTop: 4,
+    padding: 12,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+    gap: 4,
+  },
+  selectedLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: theme.colors.textMuted,
+    textTransform: 'uppercase',
+  },
+  selectedValue: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: theme.colors.text,
+  },
 });

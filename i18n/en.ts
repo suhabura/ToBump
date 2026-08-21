@@ -192,7 +192,7 @@ export const en = {
     clear: 'Clear venue',
     pickMode: 'Choose how to enter a venue, or leave empty.',
     freeTextHint:
-      'Search a place like in Profile (pick a suggestion or My location). Verified providers can still be selected below.',
+      'Pick an address from suggestions, or type a name and press Enter (no coordinates). Matching verified providers appear below.',
     providersHint: 'Verified providers within the selected radius (from your profile location).',
     pickFromList: 'Pick a provider from the list.',
     noneMatch: 'No providers match this search.',
@@ -218,7 +218,7 @@ export const en = {
     uncategorizedProviders:
       'Custom / uncategorized activity — category is not saved; enter the venue manually.',
     uncategorizedVenueHint:
-      'Search and pick a location like in Profile (suggestion or My location). No verified providers for custom activities.',
+      'Pick an address from suggestions, or type a name and press Enter (no coordinates).',
     needSubcategory: 'Enter a known subcategory (e.g. Football, Concert, Hiking).',
     duration: 'Duration',
     capacityHint: 'Capacity limits attendees, not invites — you can invite unlimited friends.',
@@ -363,6 +363,11 @@ export const en = {
   },
   location: {
     placeholder: 'Search place, club or address…',
+    venuePlaceholder: 'Search address, or type a name and press Enter…',
+    venueHint: 'Pick a suggestion (with map pin) or press Enter for a manual name (no coordinates).',
+    noResultsManual: 'No address matches — press Enter to use this text as the venue.',
+    selected: 'Selected location',
+    manualNoCoords: 'Manual entry — coordinates not set.',
     searching: 'Searching…',
     noResults: 'No matches yet — try a town name (e.g. Stražišče) or use My location.',
     searchFailed: 'Location search failed.',
