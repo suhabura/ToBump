@@ -359,6 +359,19 @@ export const en = {
     configureSupabase:
       'Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_SUPABASE_ANON_KEY in .env, then run supabase/schema.sql.',
   },
+  location: {
+    placeholder: 'Search place, club or address…',
+    searching: 'Searching…',
+    noResults: 'No matches yet — try a town name (e.g. Stražišče) or use My location.',
+    searchFailed: 'Location search failed.',
+    allowAccess: 'Allow location access.',
+    gpsFailed: "Couldn't get your location.",
+    gettingGps: 'Getting…',
+    myLocation: 'My location',
+    coords: 'Coordinates',
+    openMaps: 'Open in Google Maps',
+    pickHint: 'Pick a suggestion or use your current location (coordinates required).',
+  },
   push: {
     permission: 'Enable notifications for invites and chat.',
   },

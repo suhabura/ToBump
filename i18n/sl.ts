@@ -359,6 +359,19 @@ export const sl = {
     configureSupabase:
       'V .env nastavite EXPO_PUBLIC_SUPABASE_URL in EXPO_PUBLIC_SUPABASE_ANON_KEY, nato zaženite supabase/schema.sql.',
   },
+  location: {
+    placeholder: 'Išči kraj, klub ali naslov…',
+    searching: 'Iščem…',
+    noResults: 'Ni zadetkov — poskusi ime kraja (npr. Stražišče) ali uporabi Moja lokacija.',
+    searchFailed: 'Iskanje lokacije ni uspelo.',
+    allowAccess: 'Dovoli dostop do lokacije.',
+    gpsFailed: 'Lokacije ni bilo mogoče pridobiti.',
+    gettingGps: 'Pridobivam…',
+    myLocation: 'Moja lokacija',
+    coords: 'Koordinate',
+    openMaps: 'Odpri v Google Maps',
+    pickHint: 'Izberi predlog ali uporabi trenutno lokacijo (koordinate so obvezne).',
+  },
   push: {
     permission: 'Omogočite obvestila za povabila in klepet.',
   },

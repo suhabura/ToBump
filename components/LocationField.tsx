@@ -3,6 +3,7 @@ import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-nati
 import * as Location from 'expo-location';
 import { Button, Input, Muted } from '@/components/ui';
 import {
+  SI_CENTER,
   distanceMeters,
   formatDistance,
   mapsUrl,
@@ -11,6 +12,7 @@ import {
   type GeoPlace,
   type GeoPoint,
 } from '@/lib/geo';
+import { useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
 type Props = {
@@ -33,12 +35,16 @@ export function LocationField({
   required,
   relativeTo,
 }: Props) {
+  const t = useT();
   const [query, setQuery] = useState(address);
   const [focused, setFocused] = useState(false);
   const [results, setResults] = useState<GeoPlace[]>([]);
   const [searching, setSearching] = useState(false);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [bias, setBias] = useState<GeoPoint | null>(
+    latitude != null && longitude != null ? { latitude, longitude } : SI_CENTER
+  );
   const picking = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -47,13 +53,40 @@ export function LocationField({
   }, [address]);
 
   useEffect(() => {
+    if (latitude != null && longitude != null) {
+      setBias({ latitude, longitude });
+    }
+  }, [latitude, longitude]);
+
+  // Soft GPS bias for better nearby rankings (does not require picking "My location")
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        const pos =
+          (await Location.getLastKnownPositionAsync()) ??
+          (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+        if (!cancelled && pos) {
+          setBias({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
+        }
+      } catch {
+        /* keep SI / profile bias */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
     const q = query.trim();
     if (!focused || q.length < 2) {
       setResults([]);
       return;
     }
-    // Ne išči znova, če je točno izbrani naslov
     if (latitude != null && longitude != null && q === address.trim()) {
       setResults([]);
       return;
@@ -62,19 +95,19 @@ export function LocationField({
       setSearching(true);
       setError(null);
       try {
-        const places = await searchPlaces(q);
+        const places = await searchPlaces(q, { bias });
         setResults(places);
       } catch {
-        setError('Location search failed.');
+        setError(t.location.searchFailed);
         setResults([]);
       } finally {
         setSearching(false);
       }
-    }, 400);
+    }, 320);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [query, focused, address, latitude, longitude]);
+  }, [query, focused, address, latitude, longitude, bias, t.location.searchFailed]);
 
   function pick(place: GeoPlace) {
     picking.current = true;
@@ -94,16 +127,17 @@ export function LocationField({
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status !== 'granted') {
-        setError('Allow location access.');
+        setError(t.location.allowAccess);
         return;
       }
       const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
       const point = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
+      setBias(point);
       const label = await reverseGeocode(point);
       setQuery(label);
       onChange({ address: label, latitude: point.latitude, longitude: point.longitude });
     } catch {
-      setError("Couldn't get your location.");
+      setError(t.location.gpsFailed);
     } finally {
       setGpsLoading(false);
     }
@@ -122,12 +156,11 @@ export function LocationField({
         value={query}
         onChangeText={(text) => {
           setQuery(text);
-          // dokler ne izbereš predloga, koordinate niso veljavne
           if (text.trim() !== address.trim()) {
             onChange({ address: text, latitude: null, longitude: null });
           }
         }}
-        placeholder="Search address or place…"
+        placeholder={t.location.placeholder}
         onFocus={() => {
           picking.current = false;
           setFocused(true);
@@ -139,9 +172,12 @@ export function LocationField({
           }, Platform.OS === 'web' ? 250 : 150);
         }}
       />
-      {focused && (results.length > 0 || searching) ? (
+      {focused && query.trim().length >= 2 ? (
         <View style={styles.list}>
-          {searching ? <Text style={styles.hint}>Searching…</Text> : null}
+          {searching ? <Text style={styles.hint}>{t.location.searching}</Text> : null}
+          {!searching && results.length === 0 ? (
+            <Text style={styles.hint}>{t.location.noResults}</Text>
+          ) : null}
           {results.map((r) => (
             <Pressable
               key={`${r.latitude},${r.longitude},${r.label}`}
@@ -162,22 +198,28 @@ export function LocationField({
       ) : null}
 
       <View style={styles.actions}>
-        <Button label={gpsLoading ? 'Getting…' : 'My location'} variant="secondary" onPress={useMyLocation} />
+        <Button
+          label={gpsLoading ? t.location.gettingGps : t.location.myLocation}
+          variant="secondary"
+          onPress={useMyLocation}
+        />
       </View>
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
       {hasCoords ? (
         <Muted>
-          Coordinates: {latitude!.toFixed(5)}, {longitude!.toFixed(5)}
+          {t.location.coords}: {latitude!.toFixed(5)}, {longitude!.toFixed(5)}
           {dist ? ` · ${dist}` : ''}
           {' · '}
-          <Text style={styles.link} onPress={() => Linking.openURL(mapsUrl({ latitude: latitude!, longitude: longitude! }))}>
-            Open in Google Maps
+          <Text
+            style={styles.link}
+            onPress={() => Linking.openURL(mapsUrl({ latitude: latitude!, longitude: longitude! }))}>
+            {t.location.openMaps}
           </Text>
         </Muted>
       ) : (
-        <Muted>Pick a suggestion or use your current location (coordinates required).</Muted>
+        <Muted>{t.location.pickHint}</Muted>
       )}
     </View>
   );
@@ -193,6 +235,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     borderRadius: theme.radius.sm,
     overflow: 'hidden',
+    maxHeight: 280,
   },
   item: {
     paddingHorizontal: 14,
