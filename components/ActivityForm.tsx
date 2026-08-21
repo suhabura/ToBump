@@ -3,6 +3,7 @@ import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button, Chip, Input, Muted } from '@/components/ui';
 import { DateTimeField } from '@/components/DateTimeField';
+import { LocationField } from '@/components/LocationField';
 import { SuggestInput } from '@/components/SuggestInput';
 import { FriendPicker } from '@/components/FriendPicker';
 import {
@@ -88,6 +89,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [privacy, setPrivacy] = useState<Privacy>(initial?.privacy ?? 'invite');
   const [enterpriseId, setEnterpriseId] = useState<string | null>(initial?.enterprise_id ?? null);
   const [venueText, setVenueText] = useState(initial?.venue_text ?? '');
+  const [venueLatitude, setVenueLatitude] = useState<number | null>(initial?.venue_latitude ?? null);
+  const [venueLongitude, setVenueLongitude] = useState<number | null>(initial?.venue_longitude ?? null);
   const [findProviderOpen, setFindProviderOpen] = useState(false);
   const [providerRadiusKm, setProviderRadiusKm] = useState(30);
   const [matchedCategoryId, setMatchedCategoryId] = useState<string | null>(initial?.category_id ?? null);
@@ -218,27 +221,58 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
   const selectedEnterprise = enterprises.find((e) => e.id === enterpriseId) ?? null;
 
+  const venueAddress =
+    selectedEnterprise != null
+      ? selectedEnterprise.address?.trim()
+        ? `${selectedEnterprise.name} · ${selectedEnterprise.address.trim()}`
+        : selectedEnterprise.name
+      : venueText;
+
+  const venueLat =
+    selectedEnterprise?.latitude != null ? selectedEnterprise.latitude : venueLatitude;
+  const venueLng =
+    selectedEnterprise?.longitude != null ? selectedEnterprise.longitude : venueLongitude;
+
+  const profileOrigin =
+    profile?.latitude != null && profile?.longitude != null
+      ? { latitude: profile.latitude, longitude: profile.longitude }
+      : null;
+
   function selectProvider(e: Enterprise) {
     setEnterpriseId(e.id);
     setVenueText(e.name);
+    setVenueLatitude(e.latitude ?? null);
+    setVenueLongitude(e.longitude ?? null);
     setFindProviderOpen(false);
   }
 
-  function onVenueTextChange(text: string) {
-    setVenueText(text);
+  function onVenueLocationChange(next: {
+    address: string;
+    latitude: number | null;
+    longitude: number | null;
+  }) {
     setEnterpriseId(null);
+    setVenueText(next.address);
+    setVenueLatitude(next.latitude);
+    setVenueLongitude(next.longitude);
   }
 
   function clearVenue() {
     setEnterpriseId(null);
     setVenueText('');
+    setVenueLatitude(null);
+    setVenueLongitude(null);
     setFindProviderOpen(false);
   }
 
   useEffect(() => {
     if (!enterpriseId || venueText.trim()) return;
     const ent = enterprises.find((e) => e.id === enterpriseId);
-    if (ent) setVenueText(ent.name);
+    if (ent) {
+      setVenueText(ent.name);
+      setVenueLatitude(ent.latitude ?? null);
+      setVenueLongitude(ent.longitude ?? null);
+    }
   }, [enterpriseId, enterprises, venueText]);
 
   useEffect(() => {
@@ -444,9 +478,11 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     }
     const capacityNum = Number(capacityTrim);
 
-    if (!enterpriseId && !venueText.trim()) {
-      setFormError(t.form.needVenue);
-      return;
+    if (!enterpriseId) {
+      if (!venueText.trim() || venueLatitude == null || venueLongitude == null) {
+        setFormError(t.profile.locationRequired);
+        return;
+      }
     }
 
     setLoading(true);
@@ -475,6 +511,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           privacy,
           enterprise_id: category_id ? enterpriseId : null,
           venue_text: enterpriseId && category_id ? null : venueText.trim() || null,
+          venue_latitude: enterpriseId && category_id ? null : venueLatitude,
+          venue_longitude: enterpriseId && category_id ? null : venueLongitude,
           group_id: selectedGroupId,
           invite_user_ids: inviteIds,
           editor_user_ids: isCreator ? editorIds : undefined,
@@ -644,11 +682,13 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       <View>
         <Text style={styles.section}>{req(t.events.venue)}</Text>
         <Muted>{isCategorized ? t.venue.freeTextHint : t.form.uncategorizedVenueHint}</Muted>
-        <Input
-          label={req(t.events.venue)}
-          value={venueText}
-          onChangeText={onVenueTextChange}
-          placeholder={t.form.venuePlaceholder}
+        <LocationField
+          label={t.events.venue}
+          address={venueAddress}
+          latitude={venueLat}
+          longitude={venueLng}
+          relativeTo={profileOrigin}
+          onChange={onVenueLocationChange}
         />
         {isCategorized ? (
           <>
@@ -665,10 +705,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
                 <Muted>{t.venue.verifiedMatch}</Muted>
                 <View style={styles.rowWrap}>
                   {typedVenueMatches.map((e) => {
-                    const origin =
-                      profile?.latitude != null && profile?.longitude != null
-                        ? { latitude: profile.latitude, longitude: profile.longitude }
-                        : null;
+                    const origin = profileOrigin;
                     const dist =
                       origin && e.latitude != null && e.longitude != null
                         ? formatDistance(

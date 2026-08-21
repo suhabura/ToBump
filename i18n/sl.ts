@@ -191,7 +191,8 @@ export const sl = {
     searchPlaceholder: 'Ime ali naslov…',
     clear: 'Počisti prizorišče',
     pickMode: 'Izberite način vnosa ali pustite prazno.',
-    freeTextHint: 'Vpišite prizorišče. Če se ujema s preverjenim ponudnikom, ga lahko izberete.',
+    freeTextHint:
+      'Išči kraj kot v profilu (izberi predlog ali Moja lokacija). Spodaj lahko še vedno izbereš preverjenega ponudnika.',
     providersHint: 'Preverjeni ponudniki v izbranem radiju (glede na lokacijo v profilu).',
     pickFromList: 'Izberite ponudnika s seznama.',
     noneMatch: 'Noben ponudnik ne ustreza iskanju.',
@@ -216,7 +217,8 @@ export const sl = {
     knownActivity: 'Znana podkategorija — bližnji ponudniki so filtrirani po tej aktivnosti.',
     uncategorizedProviders:
       'Lastna / nekategorizirana aktivnost — kategorija se ne shrani; lokacijo vpiši ročno.',
-    uncategorizedVenueHint: 'Ročno vpiši, kje poteka aktivnost (za lastne aktivnosti ni preverjenih ponudnikov).',
+    uncategorizedVenueHint:
+      'Išči in izberi lokacijo kot v profilu (predlog ali Moja lokacija). Za lastne aktivnosti ni preverjenih ponudnikov.',
     needSubcategory: 'Vnesite znano podkategorijo (npr. Nogomet, Koncert, Pohod).',
     duration: 'Trajanje',
     capacityHint: 'Kapaciteta omejuje udeležence, ne povabil — povabite lahko neomejeno prijateljev.',

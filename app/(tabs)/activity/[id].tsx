@@ -20,7 +20,8 @@ import { fetchActivityGuests, removeGuestAttendance, type GuestAttendanceWithGue
 import { formatRecurrence, hydrateRules, rulesFromLegacy } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations, Profile } from '@/lib/types';
-import { activityLocationLabel, categoryLabel, displayName } from '@/lib/types';
+import { activityLocationLabel, activityVenuePoint, categoryLabel, displayName } from '@/lib/types';
+import { mapsUrl } from '@/lib/geo';
 import { useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
@@ -256,15 +257,15 @@ export default function ActivityDetailScreen() {
           const location = activityLocationLabel(activity);
           if (!location) return <Muted>{t.events.locationUnset}</Muted>;
           const ent = activity.enterprises;
+          const point = activityVenuePoint(activity);
           const address = ent?.address?.trim() || (!ent ? activity.venue_text?.trim() : '') || '';
-          // Only offer Maps when an actual address was entered (not just a provider name).
-          const mapsUrl = address
-            ? ent?.latitude != null && ent?.longitude != null
-              ? `https://www.google.com/maps?q=${ent.latitude},${ent.longitude}`
-              : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+          const mapsLink = point
+            ? mapsUrl(point)
+            : address
+              ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
                   ent ? `${ent.name}, ${address}` : address
                 )}`
-            : null;
+              : null;
           return (
             <View>
               <Muted>
@@ -285,8 +286,8 @@ export default function ActivityDetailScreen() {
                     : ` · ${t.events.officialProvider}`
                   : null}
               </Muted>
-              {mapsUrl ? (
-                <Text style={styles.mapsLink} onPress={() => Linking.openURL(mapsUrl)}>
+              {mapsLink ? (
+                <Text style={styles.mapsLink} onPress={() => Linking.openURL(mapsLink)}>
                   {t.events.openMaps}
                 </Text>
               ) : null}

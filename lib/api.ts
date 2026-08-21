@@ -441,6 +441,8 @@ export type ActivityInput = {
   category_id?: string | null;
   enterprise_id?: string | null;
   venue_text?: string | null;
+  venue_latitude?: number | null;
+  venue_longitude?: number | null;
   group_id?: string | null;
   chat_enabled?: boolean;
   invite_user_ids?: string[];
@@ -653,6 +655,8 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     category_id: input.category_id || null,
     enterprise_id: input.enterprise_id || null,
     venue_text: input.enterprise_id ? null : input.venue_text?.trim() || null,
+    venue_latitude: input.enterprise_id ? null : input.venue_latitude ?? null,
+    venue_longitude: input.enterprise_id ? null : input.venue_longitude ?? null,
     group_id: input.privacy === 'group' ? input.group_id || null : null,
     chat_enabled: input.chat_enabled ?? true,
     created_by: userId,

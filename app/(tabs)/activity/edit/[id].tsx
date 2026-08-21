@@ -23,6 +23,8 @@ export default function EditActivityScreen() {
     privacy: Privacy;
     enterprise_id?: string | null;
     venue_text?: string | null;
+    venue_latitude?: number | null;
+    venue_longitude?: number | null;
     category_id?: string | null;
     group_id?: string | null;
     invite_user_ids?: string[];
@@ -71,7 +73,11 @@ export default function EditActivityScreen() {
         max_participants: act.max_participants,
         privacy: act.privacy,
         enterprise_id: act.enterprise_id,
-        venue_text: act.venue_text ?? (act.enterprise_id ? undefined : ''),
+        venue_text:
+          act.venue_text ??
+          (act.enterprise_id ? undefined : ''),
+        venue_latitude: act.venue_latitude ?? null,
+        venue_longitude: act.venue_longitude ?? null,
         category_id: act.category_id,
         group_id: act.group_id,
         invite_user_ids: (invites ?? []).map((i: { user_id: string }) => i.user_id),

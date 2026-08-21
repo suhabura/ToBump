@@ -191,7 +191,8 @@ export const en = {
     searchPlaceholder: 'Name or address…',
     clear: 'Clear venue',
     pickMode: 'Choose how to enter a venue, or leave empty.',
-    freeTextHint: 'Type a venue. If it matches a verified provider, you can select it.',
+    freeTextHint:
+      'Search a place like in Profile (pick a suggestion or My location). Verified providers can still be selected below.',
     providersHint: 'Verified providers within the selected radius (from your profile location).',
     pickFromList: 'Pick a provider from the list.',
     noneMatch: 'No providers match this search.',
@@ -216,7 +217,8 @@ export const en = {
     knownActivity: 'Known subcategory — nearby providers are filtered by this activity.',
     uncategorizedProviders:
       'Custom / uncategorized activity — category is not saved; enter the venue manually.',
-    uncategorizedVenueHint: 'Enter where the activity takes place (no verified providers for custom activities).',
+    uncategorizedVenueHint:
+      'Search and pick a location like in Profile (suggestion or My location). No verified providers for custom activities.',
     needSubcategory: 'Enter a known subcategory (e.g. Football, Concert, Hiking).',
     duration: 'Duration',
     capacityHint: 'Capacity limits attendees, not invites — you can invite unlimited friends.',

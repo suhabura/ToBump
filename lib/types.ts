@@ -159,6 +159,8 @@ export type Activity = {
   category_id: string | null;
   enterprise_id: string | null;
   venue_text: string | null;
+  venue_latitude?: number | null;
+  venue_longitude?: number | null;
   group_id: string | null;
   created_by: string;
   chat_enabled: boolean;
@@ -327,4 +329,18 @@ export function activityLocationLabel(a: {
   }
   const text = a.venue_text?.trim();
   return text || null;
+}
+
+export function activityVenuePoint(a: {
+  venue_latitude?: number | null;
+  venue_longitude?: number | null;
+  enterprises?: Pick<Enterprise, 'latitude' | 'longitude'> | null;
+}): { latitude: number; longitude: number } | null {
+  if (a.enterprises?.latitude != null && a.enterprises?.longitude != null) {
+    return { latitude: a.enterprises.latitude, longitude: a.enterprises.longitude };
+  }
+  if (a.venue_latitude != null && a.venue_longitude != null) {
+    return { latitude: a.venue_latitude, longitude: a.venue_longitude };
+  }
+  return null;
 }
