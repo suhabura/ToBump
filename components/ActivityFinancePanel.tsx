@@ -17,6 +17,7 @@ import {
   type PersonBalance,
   type SuggestedTransfer,
 } from '@/lib/finance';
+import { fetchSeriesAttendanceStats } from '@/lib/guests';
 import type { ActivityWithRelations, Profile } from '@/lib/types';
 import { displayName } from '@/lib/types';
 import { useT } from '@/i18n';
@@ -44,6 +45,9 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attendanceStats, setAttendanceStats] = useState<Awaited<
+    ReturnType<typeof fetchSeriesAttendanceStats>
+  > | null>(null);
 
   const [showAdd, setShowAdd] = useState(false);
   const [title, setTitle] = useState('');
@@ -87,12 +91,13 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     setLoading(true);
     setError(null);
     try {
-      const [exps, mems, settles, invites, attendeesForEvent] = await Promise.all([
+      const [exps, mems, settles, invites, attendeesForEvent, stats] = await Promise.all([
         fetchSeriesExpenses(sid),
         fetchSeriesMemberProfiles(sid),
         fetchSeriesSettlements(sid),
         fetchSeriesInviteeIds(sid),
         fetchActivityAttendeeIds(activity.id),
+        fetchSeriesAttendanceStats(sid).catch(() => null),
       ]);
       const people = mems.length ? mems : attendees;
       const inviteSet = invites.length
@@ -108,6 +113,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       setInviteeIds(uniqueInvites);
       setAttendeeIds(attendeesForEvent);
       setSettlements(settles);
+      setAttendanceStats(stats);
       setSelectedIds((prev) => {
         if (prev.length) return prev.filter((id) => people.some((p) => p.id === id));
         return uniqueInvites.filter((id) => people.some((p) => p.id === id)).length
@@ -208,6 +214,26 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         <SummaryCard label={t.finance.totalSpent} value={`${totalSpent.toFixed(2)} €`} />
         <SummaryCard label={t.finance.expenses} value={String(expenses.length)} />
       </View>
+
+      {attendanceStats ? (
+        <View style={styles.card}>
+          <Subtitle>{t.finance.attendanceStats}</Subtitle>
+          <Muted>{t.finance.uniqueAttendees(attendanceStats.uniqueAttendeeCount)}</Muted>
+          {attendanceStats.memberAttendances.map((m) => (
+            <Text key={m.userId} style={styles.statLine}>
+              {t.finance.memberStat(
+                displayName(profilesById.get(m.userId) ?? null),
+                m.count
+              )}
+            </Text>
+          ))}
+          {attendanceStats.guestAttendances.map((g) => (
+            <Text key={g.guestId} style={styles.statLine}>
+              {t.finance.guestStat(g.name, g.count, g.totalPaid)}
+            </Text>
+          ))}
+        </View>
+      ) : null}
 
       <View style={styles.tabRow}>
         <Chip label={t.finance.balances} active={tab === 'balances'} onPress={() => setTab('balances')} />
@@ -453,4 +479,5 @@ const styles = StyleSheet.create({
   link: { color: theme.colors.primary, fontWeight: '700' },
   linkMuted: { color: theme.colors.textMuted, fontWeight: '600', fontSize: 13 },
   error: { color: theme.colors.danger, fontWeight: '600' },
+  statLine: { color: theme.colors.text, fontSize: 13, marginTop: 4 },
 });

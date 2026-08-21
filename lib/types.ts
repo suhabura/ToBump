@@ -63,6 +63,30 @@ export type ActivityPayment = {
   recorded_by: string;
   created_at: string;
 };
+
+export type ActivityGuest = {
+  id: string;
+  series_id: string;
+  name: string;
+  created_by: string;
+  created_at: string;
+};
+
+export type GuestFeeTreatment = 'none' | 'split_all';
+
+export type ActivityGuestAttendance = {
+  id: string;
+  guest_id: string;
+  activity_id: string;
+  series_id: string;
+  is_free: boolean;
+  amount: number;
+  fee_treatment: GuestFeeTreatment;
+  expense_id: string | null;
+  recorded_by: string;
+  created_at: string;
+};
+
 export type ActivityStatus = 'active' | 'cancelled' | 'completed';
 
 export type FriendGroup = {

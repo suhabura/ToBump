@@ -6,6 +6,7 @@ import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } 
 import { useFocusEffect } from 'expo-router';
 import { Button, Chip, EmptyState, Loading, Muted, Screen, Subtitle, Title } from '@/components/ui';
 import { ActivityFinancePanel } from '@/components/ActivityFinancePanel';
+import { ActivityGuestsPanel } from '@/components/ActivityGuestsPanel';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   deleteActivity,
@@ -341,6 +342,12 @@ export default function ActivityDetailScreen() {
             </Text>
           ))}
         </View>
+
+        <ActivityGuestsPanel
+          activity={activity}
+          canManage={isOwner || canEdit}
+          onChanged={load}
+        />
           </>
         )}
       </ScrollView>
