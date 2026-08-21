@@ -17,12 +17,13 @@ import {
 import { dedupeProfilesByEmail } from '@/lib/friends';
 import {
   clearSeriesFinanceSettings,
+  ensureFundingExpenses,
   seriesKey,
   upsertSeriesFinanceSettings,
 } from '@/lib/finance';
 import { formatDuration, formatRecurrence, formatTime, hydrateRules, isoWeekday, normalizeRules, rulesFromLegacy, WEEKDAY_OPTIONS, type RecurrenceRule } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
-import type { Category, Enterprise, FundingMode, Privacy, Profile } from '@/lib/types';
+import type { Category, Enterprise, FinanceWhoPays, FundingMode, Privacy, Profile } from '@/lib/types';
 import { categoryDisplayName, resolveActivityCategoryKey, useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
@@ -38,6 +39,7 @@ type Props = {
     group_id?: string | null;
     series_id?: string | null;
     funding_mode?: FundingMode | null;
+    who_pays?: FinanceWhoPays | null;
   };
 };
 
@@ -114,6 +116,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         ? 'fixed'
         : (initial.funding_mode as FundingMode)
       : 'per_event'
+  );
+  const [whoPays, setWhoPays] = useState<FinanceWhoPays>(
+    initial?.who_pays === 'attendees' ? 'attendees' : 'invitees'
   );
   const [rules, setRules] = useState<RecurrenceRule[]>(() => initialRules(initial));
   const [recurrenceUntil, setRecurrenceUntil] = useState<Date | null>(() => {
@@ -451,8 +456,33 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           seriesId: sid,
           fundingMode: modeToSave === 'annual' ? 'fixed' : modeToSave,
           amount: priceNum,
+          whoPays,
           userId,
         });
+        try {
+          await ensureFundingExpenses({
+            activity: {
+              id,
+              series_id: initial?.series_id ?? null,
+              created_by: userId,
+              finance_enabled: true,
+              title: titleToSave,
+              starts_at: startToSave.toISOString(),
+            },
+            settings: {
+              series_id: sid,
+              funding_mode: modeToSave === 'annual' ? 'fixed' : modeToSave,
+              amount: priceNum,
+              who_pays: whoPays,
+              currency: 'EUR',
+              updated_by: userId,
+              updated_at: new Date().toISOString(),
+              created_at: new Date().toISOString(),
+            },
+          });
+        } catch {
+          /* expenses created when opening Finance tab */
+        }
       } else {
         try {
           await clearSeriesFinanceSettings(sid);
@@ -729,6 +759,20 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
               </>
             ) : null}
           </View>
+          <Muted>{t.form.whoPays}</Muted>
+          <View style={styles.rowWrap}>
+            <Chip
+              label={t.form.whoPaysInvitees}
+              active={whoPays === 'invitees'}
+              onPress={() => setWhoPays('invitees')}
+            />
+            <Chip
+              label={t.form.whoPaysAttendees}
+              active={whoPays === 'attendees'}
+              onPress={() => setWhoPays('attendees')}
+            />
+          </View>
+          <Muted>{t.form.whoPaysHint}</Muted>
           <Input
             label={
               fundingMode === 'monthly'

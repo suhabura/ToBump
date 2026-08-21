@@ -2,6 +2,7 @@ export type Privacy = 'invite' | 'friends' | 'group' | 'friends_of_friends';
 export type FriendshipStatus = 'pending' | 'accepted' | 'rejected';
 
 export type FundingMode = 'per_event' | 'monthly' | 'annual' | 'fixed';
+export type FinanceWhoPays = 'invitees' | 'attendees';
 export type ExpenseType = 'per_event' | 'monthly' | 'annual' | 'manual';
 export type SplitMode = 'equal_all' | 'equal_attendees' | 'selected';
 export type ObligationStatus = 'unpaid' | 'partial' | 'paid' | 'waived';
@@ -11,6 +12,7 @@ export type SeriesFinanceSettings = {
   funding_mode: FundingMode;
   amount: number;
   currency: string;
+  who_pays?: FinanceWhoPays;
   updated_by: string | null;
   updated_at: string;
   created_at: string;

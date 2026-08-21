@@ -5,8 +5,10 @@ import {
   computeBalances,
   createExpense,
   deleteExpense,
+  ensureFundingExpenses,
   fetchActivityAttendeeIds,
   fetchSeriesExpenses,
+  fetchSeriesFinanceSettings,
   fetchSeriesInviteeIds,
   fetchSeriesMemberProfiles,
   fetchSeriesSettlements,
@@ -18,7 +20,7 @@ import {
   type SuggestedTransfer,
 } from '@/lib/finance';
 import { fetchSeriesAttendanceStats } from '@/lib/guests';
-import type { ActivityWithRelations, Profile } from '@/lib/types';
+import type { ActivityWithRelations, Profile, SeriesFinanceSettings } from '@/lib/types';
 import { displayName } from '@/lib/types';
 import { useT } from '@/i18n';
 import { theme } from '@/constants/theme';
@@ -45,6 +47,12 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [financeSettings, setFinanceSettings] = useState<SeriesFinanceSettings | null>(null);
+  const [fundingMeta, setFundingMeta] = useState<{
+    total: number;
+    perPerson: number;
+    payerCount: number;
+  } | null>(null);
   const [attendanceStats, setAttendanceStats] = useState<Awaited<
     ReturnType<typeof fetchSeriesAttendanceStats>
   > | null>(null);
@@ -91,6 +99,26 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     setLoading(true);
     setError(null);
     try {
+      let settings: SeriesFinanceSettings | null = null;
+      let meta: { total: number; perPerson: number; payerCount: number } | null = null;
+      try {
+        settings = await fetchSeriesFinanceSettings(sid);
+        setFinanceSettings(settings);
+        if (settings && activity.finance_enabled) {
+          meta = await ensureFundingExpenses({ activity, settings });
+          setFundingMeta({
+            total: meta.total,
+            perPerson: meta.perPerson,
+            payerCount: meta.payerCount,
+          });
+        } else {
+          setFundingMeta(null);
+        }
+      } catch {
+        setFinanceSettings(null);
+        setFundingMeta(null);
+      }
+
       const [exps, mems, settles, invites, attendeesForEvent, stats] = await Promise.all([
         fetchSeriesExpenses(sid),
         fetchSeriesMemberProfiles(sid),
@@ -114,27 +142,55 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       setAttendeeIds(attendeesForEvent);
       setSettlements(settles);
       setAttendanceStats(stats);
+
+      if (settings && Number(settings.amount) > 0) {
+        const who = settings.who_pays === 'attendees' ? 'attendees' : 'invitees';
+        const rawIds =
+          who === 'attendees'
+            ? attendeesForEvent.length
+              ? attendeesForEvent
+              : uniqueInvites
+            : uniqueInvites;
+        const n = Math.max(1, rawIds.filter((id) => id !== activity.created_by).length || rawIds.length);
+        const perPerson = Number(settings.amount) || 0;
+        setFundingMeta({
+          total: Math.round(perPerson * n * 100) / 100,
+          perPerson,
+          payerCount: n,
+        });
+      }
+
       setSelectedIds((prev) => {
         if (prev.length) return prev.filter((id) => people.some((p) => p.id === id));
         return uniqueInvites.filter((id) => people.some((p) => p.id === id)).length
           ? uniqueInvites.filter((id) => people.some((p) => p.id === id))
           : people.map((p) => p.id);
       });
-      if (!people.some((p) => p.id === paidBy)) {
-        setPaidBy(userId);
-      }
+      applyPreset(
+        settings?.who_pays === 'attendees' ? 'attendees' : 'invitees',
+        uniqueInvites,
+        attendeesForEvent,
+        people
+      );
+      setPaidBy(activity.created_by);
     } catch (e) {
       const msg = e instanceof Error ? e.message : t.common.error;
       setError(/relation|does not exist|function|column/i.test(msg) ? t.finance.runSql : msg);
     } finally {
       setLoading(false);
     }
-  }, [sid, activity.id, activity.created_by, activity.series_invite_user_ids, attendees, userId, paidBy, t.common.error, t.finance.runSql]);
+  }, [
+    activity,
+    attendees,
+    applyPreset,
+    sid,
+    t.common.error,
+    t.finance.runSql,
+  ]);
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload when series changes
-  }, [sid]);
+    void load();
+  }, [load]);
 
   async function onAddExpense() {
     const n = Number(amount.replace(',', '.'));
@@ -214,6 +270,31 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         <SummaryCard label={t.finance.totalSpent} value={`${totalSpent.toFixed(2)} €`} />
         <SummaryCard label={t.finance.expenses} value={String(expenses.length)} />
       </View>
+
+      {financeSettings && fundingMeta && Number(financeSettings.amount) > 0 ? (
+        <View style={styles.card}>
+          <Subtitle>{t.finance.whoPays}</Subtitle>
+          <Muted>
+            {t.finance.fundingSummary(
+              financeSettings.who_pays === 'attendees'
+                ? t.finance.whoPaysAttendees
+                : t.finance.whoPaysInvitees,
+              fundingMeta.payerCount
+            )}
+          </Muted>
+          <View style={styles.summaryRow}>
+            <SummaryCard
+              label={t.finance.eventTotal}
+              value={`${fundingMeta.total.toFixed(2)} €`}
+            />
+            <SummaryCard
+              label={t.finance.perPerson}
+              value={`${fundingMeta.perPerson.toFixed(2)} €`}
+            />
+          </View>
+          <Muted>{t.finance.paysOrganizer}</Muted>
+        </View>
+      ) : null}
 
       {attendanceStats ? (
         <View style={styles.card}>

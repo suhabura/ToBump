@@ -407,6 +407,7 @@ export async function upsertSeriesFinanceSettings(input: {
   seriesId: string;
   fundingMode: import('@/lib/types').FundingMode;
   amount: number;
+  whoPays?: import('@/lib/types').FinanceWhoPays;
   userId: string;
 }): Promise<void> {
   const { error } = await supabase.from('series_finance_settings').upsert(
@@ -414,6 +415,7 @@ export async function upsertSeriesFinanceSettings(input: {
       series_id: input.seriesId,
       funding_mode: input.fundingMode,
       amount: input.amount,
+      who_pays: input.whoPays ?? 'invitees',
       currency: 'EUR',
       updated_by: input.userId,
       updated_at: new Date().toISOString(),
@@ -426,4 +428,114 @@ export async function upsertSeriesFinanceSettings(input: {
 export async function clearSeriesFinanceSettings(seriesId: string): Promise<void> {
   const { error } = await supabase.from('series_finance_settings').delete().eq('series_id', seriesId);
   if (error && !/does not exist|permission/i.test(error.message)) throw error;
+}
+
+function monthKey(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  }
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Create/sync funding expenses from series settings (idempotent).
+ * `settings.amount` = fee **per person**. Expense total = perPerson × payers.
+ * Paid by organizer; each payer owes perPerson.
+ * - per_event: one expense per occurrence
+ * - monthly: one expense per calendar month
+ * - fixed: one expense for the whole series
+ */
+export async function ensureFundingExpenses(input: {
+  activity: {
+    id: string;
+    series_id?: string | null;
+    created_by: string;
+    finance_enabled?: boolean;
+    title: string;
+    starts_at: string;
+  };
+  settings: import('@/lib/types').SeriesFinanceSettings;
+}): Promise<{ created: boolean; total: number; perPerson: number; payerCount: number }> {
+  const perPerson = round2(Number(input.settings.amount) || 0);
+  const empty = { created: false, total: 0, perPerson, payerCount: 0 };
+  if (!input.activity.finance_enabled || perPerson <= 0) return empty;
+
+  const sid = seriesKey(input.activity);
+  const organizerId = input.activity.created_by;
+  const who = input.settings.who_pays === 'attendees' ? 'attendees' : 'invitees';
+  const [invitees, attendees] = await Promise.all([
+    fetchSeriesInviteeIds(sid),
+    fetchActivityAttendeeIds(input.activity.id),
+  ]);
+
+  let memberIds =
+    who === 'attendees'
+      ? attendees.length
+        ? attendees
+        : invitees
+      : invitees.length
+        ? invitees
+        : [];
+  // Payees owe the organizer — exclude organizer from the split list
+  memberIds = Array.from(new Set(memberIds)).filter((id) => id !== organizerId);
+  if (!memberIds.length) {
+    // Nobody else to charge yet (e.g. only organizer invited)
+    return { created: false, total: 0, perPerson, payerCount: 0 };
+  }
+
+  const payerCount = memberIds.length;
+  const total = round2(perPerson * payerCount);
+
+  const mode = input.settings.funding_mode === 'annual' ? 'fixed' : input.settings.funding_mode;
+  let expenseType: ActivityExpense['expense_type'] = 'per_event';
+  let periodKey: string;
+  let title: string;
+  let activityId: string | null = input.activity.id;
+
+  if (mode === 'monthly') {
+    expenseType = 'monthly';
+    periodKey = `month:${monthKey(input.activity.starts_at)}`;
+    title = `Monthly fee · ${perPerson.toFixed(2)} €/person · ${periodKey.replace('month:', '')}`;
+    activityId = null;
+  } else if (mode === 'fixed') {
+    expenseType = 'annual';
+    periodKey = 'fixed';
+    title = `Fixed fee · ${perPerson.toFixed(2)} €/person`;
+    activityId = null;
+  } else {
+    expenseType = 'per_event';
+    periodKey = `event:${input.activity.id}`;
+    title = `Event fee · ${perPerson.toFixed(2)} €/person · ${input.activity.title}`;
+    activityId = input.activity.id;
+  }
+
+  const existing = await fetchSeriesExpenses(sid);
+  const existingExp = existing.find((e) => e.period_key === periodKey);
+  if (existingExp) {
+    const existingMembers = new Set((existingExp.members ?? []).map((m) => m.user_id));
+    const sameMembers =
+      memberIds.length === existingMembers.size && memberIds.every((id) => existingMembers.has(id));
+    const sameAmount = Math.abs(Number(existingExp.amount) - total) < 0.001;
+    if (sameMembers && sameAmount) {
+      return { created: false, total, perPerson, payerCount };
+    }
+    // Settings or invite list changed — recreate so obligations match
+    await deleteExpense(existingExp.id);
+  }
+
+  await createExpense({
+    seriesId: sid,
+    expenseType,
+    title,
+    amount: total,
+    splitMode: who === 'attendees' ? 'equal_attendees' : 'equal_all',
+    memberIds,
+    paidBy: organizerId,
+    activityId,
+    periodKey,
+  });
+
+  return { created: true, total, perPerson, payerCount };
 }

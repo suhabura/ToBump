@@ -33,6 +33,7 @@ export default function EditActivityScreen() {
     is_recurring?: boolean;
     finance_enabled?: boolean;
     funding_mode?: FundingMode | null;
+    who_pays?: import('@/lib/types').FinanceWhoPays | null;
     series_id?: string | null;
     recurrence_rules?: RecurrenceRule[];
     recurrence_until?: string | null;
@@ -70,6 +71,7 @@ export default function EditActivityScreen() {
         : rulesFromLegacy(act.recurrence_weekdays ?? [], start.getHours(), start.getMinutes(), fallback);
       const sid = seriesKey(act);
       let fundingMode: FundingMode | null = null;
+      let whoPays: import('@/lib/types').FinanceWhoPays | null = null;
       let price = act.price;
       try {
         const settings = await fetchSeriesFinanceSettings(sid);
@@ -79,6 +81,9 @@ export default function EditActivityScreen() {
           if (settings.amount != null && (price == null || Number(price) === 0)) {
             price = Number(settings.amount);
           }
+        }
+        if (settings?.who_pays === 'attendees' || settings?.who_pays === 'invitees') {
+          whoPays = settings.who_pays;
         }
       } catch {
         /* settings table may be missing */
@@ -104,6 +109,7 @@ export default function EditActivityScreen() {
         is_recurring: act.is_recurring,
         finance_enabled: Boolean(act.finance_enabled),
         funding_mode: fundingMode,
+        who_pays: whoPays,
         series_id: act.series_id ?? act.id,
         recurrence_rules: rules,
         recurrence_until: act.recurrence_until ?? null,
