@@ -191,8 +191,7 @@ export const sl = {
     searchPlaceholder: 'Ime ali naslov…',
     clear: 'Počisti prizorišče',
     pickMode: 'Izberite način vnosa ali pustite prazno.',
-    freeTextHint:
-      'Izberi naslov s predloga ali vpiši ime in pritisni Enter (brez koordinat). Če se ujema s preverjenim ponudnikom, ga lahko tapneš spodaj.',
+    freeTextHint: 'Izberi naslov s predloga ali vpiši ime in pritisni Enter (brez koordinat).',
     providersHint: 'Preverjeni ponudniki v izbranem radiju (glede na lokacijo v profilu).',
     pickFromList: 'Izberite ponudnika s seznama.',
     noneMatch: 'Noben ponudnik ne ustreza iskanju.',

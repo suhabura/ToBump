@@ -15,7 +15,6 @@ import {
   type ActivityInput,
 } from '@/lib/api';
 import { dedupeProfilesByEmail } from '@/lib/friends';
-import { distanceMeters, formatDistance, venueMatchScore } from '@/lib/geo';
 import { formatDuration, formatRecurrence, formatTime, hydrateRules, isoWeekday, normalizeRules, rulesFromLegacy, WEEKDAY_OPTIONS, type RecurrenceRule } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
 import type { Category, Enterprise, Privacy, Profile } from '@/lib/types';
@@ -91,7 +90,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [venueText, setVenueText] = useState(initial?.venue_text ?? '');
   const [venueLatitude, setVenueLatitude] = useState<number | null>(initial?.venue_latitude ?? null);
   const [venueLongitude, setVenueLongitude] = useState<number | null>(initial?.venue_longitude ?? null);
-  const [venueDraft, setVenueDraft] = useState(initial?.venue_text ?? '');
   const [matchedCategoryId, setMatchedCategoryId] = useState<string | null>(initial?.category_id ?? null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [enterprises, setEnterprises] = useState<Enterprise[]>([]);
@@ -135,31 +133,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
   const isCategorized = Boolean(matchedCategoryId);
 
-  const typedVenueMatches = useMemo(() => {
-    const q = venueDraft.trim();
-    if (q.length < 2 || enterpriseId) return [];
-    const list = enterprises.filter((e) => e.is_approved !== false);
-    const origin =
-      profile?.latitude != null && profile?.longitude != null
-        ? { latitude: profile.latitude, longitude: profile.longitude }
-        : null;
-
-    return list
-      .map((e) => {
-        const score = venueMatchScore(q, e.name, e.address);
-        if (score == null) return null;
-        const dist =
-          origin && e.latitude != null && e.longitude != null
-            ? distanceMeters(origin, { latitude: e.latitude, longitude: e.longitude })
-            : Number.POSITIVE_INFINITY;
-        return { enterprise: e, score, dist };
-      })
-      .filter((row): row is { enterprise: Enterprise; score: number; dist: number } => row != null)
-      .sort((a, b) => a.score - b.score || a.dist - b.dist)
-      .slice(0, 8)
-      .map((row) => row.enterprise);
-  }, [enterprises, venueDraft, enterpriseId, profile?.latitude, profile?.longitude]);
-
   const selectedEnterprise = enterprises.find((e) => e.id === enterpriseId) ?? null;
 
   const venueAddress =
@@ -179,15 +152,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       ? { latitude: profile.latitude, longitude: profile.longitude }
       : null;
 
-  function selectProvider(e: Enterprise) {
-    setEnterpriseId(e.id);
-    const label = e.address?.trim() ? `${e.name} · ${e.address.trim()}` : e.name;
-    setVenueText(label);
-    setVenueDraft(label);
-    setVenueLatitude(e.latitude ?? null);
-    setVenueLongitude(e.longitude ?? null);
-  }
-
   function onVenueLocationChange(next: {
     address: string;
     latitude: number | null;
@@ -197,13 +161,11 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     setVenueText(next.address);
     setVenueLatitude(next.latitude);
     setVenueLongitude(next.longitude);
-    if (next.address.trim()) setVenueDraft(next.address);
   }
 
   function clearVenue() {
     setEnterpriseId(null);
     setVenueText('');
-    setVenueDraft('');
     setVenueLatitude(null);
     setVenueLongitude(null);
   }
@@ -214,7 +176,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     if (ent) {
       const label = ent.address?.trim() ? `${ent.name} · ${ent.address.trim()}` : ent.name;
       setVenueText(label);
-      setVenueDraft(label);
       setVenueLatitude(ent.latitude ?? null);
       setVenueLongitude(ent.longitude ?? null);
     }
@@ -631,41 +592,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           relativeTo={profileOrigin}
           showMyLocation={false}
           allowManualConfirm
-          onDraftChange={setVenueDraft}
           onChange={onVenueLocationChange}
         />
-        {isCategorized && typedVenueMatches.length > 0 ? (
-          <View style={{ marginTop: 8 }}>
-            <Muted>{t.venue.verifiedMatch}</Muted>
-            <View style={styles.rowWrap}>
-              {typedVenueMatches.map((e) => {
-                const origin = profileOrigin;
-                const dist =
-                  origin && e.latitude != null && e.longitude != null
-                    ? formatDistance(
-                        distanceMeters(origin, { latitude: e.latitude, longitude: e.longitude })
-                      )
-                    : null;
-                const kind = e.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official;
-                return (
-                  <Chip
-                    key={e.id}
-                    label={`${e.name} · ${kind}${dist ? ` · ${dist}` : ''}`}
-                    active={false}
-                    onPress={() => selectProvider(e)}
-                  />
-                );
-              })}
-            </View>
-          </View>
-        ) : null}
-        {selectedEnterprise ? (
-          <Muted>
-            {t.venue.selected}{' '}
-            {selectedEnterprise.provider_kind === 'tobump_booking' ? t.venue.tobump : t.venue.official} ·{' '}
-            {selectedEnterprise.name}
-          </Muted>
-        ) : null}
 
         {(enterpriseId && isCategorized) || venueText.trim() ? (
           <Button label={t.venue.clear} variant="ghost" onPress={clearVenue} />

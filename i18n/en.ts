@@ -191,8 +191,7 @@ export const en = {
     searchPlaceholder: 'Name or address…',
     clear: 'Clear venue',
     pickMode: 'Choose how to enter a venue, or leave empty.',
-    freeTextHint:
-      'Pick an address from suggestions, or type a name and press Enter (no coordinates). Matching verified providers appear below.',
+    freeTextHint: 'Pick an address from suggestions, or type a name and press Enter (no coordinates).',
     providersHint: 'Verified providers within the selected radius (from your profile location).',
     pickFromList: 'Pick a provider from the list.',
     noneMatch: 'No providers match this search.',
