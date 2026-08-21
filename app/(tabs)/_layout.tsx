@@ -16,13 +16,6 @@ function HeaderActions({ unread }: { unread: number }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12, gap: 4 }}>
       <Pressable
-        onPress={() => router.push('/shop')}
-        style={{ paddingHorizontal: 10, paddingVertical: 6 }}
-        accessibilityRole="button"
-        accessibilityLabel="Shop">
-        <FontAwesome name="shopping-bag" size={20} color={theme.colors.text} />
-      </Pressable>
-      <Pressable
         onPress={() => router.push('/notifications')}
         style={{ paddingHorizontal: 10, paddingVertical: 6 }}
         accessibilityRole="button"

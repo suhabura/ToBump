@@ -77,7 +77,7 @@ export async function createNotification(
 
 export async function fetchActivities(opts: {
   userId: string;
-  filter?: 'all' | 'mine' | 'invited' | 'commercial';
+  filter?: 'all' | 'mine' | 'invited' | 'commercial' | 'feed';
   search?: string;
   /** For commercial filter: max distance from origin in km */
   radiusKm?: number;
@@ -187,12 +187,20 @@ export async function fetchActivities(opts: {
       is_open_to_you,
       is_commercial,
       distance_m,
-      // 0 = for you (invited / FoF / friends), 1 = mine, 2 = commercial, 3 = other
-      sort_group: is_invited || is_open_to_you ? 0 : is_mine ? 1 : is_commercial ? 2 : 3,
+      // 0 = personal feed (invited / FoF / mine / joined), then commercial, then other
+      sort_group: is_invited || is_open_to_you || is_mine || joinedIds.has(a.id) ? 0 : is_commercial ? 1 : 2,
     };
   });
 
-  if (opts.filter === 'invited') {
+  if (opts.filter === 'feed' || opts.filter === 'all' || !opts.filter) {
+    result = result.filter(
+      (a) =>
+        a.is_invited ||
+        Boolean(a.is_open_to_you) ||
+        a.created_by === opts.userId ||
+        Boolean(a.is_joined)
+    );
+  } else if (opts.filter === 'invited') {
     result = result.filter((a) => a.is_invited || Boolean(a.is_open_to_you));
   } else if (opts.filter === 'mine') {
     result = result.filter((a) => a.created_by === opts.userId);
@@ -247,7 +255,7 @@ export async function fetchActivities(opts: {
     }
   }
 
-  // Vabljen → moji → komercialni → ostalo; znotraj po datumu
+  // Personal feed first; within feed sort by start time
   result.sort((a, b) => {
     if (a.sort_group !== b.sort_group) return a.sort_group! - b.sort_group!;
     return new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime();
