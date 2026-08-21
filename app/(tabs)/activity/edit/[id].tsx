@@ -4,9 +4,10 @@ import { ActivityForm } from '@/components/ActivityForm';
 import { EmptyState, Loading, Screen } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { userCanEditActivity } from '@/lib/api';
+import { fetchSeriesFinanceSettings, seriesKey } from '@/lib/finance';
 import { hydrateRules, rulesFromLegacy, type RecurrenceRule } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
-import type { Activity, Privacy } from '@/lib/types';
+import type { Activity, FundingMode, Privacy } from '@/lib/types';
 
 export default function EditActivityScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -31,6 +32,8 @@ export default function EditActivityScreen() {
     editor_user_ids?: string[];
     is_recurring?: boolean;
     finance_enabled?: boolean;
+    funding_mode?: FundingMode | null;
+    series_id?: string | null;
     recurrence_rules?: RecurrenceRule[];
     recurrence_until?: string | null;
     duration_minutes?: number | null;
@@ -65,11 +68,27 @@ export default function EditActivityScreen() {
       const rules = act.recurrence_rules?.length
         ? hydrateRules(act.recurrence_rules, fallback)
         : rulesFromLegacy(act.recurrence_weekdays ?? [], start.getHours(), start.getMinutes(), fallback);
+      const sid = seriesKey(act);
+      let fundingMode: FundingMode | null = null;
+      let price = act.price;
+      try {
+        const settings = await fetchSeriesFinanceSettings(sid);
+        if (settings?.funding_mode) {
+          fundingMode =
+            settings.funding_mode === 'annual' ? 'fixed' : (settings.funding_mode as FundingMode);
+          if (settings.amount != null && (price == null || Number(price) === 0)) {
+            price = Number(settings.amount);
+          }
+        }
+      } catch {
+        /* settings table may be missing */
+      }
+
       setInitial({
         title: act.title,
         starts_at: act.starts_at,
         ends_at: act.ends_at,
-        price: act.price,
+        price,
         max_participants: act.max_participants,
         privacy: act.privacy,
         enterprise_id: act.enterprise_id,
@@ -84,6 +103,8 @@ export default function EditActivityScreen() {
         editor_user_ids: (editors ?? []).map((e: { user_id: string }) => e.user_id),
         is_recurring: act.is_recurring,
         finance_enabled: Boolean(act.finance_enabled),
+        funding_mode: fundingMode,
+        series_id: act.series_id ?? act.id,
         recurrence_rules: rules,
         recurrence_until: act.recurrence_until ?? null,
         duration_minutes: act.duration_minutes,

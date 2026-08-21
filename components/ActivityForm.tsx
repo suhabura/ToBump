@@ -15,9 +15,14 @@ import {
   type ActivityInput,
 } from '@/lib/api';
 import { dedupeProfilesByEmail } from '@/lib/friends';
+import {
+  clearSeriesFinanceSettings,
+  seriesKey,
+  upsertSeriesFinanceSettings,
+} from '@/lib/finance';
 import { formatDuration, formatRecurrence, formatTime, hydrateRules, isoWeekday, normalizeRules, rulesFromLegacy, WEEKDAY_OPTIONS, type RecurrenceRule } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
-import type { Category, Enterprise, Privacy, Profile } from '@/lib/types';
+import type { Category, Enterprise, FundingMode, Privacy, Profile } from '@/lib/types';
 import { categoryDisplayName, resolveActivityCategoryKey, useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
@@ -31,6 +36,8 @@ type Props = {
     invite_user_ids?: string[];
     editor_user_ids?: string[];
     group_id?: string | null;
+    series_id?: string | null;
+    funding_mode?: FundingMode | null;
   };
 };
 
@@ -101,6 +108,13 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [showEditors, setShowEditors] = useState(Boolean(initial?.editor_user_ids?.length));
   const [isRecurring, setIsRecurring] = useState(Boolean(initial?.is_recurring));
   const [financeEnabled, setFinanceEnabled] = useState(Boolean(initial?.finance_enabled));
+  const [fundingMode, setFundingMode] = useState<FundingMode>(
+    initial?.funding_mode && ['per_event', 'monthly', 'fixed', 'annual'].includes(initial.funding_mode)
+      ? initial.funding_mode === 'annual'
+        ? 'fixed'
+        : (initial.funding_mode as FundingMode)
+      : 'per_event'
+  );
   const [rules, setRules] = useState<RecurrenceRule[]>(() => initialRules(initial));
   const [recurrenceUntil, setRecurrenceUntil] = useState<Date | null>(() => {
     const raw = (initial as { recurrence_until?: string | null } | undefined)?.recurrence_until;
@@ -304,6 +318,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     if (!on) {
       setRules([]);
       setRecurrenceUntil(null);
+      setFundingMode('per_event');
     }
   }
 
@@ -369,11 +384,15 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       return;
     }
 
-    const priceTrim = price.trim();
-    if (priceTrim === '' || Number.isNaN(Number(priceTrim)) || Number(priceTrim) < 0) {
-      setFormError(t.form.needPrice);
-      return;
+    const priceTrim = financeEnabled ? price.trim() : '0';
+    if (financeEnabled) {
+      if (priceTrim === '' || Number.isNaN(Number(priceTrim)) || Number(priceTrim) < 0) {
+        setFormError(t.form.needPrice);
+        return;
+      }
     }
+    const priceNum = Number(priceTrim) || 0;
+    const modeToSave: FundingMode = isRecurring ? fundingMode : 'per_event';
 
     const capacityTrim = capacity.trim();
     if (!/^\d+$/.test(capacityTrim) || Number(capacityTrim) < 1) {
@@ -408,7 +427,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           starts_at: startToSave.toISOString(),
           ends_at: null,
           duration_minutes: isRecurring ? null : durationMinutes,
-          price: Number(priceTrim),
+          price: financeEnabled ? priceNum : 0,
           max_participants: capacityNum,
           privacy,
           enterprise_id: category_id ? enterpriseId : null,
@@ -425,6 +444,23 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         },
         activityId
       );
+
+      const sid = seriesKey({ id, series_id: initial?.series_id ?? null });
+      if (financeEnabled) {
+        await upsertSeriesFinanceSettings({
+          seriesId: sid,
+          fundingMode: modeToSave === 'annual' ? 'fixed' : modeToSave,
+          amount: priceNum,
+          userId,
+        });
+      } else {
+        try {
+          await clearSeriesFinanceSettings(sid);
+        } catch {
+          /* optional table */
+        }
+      }
+
       router.replace(`/activity/${id}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : t.common.error;
@@ -480,7 +516,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           </View>
         </View>
       ) : null}
-      <Input label={req(t.events.price)} value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
       <Input
         label={req(t.events.capacity)}
         value={capacity}
@@ -670,6 +705,52 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           onPress={() => setFinanceEnabled(true)}
         />
       </View>
+      {financeEnabled ? (
+        <View style={{ marginTop: 12, gap: 8 }}>
+          <Muted>{t.form.fundingMode}</Muted>
+          <View style={styles.rowWrap}>
+            <Chip
+              label={t.form.payPerEvent}
+              active={fundingMode === 'per_event'}
+              onPress={() => setFundingMode('per_event')}
+            />
+            {isRecurring ? (
+              <>
+                <Chip
+                  label={t.form.payMonthly}
+                  active={fundingMode === 'monthly'}
+                  onPress={() => setFundingMode('monthly')}
+                />
+                <Chip
+                  label={t.form.payFixed}
+                  active={fundingMode === 'fixed' || fundingMode === 'annual'}
+                  onPress={() => setFundingMode('fixed')}
+                />
+              </>
+            ) : null}
+          </View>
+          <Input
+            label={
+              fundingMode === 'monthly'
+                ? t.form.priceMonthly
+                : fundingMode === 'fixed' || fundingMode === 'annual'
+                  ? t.form.priceFixed
+                  : t.form.pricePerEvent
+            }
+            value={price}
+            onChangeText={setPrice}
+            keyboardType="decimal-pad"
+            placeholder="0"
+          />
+          <Muted>
+            {fundingMode === 'monthly'
+              ? t.form.priceMonthlyHint
+              : fundingMode === 'fixed' || fundingMode === 'annual'
+                ? t.form.priceFixedHint
+                : t.form.pricePerEventHint}
+          </Muted>
+        </View>
+      ) : null}
 
       {isCreator ? (
         <View style={{ marginTop: 16 }}>

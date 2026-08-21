@@ -390,3 +390,40 @@ export async function fetchMyFinance(userId: string): Promise<PersonalFinance> {
     recent,
   };
 }
+
+export async function fetchSeriesFinanceSettings(
+  seriesId: string
+): Promise<import('@/lib/types').SeriesFinanceSettings | null> {
+  const { data, error } = await supabase
+    .from('series_finance_settings')
+    .select('*')
+    .eq('series_id', seriesId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as import('@/lib/types').SeriesFinanceSettings) ?? null;
+}
+
+export async function upsertSeriesFinanceSettings(input: {
+  seriesId: string;
+  fundingMode: import('@/lib/types').FundingMode;
+  amount: number;
+  userId: string;
+}): Promise<void> {
+  const { error } = await supabase.from('series_finance_settings').upsert(
+    {
+      series_id: input.seriesId,
+      funding_mode: input.fundingMode,
+      amount: input.amount,
+      currency: 'EUR',
+      updated_by: input.userId,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'series_id' }
+  );
+  if (error) throw error;
+}
+
+export async function clearSeriesFinanceSettings(seriesId: string): Promise<void> {
+  const { error } = await supabase.from('series_finance_settings').delete().eq('series_id', seriesId);
+  if (error && !/does not exist|permission/i.test(error.message)) throw error;
+}

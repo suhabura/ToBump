@@ -1,7 +1,7 @@
 export type Privacy = 'invite' | 'friends' | 'group' | 'friends_of_friends';
 export type FriendshipStatus = 'pending' | 'accepted' | 'rejected';
 
-export type FundingMode = 'per_event' | 'monthly' | 'annual';
+export type FundingMode = 'per_event' | 'monthly' | 'annual' | 'fixed';
 export type ExpenseType = 'per_event' | 'monthly' | 'annual' | 'manual';
 export type SplitMode = 'equal_all' | 'equal_attendees' | 'selected';
 export type ObligationStatus = 'unpaid' | 'partial' | 'paid' | 'waived';

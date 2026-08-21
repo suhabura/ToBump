@@ -250,10 +250,14 @@ export async function fetchActivities(opts: {
     const maxM = radiusKm * 1000;
     if (opts.origin) {
       result = result.filter((a) => a.distance_m != null && a.distance_m <= maxM);
+      result = hideFullEventsExceptInvolved(result, opts.userId);
       result.sort((a, b) => (a.distance_m ?? 0) - (b.distance_m ?? 0));
       return result;
     }
   }
+
+  // Full events drop out of Events (still visible to organizer / already joined)
+  result = hideFullEventsExceptInvolved(result, opts.userId);
 
   // Personal feed first; within feed sort by start time
   result.sort((a, b) => {
@@ -262,6 +266,18 @@ export async function fetchActivities(opts: {
   });
 
   return result;
+}
+
+function hideFullEventsExceptInvolved(
+  activities: ActivityWithRelations[],
+  userId: string
+): ActivityWithRelations[] {
+  return activities.filter((a) => {
+    if (a.max_participants == null) return true;
+    const full = (a.join_count ?? 0) >= a.max_participants;
+    if (!full) return true;
+    return Boolean(a.is_joined) || a.created_by === userId;
+  });
 }
 
 /** Find subcategory id by English (or alias / localized) name. */
