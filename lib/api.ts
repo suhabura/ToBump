@@ -454,6 +454,30 @@ export async function joinActivity(activityId: string, userId: string, creatorId
       activity_id: activityId,
     });
   }
+
+  // Create per-person fee on first attendance (if eligible)
+  try {
+    const { fetchSeriesFinanceSettings, seriesKey, syncAttendeeFundingFees } = await import(
+      '@/lib/finance'
+    );
+    const { data: act } = await supabase
+      .from('activities')
+      .select('id, series_id, created_by, finance_enabled, title, starts_at')
+      .eq('id', activityId)
+      .maybeSingle();
+    if (act?.finance_enabled) {
+      const settings = await fetchSeriesFinanceSettings(seriesKey(act));
+      if (settings && Number(settings.amount) > 0) {
+        await syncAttendeeFundingFees({
+          activity: act,
+          settings,
+          onlyUserId: userId,
+        });
+      }
+    }
+  } catch {
+    /* finance tables / settings may be missing */
+  }
 }
 
 export async function leaveActivity(activityId: string, userId: string) {

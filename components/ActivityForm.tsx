@@ -40,6 +40,8 @@ type Props = {
     series_id?: string | null;
     funding_mode?: FundingMode | null;
     who_pays?: FinanceWhoPays | null;
+    payer_group_id?: string | null;
+    payer_user_ids?: string[];
   };
 };
 
@@ -118,8 +120,10 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       : 'per_event'
   );
   const [whoPays, setWhoPays] = useState<FinanceWhoPays>(
-    initial?.who_pays === 'attendees' ? 'attendees' : 'invitees'
+    initial?.who_pays === 'group' ? 'group' : 'selected'
   );
+  const [payerIds, setPayerIds] = useState<string[]>(initial?.payer_user_ids ?? []);
+  const [payerGroupId, setPayerGroupId] = useState<string | null>(initial?.payer_group_id ?? null);
   const [rules, setRules] = useState<RecurrenceRule[]>(() => initialRules(initial));
   const [recurrenceUntil, setRecurrenceUntil] = useState<Date | null>(() => {
     const raw = (initial as { recurrence_until?: string | null } | undefined)?.recurrence_until;
@@ -395,6 +399,14 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         setFormError(t.form.needPrice);
         return;
       }
+      if (whoPays === 'selected' && payerIds.filter((id) => id !== userId).length === 0) {
+        setFormError(t.form.needPayers);
+        return;
+      }
+      if (whoPays === 'group' && !payerGroupId) {
+        setFormError(t.form.needPayerGroup);
+        return;
+      }
     }
     const priceNum = Number(priceTrim) || 0;
     const modeToSave: FundingMode = isRecurring ? fundingMode : 'per_event';
@@ -457,6 +469,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           fundingMode: modeToSave === 'annual' ? 'fixed' : modeToSave,
           amount: priceNum,
           whoPays,
+          payerGroupId: whoPays === 'group' ? payerGroupId : null,
+          payerIds: whoPays === 'selected' ? payerIds.filter((id) => id !== userId) : [],
           userId,
         });
         try {
@@ -474,6 +488,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
               funding_mode: modeToSave === 'annual' ? 'fixed' : modeToSave,
               amount: priceNum,
               who_pays: whoPays,
+              payer_group_id: whoPays === 'group' ? payerGroupId : null,
+              payer_ids: whoPays === 'selected' ? payerIds.filter((id) => id !== userId) : [],
               currency: 'EUR',
               updated_by: userId,
               updated_at: new Date().toISOString(),
@@ -481,7 +497,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             },
           });
         } catch {
-          /* expenses created when opening Finance tab */
+          /* fees created when someone first attends / Finance tab syncs */
         }
       } else {
         try {
@@ -762,17 +778,39 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           <Muted>{t.form.whoPays}</Muted>
           <View style={styles.rowWrap}>
             <Chip
-              label={t.form.whoPaysInvitees}
-              active={whoPays === 'invitees'}
-              onPress={() => setWhoPays('invitees')}
+              label={t.form.whoPaysSelected}
+              active={whoPays === 'selected'}
+              onPress={() => setWhoPays('selected')}
             />
             <Chip
-              label={t.form.whoPaysAttendees}
-              active={whoPays === 'attendees'}
-              onPress={() => setWhoPays('attendees')}
+              label={t.form.whoPaysGroup}
+              active={whoPays === 'group'}
+              onPress={() => setWhoPays('group')}
             />
           </View>
           <Muted>{t.form.whoPaysHint}</Muted>
+          {whoPays === 'selected' ? (
+            <FriendPicker
+              friends={friends}
+              selectedIds={payerIds}
+              onChange={setPayerIds}
+              label={t.form.whoPaysPeople}
+              placeholder={t.form.searchFriends}
+              emptyHint={t.form.noFriends}
+            />
+          ) : (
+            <View style={styles.rowWrap}>
+              {groups.length === 0 ? <Muted>{t.form.noGroups}</Muted> : null}
+              {groups.map((g) => (
+                <Chip
+                  key={g.id}
+                  label={g.name}
+                  active={payerGroupId === g.id}
+                  onPress={() => setPayerGroupId(payerGroupId === g.id ? null : g.id)}
+                />
+              ))}
+            </View>
+          )}
           <Input
             label={
               fundingMode === 'monthly'

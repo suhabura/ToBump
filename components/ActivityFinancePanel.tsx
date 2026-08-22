@@ -5,8 +5,14 @@ import {
   computeBalances,
   computeBudget,
   createExpense,
+  createManualFundingFee,
   deleteExpense,
-  ensureFundingExpenses,
+  fundingFeeUserId,
+  isFundingExpense,
+  parseMonthlyFeeKey,
+  removeMonthlyFundingFee,
+  resolveEligiblePayerIds,
+  syncAttendeeFundingFees,
   fetchActivityAttendeeIds,
   fetchSeriesExpenses,
   fetchSeriesFinanceSettings,
@@ -17,6 +23,7 @@ import {
   recordSettlement,
   seriesKey,
   suggestTransfers,
+  updateExpenseAmount,
   type ExpenseWithMeta,
   type PersonBalance,
   type SuggestedTransfer,
@@ -47,6 +54,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const [members, setMembers] = useState<Profile[]>([]);
   const [inviteeIds, setInviteeIds] = useState<string[]>([]);
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
+  const [eligibleIds, setEligibleIds] = useState<string[]>([]);
   const [splitPreset, setSplitPreset] = useState<SplitPreset>('invitees');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -60,6 +68,8 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const [attendanceStats, setAttendanceStats] = useState<Awaited<
     ReturnType<typeof fetchSeriesAttendanceStats>
   > | null>(null);
+  const [editingFeeId, setEditingFeeId] = useState<string | null>(null);
+  const [editFeeAmount, setEditFeeAmount] = useState('');
 
   const [showAdd, setShowAdd] = useState(false);
   const [title, setTitle] = useState('');
@@ -82,6 +92,22 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const transfers = useMemo(() => suggestTransfers(balances), [balances]);
   const budget = useMemo(() => computeBudget(expenses), [expenses]);
   const actualExpenses = useMemo(() => expenses.filter(isActualExpense), [expenses]);
+  const feeExpenses = useMemo(
+    () => expenses.filter((e) => (e.period_key ?? '').startsWith('fee:')),
+    [expenses]
+  );
+  const chargedUserIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const e of feeExpenses) {
+      const uid = fundingFeeUserId(e.period_key);
+      if (uid) set.add(uid);
+    }
+    return set;
+  }, [feeExpenses]);
+  const pendingEligible = useMemo(
+    () => eligibleIds.filter((id) => id !== activity.created_by && !chargedUserIds.has(id)),
+    [eligibleIds, chargedUserIds, activity.created_by]
+  );
   const totalSpent = useMemo(
     () => actualExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0),
     [actualExpenses]
@@ -106,23 +132,25 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     setError(null);
     try {
       let settings: SeriesFinanceSettings | null = null;
-      let meta: { total: number; perPerson: number; payerCount: number } | null = null;
       try {
         settings = await fetchSeriesFinanceSettings(sid);
         setFinanceSettings(settings);
         if (settings && activity.finance_enabled) {
-          meta = await ensureFundingExpenses({ activity, settings });
+          const meta = await syncAttendeeFundingFees({ activity, settings });
           setFundingMeta({
             total: meta.total,
             perPerson: meta.perPerson,
             payerCount: meta.payerCount,
           });
+          setEligibleIds(await resolveEligiblePayerIds(settings));
         } else {
           setFundingMeta(null);
+          setEligibleIds([]);
         }
       } catch {
         setFinanceSettings(null);
         setFundingMeta(null);
+        setEligibleIds([]);
       }
 
       const [exps, mems, settles, invites, attendeesForEvent, stats] = await Promise.all([
@@ -150,19 +178,12 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       setAttendanceStats(stats);
 
       if (settings && Number(settings.amount) > 0) {
-        const who = settings.who_pays === 'attendees' ? 'attendees' : 'invitees';
-        const rawIds =
-          who === 'attendees'
-            ? attendeesForEvent.length
-              ? attendeesForEvent
-              : uniqueInvites
-            : uniqueInvites;
-        const n = Math.max(1, rawIds.filter((id) => id !== activity.created_by).length || rawIds.length);
-        const perPerson = Number(settings.amount) || 0;
+        const fees = exps.filter((e) => isFundingExpense(e));
+        const total = Math.round(fees.reduce((s, e) => s + (Number(e.amount) || 0), 0) * 100) / 100;
         setFundingMeta({
-          total: Math.round(perPerson * n * 100) / 100,
-          perPerson,
-          payerCount: n,
+          total,
+          perPerson: Number(settings.amount) || 0,
+          payerCount: fees.filter((e) => (e.period_key ?? '').startsWith('fee:')).length,
         });
       }
 
@@ -172,13 +193,9 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
           ? uniqueInvites.filter((id) => people.some((p) => p.id === id))
           : people.map((p) => p.id);
       });
-      applyPreset(
-        settings?.who_pays === 'attendees' ? 'attendees' : 'invitees',
-        uniqueInvites,
-        attendeesForEvent,
-        people
-      );
+      applyPreset('invitees', uniqueInvites, attendeesForEvent, people);
       setPaidBy(activity.created_by);
+      setEditingFeeId(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : t.common.error;
       setError(/relation|does not exist|function|column/i.test(msg) ? t.finance.runSql : msg);
@@ -278,6 +295,95 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     }
   }
 
+  async function onDeleteFee(e: ExpenseWithMeta) {
+    const monthly = parseMonthlyFeeKey(e.period_key);
+    if (!monthly) {
+      await onDeleteExpense(e.id);
+      return;
+    }
+    Alert.alert(t.finance.removeMonthlyTitle, t.finance.removeMonthlyBody, [
+      { text: t.common.cancel, style: 'cancel' },
+      {
+        text: t.finance.removeThisMonthOnly,
+        onPress: () => {
+          void (async () => {
+            setBusy(true);
+            try {
+              await removeMonthlyFundingFee({
+                seriesId: sid,
+                expenseId: e.id,
+                periodKey: e.period_key!,
+                mode: 'this_month',
+              });
+              await load();
+            } catch (err) {
+              Alert.alert(t.common.error, err instanceof Error ? err.message : t.common.error);
+            } finally {
+              setBusy(false);
+            }
+          })();
+        },
+      },
+      {
+        text: t.finance.stopFutureMonths,
+        style: 'destructive',
+        onPress: () => {
+          void (async () => {
+            setBusy(true);
+            try {
+              await removeMonthlyFundingFee({
+                seriesId: sid,
+                expenseId: e.id,
+                periodKey: e.period_key!,
+                mode: 'stop_future',
+              });
+              await load();
+            } catch (err) {
+              Alert.alert(t.common.error, err instanceof Error ? err.message : t.common.error);
+            } finally {
+              setBusy(false);
+            }
+          })();
+        },
+      },
+    ]);
+  }
+
+  async function onSaveFeeAmount(expenseId: string) {
+    const n = Number(editFeeAmount.replace(',', '.'));
+    if (!Number.isFinite(n) || n < 0) {
+      Alert.alert(t.common.error, t.finance.needAmount);
+      return;
+    }
+    setBusy(true);
+    try {
+      await updateExpenseAmount(expenseId, n);
+      setEditingFeeId(null);
+      await load();
+    } catch (e) {
+      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onChargeManually(personId: string) {
+    if (!financeSettings) return;
+    setBusy(true);
+    try {
+      await createManualFundingFee({
+        activity,
+        settings: financeSettings,
+        userId: personId,
+      });
+      await load();
+    } catch (e) {
+      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (loading) return <Muted>{t.common.loading}</Muted>;
   if (error) return <Text style={styles.error}>{error}</Text>;
 
@@ -292,28 +398,96 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         <SummaryCard label={t.finance.budgetOut} value={`${budget.spent.toFixed(2)} €`} />
       </View>
 
-      {financeSettings && fundingMeta && Number(financeSettings.amount) > 0 ? (
+      {financeSettings && Number(financeSettings.amount) > 0 ? (
         <View style={styles.card}>
-          <Subtitle>{t.finance.whoPays}</Subtitle>
+          <Subtitle>{t.finance.participantFees}</Subtitle>
           <Muted>
             {t.finance.fundingSummary(
-              financeSettings.who_pays === 'attendees'
-                ? t.finance.whoPaysAttendees
-                : t.finance.whoPaysInvitees,
-              fundingMeta.payerCount
+              financeSettings.who_pays === 'group'
+                ? t.finance.whoPaysGroup
+                : t.finance.whoPaysSelected,
+              fundingMeta?.payerCount ?? feeExpenses.length
             )}
           </Muted>
           <View style={styles.summaryRow}>
             <SummaryCard
               label={t.finance.eventTotal}
-              value={`${fundingMeta.total.toFixed(2)} €`}
+              value={`${(fundingMeta?.total ?? budget.funded).toFixed(2)} €`}
             />
             <SummaryCard
               label={t.finance.perPerson}
-              value={`${fundingMeta.perPerson.toFixed(2)} €`}
+              value={`${Number(financeSettings.amount).toFixed(2)} €`}
             />
           </View>
           <Muted>{t.finance.feesToBudget}</Muted>
+
+          {feeExpenses.length === 0 ? <Muted>{t.finance.noFeesYet}</Muted> : null}
+          {feeExpenses.map((e) => {
+            const uid = fundingFeeUserId(e.period_key);
+            const name = displayName(
+              (uid ? profilesById.get(uid) : null) ?? e.payer ?? null
+            );
+            const editing = editingFeeId === e.id;
+            return (
+              <View key={e.id} style={styles.feeRow}>
+                <Text style={styles.name}>{name}</Text>
+                {editing ? (
+                  <View style={{ gap: 6 }}>
+                    <Input
+                      label={t.finance.expenseAmount}
+                      value={editFeeAmount}
+                      onChangeText={setEditFeeAmount}
+                      keyboardType="decimal-pad"
+                    />
+                    <Button
+                      label={t.finance.saveFee}
+                      size="sm"
+                      loading={busy}
+                      onPress={() => void onSaveFeeAmount(e.id)}
+                    />
+                    <Text style={styles.link} onPress={() => setEditingFeeId(null)}>
+                      {t.common.cancel}
+                    </Text>
+                  </View>
+                ) : (
+                  <>
+                    <Text style={styles.amount}>{Number(e.amount).toFixed(2)} €</Text>
+                    {canManage ? (
+                      <View style={styles.feeActions}>
+                        <Pressable
+                          disabled={busy}
+                          onPress={() => {
+                            setEditingFeeId(e.id);
+                            setEditFeeAmount(String(Number(e.amount)));
+                          }}>
+                          <Text style={styles.link}>{t.finance.editFee}</Text>
+                        </Pressable>
+                        <Pressable disabled={busy} onPress={() => void onDeleteFee(e)}>
+                          <Text style={styles.linkMuted}>{t.finance.deleteExpense}</Text>
+                        </Pressable>
+                      </View>
+                    ) : null}
+                  </>
+                )}
+              </View>
+            );
+          })}
+
+          {canManage && pendingEligible.length ? (
+            <View style={{ marginTop: 8, gap: 6 }}>
+              <Muted>{t.finance.eligiblePending}</Muted>
+              {pendingEligible.map((id) => (
+                <View key={id} style={styles.feeRow}>
+                  <Text style={styles.name}>
+                    {displayName(profilesById.get(id) ?? null)}
+                  </Text>
+                  <Pressable disabled={busy} onPress={() => void onChargeManually(id)}>
+                    <Text style={styles.link}>{t.finance.chargeManually}</Text>
+                  </Pressable>
+                </View>
+              ))}
+            </View>
+          ) : null}
         </View>
       ) : null}
 
@@ -595,6 +769,14 @@ const styles = StyleSheet.create({
   negative: { color: theme.colors.danger },
   link: { color: theme.colors.primary, fontWeight: '700' },
   linkMuted: { color: theme.colors.textMuted, fontWeight: '600', fontSize: 13 },
+  feeRow: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.border,
+    gap: 4,
+  },
+  feeActions: { flexDirection: 'row', gap: 16, marginTop: 4 },
   error: { color: theme.colors.danger, fontWeight: '600' },
   statLine: { color: theme.colors.text, fontSize: 13, marginTop: 4 },
 });

@@ -34,6 +34,8 @@ export default function EditActivityScreen() {
     finance_enabled?: boolean;
     funding_mode?: FundingMode | null;
     who_pays?: import('@/lib/types').FinanceWhoPays | null;
+    payer_group_id?: string | null;
+    payer_user_ids?: string[];
     series_id?: string | null;
     recurrence_rules?: RecurrenceRule[];
     recurrence_until?: string | null;
@@ -72,6 +74,8 @@ export default function EditActivityScreen() {
       const sid = seriesKey(act);
       let fundingMode: FundingMode | null = null;
       let whoPays: import('@/lib/types').FinanceWhoPays | null = null;
+      let payerGroupId: string | null = null;
+      let payerUserIds: string[] = [];
       let price = act.price;
       try {
         const settings = await fetchSeriesFinanceSettings(sid);
@@ -82,9 +86,11 @@ export default function EditActivityScreen() {
             price = Number(settings.amount);
           }
         }
-        if (settings?.who_pays === 'attendees' || settings?.who_pays === 'invitees') {
+        if (settings?.who_pays === 'group' || settings?.who_pays === 'selected') {
           whoPays = settings.who_pays;
         }
+        payerGroupId = settings?.payer_group_id ?? null;
+        payerUserIds = settings?.payer_ids ?? [];
       } catch {
         /* settings table may be missing */
       }
@@ -110,6 +116,8 @@ export default function EditActivityScreen() {
         finance_enabled: Boolean(act.finance_enabled),
         funding_mode: fundingMode,
         who_pays: whoPays,
+        payer_group_id: payerGroupId,
+        payer_user_ids: payerUserIds,
         series_id: act.series_id ?? act.id,
         recurrence_rules: rules,
         recurrence_until: act.recurrence_until ?? null,
