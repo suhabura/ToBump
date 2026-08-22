@@ -408,27 +408,46 @@ export async function fetchSubcategories(): Promise<Category[]> {
 }
 
 export async function joinActivity(activityId: string, userId: string, creatorId: string, title: string) {
-  const { data: activity } = await supabase
-    .from('activities')
-    .select('max_participants')
-    .eq('id', activityId)
-    .single();
-
-  if (activity?.max_participants) {
-    const { count } = await supabase
-      .from('activity_joins')
-      .select('*', { count: 'exact', head: true })
-      .eq('activity_id', activityId);
-    if ((count ?? 0) >= activity.max_participants) {
+  const { error } = await supabase.rpc('join_activity_safe', { p_activity_id: activityId });
+  if (error) {
+    const msg = error.message ?? '';
+    if (/full/i.test(msg)) {
       throw new Error('Event is full');
     }
-  }
+    // Fallback if RPC not migrated yet
+    if (/function|does not exist|schema cache/i.test(msg)) {
+      const { data: activity } = await supabase
+        .from('activities')
+        .select('max_participants')
+        .eq('id', activityId)
+        .single();
 
-  const { error } = await supabase.from('activity_joins').insert({
-    activity_id: activityId,
-    user_id: userId,
-  });
-  if (error) throw error;
+      if (activity?.max_participants) {
+        const { count } = await supabase
+          .from('activity_joins')
+          .select('*', { count: 'exact', head: true })
+          .eq('activity_id', activityId);
+        if ((count ?? 0) >= activity.max_participants) {
+          throw new Error('Event is full');
+        }
+      }
+
+      const { error: insertErr } = await supabase.from('activity_joins').insert({
+        activity_id: activityId,
+        user_id: userId,
+      });
+      if (insertErr) {
+        if (/full/i.test(insertErr.message)) throw new Error('Event is full');
+        if (insertErr.code === '23505') {
+          // already joined
+        } else {
+          throw insertErr;
+        }
+      }
+    } else {
+      throw error;
+    }
+  }
 
   if (creatorId !== userId) {
     await createNotification(creatorId, 'activity_join', `Someone joined: ${title}`, {

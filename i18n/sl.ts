@@ -54,6 +54,7 @@ export const sl = {
     friend: 'Prijatelj',
     joined: 'Pridružen',
     full: 'Polno',
+    eventFull: 'Dogodek se je ravnokar zapolnil. Poskusi drugega.',
     privacy: 'Zasebnost',
     public: 'Javno',
     friendsOnly: 'Prijatelji',

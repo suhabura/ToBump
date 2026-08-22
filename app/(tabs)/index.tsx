@@ -1,13 +1,14 @@
 import { format } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
+import { Button, EmptyState, Input, Loading, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchActivities, joinActivity, leaveActivity } from '@/lib/api';
 import { formatDistance } from '@/lib/geo';
+import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
 import { activityLocationLabel, categoryLabel, displayName } from '@/lib/types';
 import { useT } from '@/i18n';
@@ -22,34 +23,69 @@ export default function EventsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasLoaded = useRef(false);
 
   const userId = user?.id;
 
-  const load = useCallback(async () => {
-    if (!userId || !configured) {
-      setLoading(false);
-      return;
-    }
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await fetchActivities({
-        userId,
-        filter: 'feed',
-        search,
-      });
-      setItems(data);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : t.common.error);
-    } finally {
-      setLoading(false);
-    }
-  }, [userId, configured, search, t.common.error]);
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!userId || !configured) {
+        setLoading(false);
+        return;
+      }
+      if (!opts?.silent || !hasLoaded.current) {
+        setLoading(true);
+      }
+      setError(null);
+      try {
+        const data = await fetchActivities({
+          userId,
+          filter: 'feed',
+          search,
+        });
+        setItems(data);
+        hasLoaded.current = true;
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t.common.error);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [userId, configured, search, t.common.error]
+  );
+
+  const scheduleLiveReload = useCallback(() => {
+    if (reloadTimer.current) clearTimeout(reloadTimer.current);
+    reloadTimer.current = setTimeout(() => {
+      void load({ silent: true });
+    }, 250);
+  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [load])
+      if (!userId || !configured) return;
+
+      const channel = supabase
+        .channel(`events-live-${userId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'activity_joins' },
+          () => scheduleLiveReload()
+        )
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'activities' },
+          () => scheduleLiveReload()
+        )
+        .subscribe();
+
+      return () => {
+        if (reloadTimer.current) clearTimeout(reloadTimer.current);
+        supabase.removeChannel(channel);
+      };
+    }, [load, userId, configured, scheduleLiveReload])
   );
 
   async function onJoin(item: ActivityWithRelations) {
@@ -59,9 +95,11 @@ export default function EventsScreen() {
     setBusyId(item.id);
     try {
       await joinActivity(item.id, user.id, item.created_by, item.title);
-      await load();
+      await load({ silent: true });
     } catch (e) {
-      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+      const msg = e instanceof Error ? e.message : t.common.error;
+      Alert.alert(t.common.error, /full/i.test(msg) ? t.events.eventFull : msg);
+      await load({ silent: true });
     } finally {
       setBusyId(null);
     }
@@ -72,7 +110,7 @@ export default function EventsScreen() {
     setBusyId(item.id);
     try {
       await leaveActivity(item.id, user.id);
-      await load();
+      await load({ silent: true });
     } catch (e) {
       Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
     } finally {
@@ -95,7 +133,7 @@ export default function EventsScreen() {
           placeholder={t.events.search}
           value={search}
           onChangeText={setSearch}
-          onSubmitEditing={load}
+          onSubmitEditing={() => void load()}
           containerStyle={{ marginBottom: 0 }}
         />
         <Button
@@ -106,7 +144,7 @@ export default function EventsScreen() {
         />
       </View>
 
-      {loading ? (
+      {loading && !hasLoaded.current ? (
         <Loading />
       ) : error ? (
         <EmptyState title={error} subtitle={t.common.retry} />
@@ -130,7 +168,7 @@ export default function EventsScreen() {
                 <Pressable onPress={() => router.push(`/activity/${item.id}`)} style={styles.cardBody}>
                   <View style={styles.cardTop}>
                     {isOrganizer ? (
-                      <Text style={styles.organizerBadge}>{t.events.organizing}</Text>
+                      <Text style={[styles.tag, styles.tagOrganizing]}>{t.events.organizing}</Text>
                     ) : item.is_invited ? (
                       <Text style={[styles.tag, styles.tagInvited]}>{t.events.invitedBadge}</Text>
                     ) : item.is_open_to_you ? (
@@ -236,18 +274,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 8,
   },
-  organizerBadge: {
-    backgroundColor: theme.colors.primary,
-    color: '#fff',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999,
-    overflow: 'hidden',
-    fontSize: 11,
-    fontWeight: '800',
-    letterSpacing: 0.4,
-    textTransform: 'uppercase',
-  },
   tag: {
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -255,6 +281,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     fontSize: 11,
     fontWeight: '700',
+  },
+  tagOrganizing: {
+    backgroundColor: theme.colors.primarySoft,
+    color: theme.colors.primaryDark,
   },
   tagInvited: {
     backgroundColor: theme.colors.warningSoft,

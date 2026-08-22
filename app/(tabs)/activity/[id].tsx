@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Button, Chip, EmptyState, Loading, Muted, Screen, Subtitle, Title } from '@/components/ui';
@@ -38,12 +38,16 @@ export default function ActivityDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hasLoaded = useRef(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [tab, setTab] = useState<'details' | 'finance'>('details');
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!user || !id) return;
-    setLoading(true);
+    if (!opts?.silent || !hasLoaded.current) {
+      setLoading(true);
+    }
     try {
       await processDueRecurringActivities();
     } catch {
@@ -118,22 +122,48 @@ export default function ActivityDetailScreen() {
     } catch {
       setGuests([]);
     }
+    hasLoaded.current = true;
     setLoading(false);
   }, [id, user?.id, router]);
 
   useFocusEffect(
     useCallback(() => {
       void load();
-    }, [load])
+      if (!id) return;
+
+      const channel = supabase
+        .channel(`activity-live-${id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'activity_joins',
+            filter: `activity_id=eq.${id}`,
+          },
+          () => {
+            if (reloadTimer.current) clearTimeout(reloadTimer.current);
+            reloadTimer.current = setTimeout(() => void load({ silent: true }), 200);
+          }
+        )
+        .subscribe();
+
+      return () => {
+        if (reloadTimer.current) clearTimeout(reloadTimer.current);
+        supabase.removeChannel(channel);
+      };
+    }, [load, id])
   );
 
   async function onJoin() {
     if (!user || !activity) return;
     try {
       await joinActivity(activity.id, user.id, activity.created_by, activity.title);
-      load();
+      void load({ silent: true });
     } catch (e) {
-      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+      const msg = e instanceof Error ? e.message : t.common.error;
+      Alert.alert(t.common.error, /full/i.test(msg) ? t.events.eventFull : msg);
+      void load({ silent: true });
     }
   }
 

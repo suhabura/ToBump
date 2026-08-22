@@ -54,6 +54,7 @@ export const en = {
     friend: 'Friend',
     joined: 'Joined',
     full: 'Full',
+    eventFull: 'This event just filled up. Try another one.',
     privacy: 'Privacy',
     public: 'Public',
     friendsOnly: 'Friends',
