@@ -429,6 +429,7 @@ export const en = {
     coords: 'Coordinates',
     openMaps: 'Open in Google Maps',
     pickHint: 'Pick a suggestion or use your current location (coordinates required).',
+    clear: 'Clear location',
   },
   push: {
     permission: 'Enable notifications for invites and chat.',

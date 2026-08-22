@@ -428,6 +428,7 @@ export const sl = {
     coords: 'Koordinate',
     openMaps: 'Odpri v Google Maps',
     pickHint: 'Izberi predlog ali uporabi trenutno lokacijo (koordinate so obvezne).',
+    clear: 'Počisti lokacijo',
   },
   push: {
     permission: 'Omogočite obvestila za povabila in klepet.',

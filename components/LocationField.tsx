@@ -33,6 +33,8 @@ type Props = {
   allowManualConfirm?: boolean;
   /** Live draft text (for verified-provider chips while typing). */
   onDraftChange?: (text: string) => void;
+  /** Clear selection (shows × on the selected cloud). */
+  onClear?: () => void;
 };
 
 export function LocationField({
@@ -46,6 +48,7 @@ export function LocationField({
   showMyLocation = true,
   allowManualConfirm = false,
   onDraftChange,
+  onClear,
 }: Props) {
   const t = useT();
   const [query, setQuery] = useState(address);
@@ -260,25 +263,38 @@ export function LocationField({
 
       {allowManualConfirm ? (
         hasSelection ? (
-          <View style={styles.selectedBox}>
-            <Text style={styles.selectedLabel}>{t.location.selected}</Text>
-            <Text style={styles.selectedValue}>{address}</Text>
-            {hasCoords ? (
-              <Muted>
-                {t.location.coords}: {latitude!.toFixed(5)}, {longitude!.toFixed(5)}
-                {dist ? ` · ${dist}` : ''}
-                {' · '}
-                <Text
-                  style={styles.link}
-                  onPress={() =>
-                    Linking.openURL(mapsUrl({ latitude: latitude!, longitude: longitude! }))
-                  }>
-                  {t.location.openMaps}
-                </Text>
-              </Muted>
-            ) : (
-              <Muted>{t.location.manualNoCoords}</Muted>
-            )}
+          <View style={styles.selectedCloud}>
+            <View style={styles.selectedCloudBody}>
+              <Text style={styles.selectedValue} numberOfLines={2}>
+                {address}
+              </Text>
+              {hasCoords ? (
+                <Muted>
+                  {t.location.coords}: {latitude!.toFixed(5)}, {longitude!.toFixed(5)}
+                  {dist ? ` · ${dist}` : ''}
+                  {' · '}
+                  <Text
+                    style={styles.link}
+                    onPress={() =>
+                      Linking.openURL(mapsUrl({ latitude: latitude!, longitude: longitude! }))
+                    }>
+                    {t.location.openMaps}
+                  </Text>
+                </Muted>
+              ) : (
+                <Muted>{t.location.manualNoCoords}</Muted>
+              )}
+            </View>
+            {onClear ? (
+              <Pressable
+                onPress={onClear}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={t.location.clear}
+                style={styles.clearBtn}>
+                <Text style={styles.clearX}>×</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : (
           <Muted>{t.location.venueHint}</Muted>
@@ -324,24 +340,40 @@ const styles = StyleSheet.create({
   actions: { marginBottom: 8 },
   error: { color: theme.colors.danger, marginBottom: 6, fontWeight: '600' },
   link: { color: theme.colors.primary, fontWeight: '600' },
-  selectedBox: {
+  selectedCloud: {
     marginTop: 4,
-    padding: 12,
-    borderRadius: theme.radius.sm,
+    paddingVertical: 10,
+    paddingLeft: 14,
+    paddingRight: 8,
+    borderRadius: theme.radius.lg,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
-    gap: 4,
+    backgroundColor: theme.colors.primarySoft,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
   },
-  selectedLabel: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: theme.colors.textMuted,
-    textTransform: 'uppercase',
+  selectedCloudBody: {
+    flex: 1,
+    gap: 2,
+    minWidth: 0,
   },
   selectedValue: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
-    color: theme.colors.text,
+    color: theme.colors.primaryDark,
+  },
+  clearBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clearX: {
+    fontSize: 22,
+    lineHeight: 24,
+    fontWeight: '600',
+    color: theme.colors.primaryDark,
   },
 });

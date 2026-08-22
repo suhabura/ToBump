@@ -751,7 +751,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           ) : selectedGroupId ? (
             <Muted>{t.form.groupEmpty}</Muted>
           ) : null}
-          <Button label={t.form.manageGroups} variant="secondary" onPress={() => router.push('/groups')} />
+          {!activityId ? (
+            <Button label={t.form.manageGroups} variant="secondary" onPress={() => router.push('/groups')} />
+          ) : null}
         </View>
       ) : null}
 
@@ -784,7 +786,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             </View>
           )}
           <Muted>{t.form.groupExpandsToPeople}</Muted>
-          <Button label={t.form.manageGroups} variant="secondary" onPress={() => router.push('/groups')} />
+          {!activityId ? (
+            <Button label={t.form.manageGroups} variant="secondary" onPress={() => router.push('/groups')} />
+          ) : null}
         </View>
       ) : null}
 
@@ -800,11 +804,10 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           showMyLocation={false}
           allowManualConfirm
           onChange={onVenueLocationChange}
+          onClear={
+            (enterpriseId && isCategorized) || venueText.trim() ? clearVenue : undefined
+          }
         />
-
-        {(enterpriseId && isCategorized) || venueText.trim() ? (
-          <Button label={t.venue.clear} variant="ghost" onPress={clearVenue} />
-        ) : null}
       </View>
 
       <Text style={styles.section}>{req(t.form.recurrence)}</Text>
