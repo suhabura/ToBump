@@ -2,11 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button, Chip, Input, Muted, Subtitle } from '@/components/ui';
 import {
-  computeBalances,
   computeBudget,
   createExpense,
+  createExtraFundingCharges,
   createManualFundingFee,
   deleteExpense,
+  fetchSeriesObligations,
   fundingFeeUserId,
   isFundingExpense,
   parseMonthlyFeeKey,
@@ -18,18 +19,14 @@ import {
   fetchSeriesFinanceSettings,
   fetchSeriesInviteeIds,
   fetchSeriesMemberProfiles,
-  fetchSeriesSettlements,
   isActualExpense,
-  recordSettlement,
   seriesKey,
-  suggestTransfers,
+  setObligationPaid,
   updateExpenseAmount,
   type ExpenseWithMeta,
-  type PersonBalance,
-  type SuggestedTransfer,
 } from '@/lib/finance';
 import { fetchSeriesAttendanceStats } from '@/lib/guests';
-import type { ActivityWithRelations, Profile, SeriesFinanceSettings } from '@/lib/types';
+import type { ActivityObligation, ActivityWithRelations, Profile, SeriesFinanceSettings } from '@/lib/types';
 import { displayName } from '@/lib/types';
 import { useT } from '@/i18n';
 import { theme } from '@/constants/theme';
@@ -41,16 +38,20 @@ type Props = {
   attendees: Profile[];
 };
 
-type Tab = 'balances' | 'expenses';
+type Tab = 'budget' | 'expenses' | 'collect';
 type SplitPreset = 'invitees' | 'attendees' | 'custom';
-/** Person id, or special token for budget pot. */
 type PayerChoice = string | 'budget';
+
+function isGuestFeeKey(periodKey: string | null | undefined): boolean {
+  return (periodKey ?? '').startsWith('fee:guest:');
+}
 
 export function ActivityFinancePanel({ activity, userId, canManage, attendees }: Props) {
   const t = useT();
   const sid = seriesKey(activity);
-  const [tab, setTab] = useState<Tab>('balances');
+  const [tab, setTab] = useState<Tab>('budget');
   const [expenses, setExpenses] = useState<ExpenseWithMeta[]>([]);
+  const [obligations, setObligations] = useState<ActivityObligation[]>([]);
   const [members, setMembers] = useState<Profile[]>([]);
   const [inviteeIds, setInviteeIds] = useState<string[]>([]);
   const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
@@ -77,37 +78,83 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const [paidBy, setPaidBy] = useState<PayerChoice>(userId);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
+  const [collectTitle, setCollectTitle] = useState('');
+  const [collectAmount, setCollectAmount] = useState('');
+  const [collectIds, setCollectIds] = useState<string[]>([]);
+
   const profilesById = useMemo(() => {
     const map = new Map(members.map((m) => [m.id, m]));
     for (const a of attendees) map.set(a.id, a);
     return map;
   }, [members, attendees]);
 
-  const [settlements, setSettlements] = useState<Awaited<ReturnType<typeof fetchSeriesSettlements>>>([]);
+  const obligationByExpenseUser = useMemo(() => {
+    const map = new Map<string, ActivityObligation>();
+    for (const o of obligations) {
+      map.set(`${o.expense_id}:${o.user_id}`, o);
+    }
+    return map;
+  }, [obligations]);
 
-  const balances = useMemo(
-    () => computeBalances(expenses, settlements, profilesById),
-    [expenses, settlements, profilesById]
-  );
-  const transfers = useMemo(() => suggestTransfers(balances), [balances]);
-  const budget = useMemo(() => computeBudget(expenses), [expenses]);
+  const budget = useMemo(() => computeBudget(expenses, obligations), [expenses, obligations]);
   const actualExpenses = useMemo(() => expenses.filter(isActualExpense), [expenses]);
   const feeExpenses = useMemo(
     () => expenses.filter((e) => (e.period_key ?? '').startsWith('fee:')),
     [expenses]
   );
+  const memberFeeRows = useMemo(() => {
+    return feeExpenses
+      .map((e) => {
+        const uid = fundingFeeUserId(e.period_key);
+        if (!uid) return null;
+        const obl =
+          obligationByExpenseUser.get(`${e.id}:${uid}`) ??
+          obligations.find((o) => o.expense_id === e.id && o.user_id === uid) ??
+          null;
+        return { expense: e, userId: uid, obligation: obl };
+      })
+      .filter(Boolean) as {
+      expense: ExpenseWithMeta;
+      userId: string;
+      obligation: ActivityObligation | null;
+    }[];
+  }, [feeExpenses, obligationByExpenseUser, obligations]);
+
+  const guestFeeRows = useMemo(
+    () => feeExpenses.filter((e) => isGuestFeeKey(e.period_key)),
+    [feeExpenses]
+  );
+
+  const paidRows = useMemo(
+    () =>
+      memberFeeRows.filter(
+        (r) => r.obligation?.status === 'paid' || (Number(r.obligation?.amount_paid) || 0) > 0
+      ),
+    [memberFeeRows]
+  );
+  const unpaidRows = useMemo(
+    () =>
+      memberFeeRows.filter(
+        (r) =>
+          !r.obligation ||
+          (r.obligation.status !== 'paid' &&
+            r.obligation.status !== 'waived' &&
+            (Number(r.obligation.amount_paid) || 0) <= 0)
+      ),
+    [memberFeeRows]
+  );
+
   const chargedUserIds = useMemo(() => {
     const set = new Set<string>();
-    for (const e of feeExpenses) {
-      const uid = fundingFeeUserId(e.period_key);
-      if (uid) set.add(uid);
-    }
+    for (const r of memberFeeRows) set.add(r.userId);
     return set;
-  }, [feeExpenses]);
+  }, [memberFeeRows]);
+
   const pendingEligible = useMemo(
     () => eligibleIds.filter((id) => id !== activity.created_by && !chargedUserIds.has(id)),
     [eligibleIds, chargedUserIds, activity.created_by]
   );
+
   const totalSpent = useMemo(
     () => actualExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0),
     [actualExpenses]
@@ -153,10 +200,10 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         setEligibleIds([]);
       }
 
-      const [exps, mems, settles, invites, attendeesForEvent, stats] = await Promise.all([
+      const [exps, mems, obls, invites, attendeesForEvent, stats] = await Promise.all([
         fetchSeriesExpenses(sid),
         fetchSeriesMemberProfiles(sid),
-        fetchSeriesSettlements(sid),
+        fetchSeriesObligations(sid),
         fetchSeriesInviteeIds(sid),
         fetchActivityAttendeeIds(activity.id),
         fetchSeriesAttendanceStats(sid).catch(() => null),
@@ -171,10 +218,10 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
           ];
       const uniqueInvites = Array.from(new Set(inviteSet));
       setExpenses(exps);
+      setObligations(obls);
       setMembers(people);
       setInviteeIds(uniqueInvites);
       setAttendeeIds(attendeesForEvent);
-      setSettlements(settles);
       setAttendanceStats(stats);
 
       if (settings && Number(settings.amount) > 0) {
@@ -183,7 +230,8 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         setFundingMeta({
           total,
           perPerson: Number(settings.amount) || 0,
-          payerCount: fees.filter((e) => (e.period_key ?? '').startsWith('fee:')).length,
+          payerCount: fees.filter((e) => (e.period_key ?? '').startsWith('fee:') && !isGuestFeeKey(e.period_key))
+            .length,
         });
       }
 
@@ -193,6 +241,11 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
           ? uniqueInvites.filter((id) => people.some((p) => p.id === id))
           : people.map((p) => p.id);
       });
+      setCollectIds((prev) =>
+        prev.length
+          ? prev.filter((id) => people.some((p) => p.id === id))
+          : uniqueInvites.filter((id) => people.some((p) => p.id === id))
+      );
       applyPreset('invitees', uniqueInvites, attendeesForEvent, people);
       setPaidBy(activity.created_by);
       setEditingFeeId(null);
@@ -216,6 +269,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   }, [load]);
 
   async function onAddExpense() {
+    if (!canManage) return;
     const n = Number(amount.replace(',', '.'));
     const fromBudget = paidBy === 'budget';
     if (!title.trim()) {
@@ -266,15 +320,47 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     }
   }
 
-  async function onSettle(tr: SuggestedTransfer) {
+  async function onCollect() {
+    if (!canManage) return;
+    const n = Number(collectAmount.replace(',', '.'));
+    if (!collectTitle.trim()) {
+      Alert.alert(t.common.error, t.finance.needTitle);
+      return;
+    }
+    if (!Number.isFinite(n) || n <= 0) {
+      Alert.alert(t.common.error, t.finance.needAmount);
+      return;
+    }
+    if (!collectIds.length) {
+      Alert.alert(t.common.error, t.finance.needMembers);
+      return;
+    }
     setBusy(true);
     try {
-      await recordSettlement({
+      await createExtraFundingCharges({
         seriesId: sid,
-        fromUserId: tr.fromUserId,
-        toUserId: tr.toUserId,
-        amount: tr.amount,
+        activityId: activity.id,
+        title: collectTitle.trim(),
+        amount: n,
+        userIds: collectIds,
+        organizerId: activity.created_by,
       });
+      setCollectTitle('');
+      setCollectAmount('');
+      setTab('budget');
+      await load();
+    } catch (e) {
+      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onTogglePaid(obl: ActivityObligation, paid: boolean) {
+    if (!canManage) return;
+    setBusy(true);
+    try {
+      await setObligationPaid(obl.id, paid);
       await load();
     } catch (e) {
       Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
@@ -284,6 +370,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   }
 
   async function onDeleteExpense(id: string) {
+    if (!canManage) return;
     setBusy(true);
     try {
       await deleteExpense(id);
@@ -296,6 +383,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   }
 
   async function onDeleteFee(e: ExpenseWithMeta) {
+    if (!canManage) return;
     const monthly = parseMonthlyFeeKey(e.period_key);
     if (!monthly) {
       await onDeleteExpense(e.id);
@@ -350,6 +438,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   }
 
   async function onSaveFeeAmount(expenseId: string) {
+    if (!canManage) return;
     const n = Number(editFeeAmount.replace(',', '.'));
     if (!Number.isFinite(n) || n < 0) {
       Alert.alert(t.common.error, t.finance.needAmount);
@@ -368,7 +457,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   }
 
   async function onChargeManually(personId: string) {
-    if (!financeSettings) return;
+    if (!canManage || !financeSettings) return;
     setBusy(true);
     try {
       await createManualFundingFee({
@@ -389,312 +478,388 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
 
   return (
     <View style={{ gap: 12 }}>
-      <View style={styles.summaryRow}>
-        <SummaryCard label={t.finance.budget} value={`${budget.remaining.toFixed(2)} €`} />
-        <SummaryCard label={t.finance.totalSpent} value={`${totalSpent.toFixed(2)} €`} />
-      </View>
-      <View style={styles.summaryRow}>
-        <SummaryCard label={t.finance.budgetIn} value={`${budget.funded.toFixed(2)} €`} />
-        <SummaryCard label={t.finance.budgetOut} value={`${budget.spent.toFixed(2)} €`} />
+      <View style={styles.tabRow}>
+        <Chip label={t.finance.budgetTab} active={tab === 'budget'} onPress={() => setTab('budget')} />
+        <Chip
+          label={t.finance.expenses}
+          active={tab === 'expenses'}
+          onPress={() => setTab('expenses')}
+        />
+        <Chip
+          label={t.finance.collectTab}
+          active={tab === 'collect'}
+          onPress={() => setTab('collect')}
+        />
       </View>
 
-      {financeSettings && Number(financeSettings.amount) > 0 ? (
-        <View style={styles.card}>
-          <Subtitle>{t.finance.participantFees}</Subtitle>
-          <Muted>
-            {t.finance.fundingSummary(
-              financeSettings.who_pays === 'group'
-                ? t.finance.whoPaysGroup
-                : t.finance.whoPaysSelected,
-              fundingMeta?.payerCount ?? feeExpenses.length
-            )}
-          </Muted>
+      {!canManage ? <Muted>{t.finance.viewOnly}</Muted> : null}
+
+      {tab === 'budget' ? (
+        <View style={{ gap: 12 }}>
           <View style={styles.summaryRow}>
-            <SummaryCard
-              label={t.finance.eventTotal}
-              value={`${(fundingMeta?.total ?? budget.funded).toFixed(2)} €`}
-            />
-            <SummaryCard
-              label={t.finance.perPerson}
-              value={`${Number(financeSettings.amount).toFixed(2)} €`}
-            />
+            <SummaryCard label={t.finance.budget} value={`${budget.remaining.toFixed(2)} €`} />
+            <SummaryCard label={t.finance.totalSpent} value={`${totalSpent.toFixed(2)} €`} />
           </View>
-          <Muted>{t.finance.feesToBudget}</Muted>
+          <View style={styles.summaryRow}>
+            <SummaryCard label={t.finance.budgetIn} value={`${budget.funded.toFixed(2)} €`} />
+            <SummaryCard label={t.finance.budgetOut} value={`${budget.spent.toFixed(2)} €`} />
+          </View>
 
-          {feeExpenses.length === 0 ? <Muted>{t.finance.noFeesYet}</Muted> : null}
-          {feeExpenses.map((e) => {
-            const uid = fundingFeeUserId(e.period_key);
-            const name = displayName(
-              (uid ? profilesById.get(uid) : null) ?? e.payer ?? null
-            );
-            const editing = editingFeeId === e.id;
-            return (
-              <View key={e.id} style={styles.feeRow}>
-                <Text style={styles.name}>{name}</Text>
-                {editing ? (
-                  <View style={{ gap: 6 }}>
-                    <Input
-                      label={t.finance.expenseAmount}
-                      value={editFeeAmount}
-                      onChangeText={setEditFeeAmount}
-                      keyboardType="decimal-pad"
-                    />
-                    <Button
-                      label={t.finance.saveFee}
-                      size="sm"
-                      loading={busy}
-                      onPress={() => void onSaveFeeAmount(e.id)}
-                    />
-                    <Text style={styles.link} onPress={() => setEditingFeeId(null)}>
-                      {t.common.cancel}
-                    </Text>
-                  </View>
-                ) : (
-                  <>
-                    <Text style={styles.amount}>{Number(e.amount).toFixed(2)} €</Text>
-                    {canManage ? (
-                      <View style={styles.feeActions}>
-                        <Pressable
-                          disabled={busy}
-                          onPress={() => {
-                            setEditingFeeId(e.id);
-                            setEditFeeAmount(String(Number(e.amount)));
-                          }}>
-                          <Text style={styles.link}>{t.finance.editFee}</Text>
-                        </Pressable>
-                        <Pressable disabled={busy} onPress={() => void onDeleteFee(e)}>
-                          <Text style={styles.linkMuted}>{t.finance.deleteExpense}</Text>
-                        </Pressable>
-                      </View>
-                    ) : null}
-                  </>
+          {financeSettings && Number(financeSettings.amount) > 0 ? (
+            <View style={styles.card}>
+              <Subtitle>{t.finance.participantFees}</Subtitle>
+              <Muted>
+                {t.finance.fundingSummary(
+                  financeSettings.who_pays === 'group'
+                    ? t.finance.whoPaysGroup
+                    : t.finance.whoPaysSelected,
+                  fundingMeta?.payerCount ?? memberFeeRows.length
                 )}
+              </Muted>
+              <View style={styles.summaryRow}>
+                <SummaryCard
+                  label={t.finance.eventTotal}
+                  value={`${budget.funded.toFixed(2)} €`}
+                />
+                <SummaryCard
+                  label={t.finance.perPerson}
+                  value={`${Number(financeSettings.amount).toFixed(2)} €`}
+                />
               </View>
-            );
-          })}
+              <Muted>{t.finance.feesToBudget}</Muted>
+            </View>
+          ) : null}
 
-          {canManage && pendingEligible.length ? (
-            <View style={{ marginTop: 8, gap: 6 }}>
-              <Muted>{t.finance.eligiblePending}</Muted>
-              {pendingEligible.map((id) => (
-                <View key={id} style={styles.feeRow}>
-                  <Text style={styles.name}>
-                    {displayName(profilesById.get(id) ?? null)}
-                  </Text>
-                  <Pressable disabled={busy} onPress={() => void onChargeManually(id)}>
-                    <Text style={styles.link}>{t.finance.chargeManually}</Text>
-                  </Pressable>
-                </View>
+          <View style={styles.card}>
+            <Subtitle>{t.finance.whoPaid}</Subtitle>
+            {!paidRows.length && !guestFeeRows.length ? (
+              <Muted>{t.finance.nobodyPaidYet}</Muted>
+            ) : null}
+            {paidRows.map(({ expense: e, userId: uid, obligation: obl }) => (
+              <FeePayRow
+                key={e.id}
+                name={displayName(profilesById.get(uid) ?? null)}
+                amount={Number(obl?.amount_paid ?? e.amount)}
+                paid
+                canManage={canManage}
+                busy={busy}
+                editing={editingFeeId === e.id}
+                editAmount={editFeeAmount}
+                onEditAmount={setEditFeeAmount}
+                onStartEdit={() => {
+                  setEditingFeeId(e.id);
+                  setEditFeeAmount(String(Number(e.amount)));
+                }}
+                onCancelEdit={() => setEditingFeeId(null)}
+                onSaveEdit={() => void onSaveFeeAmount(e.id)}
+                onDelete={() => void onDeleteFee(e)}
+                onToggle={() => obl && void onTogglePaid(obl, false)}
+                t={t}
+              />
+            ))}
+            {guestFeeRows.map((e) => (
+              <View key={e.id} style={styles.feeRow}>
+                <Text style={styles.name}>{e.title}</Text>
+                <Text style={styles.amount}>{Number(e.amount).toFixed(2)} €</Text>
+                <Muted>{t.finance.guestIntoBudget}</Muted>
+              </View>
+            ))}
+          </View>
+
+          <View style={styles.card}>
+            <Subtitle>{t.finance.whoHasntPaid}</Subtitle>
+            {!unpaidRows.length && !pendingEligible.length ? (
+              <Muted>{t.finance.allPaid}</Muted>
+            ) : null}
+            {unpaidRows.map(({ expense: e, userId: uid, obligation: obl }) => (
+              <FeePayRow
+                key={e.id}
+                name={displayName(profilesById.get(uid) ?? null)}
+                amount={Number(obl?.amount_due ?? e.amount)}
+                paid={false}
+                canManage={canManage}
+                busy={busy}
+                editing={editingFeeId === e.id}
+                editAmount={editFeeAmount}
+                onEditAmount={setEditFeeAmount}
+                onStartEdit={() => {
+                  setEditingFeeId(e.id);
+                  setEditFeeAmount(String(Number(e.amount)));
+                }}
+                onCancelEdit={() => setEditingFeeId(null)}
+                onSaveEdit={() => void onSaveFeeAmount(e.id)}
+                onDelete={() => void onDeleteFee(e)}
+                onToggle={() => obl && void onTogglePaid(obl, true)}
+                t={t}
+              />
+            ))}
+            {canManage && pendingEligible.length ? (
+              <View style={{ marginTop: 8, gap: 6 }}>
+                <Muted>{t.finance.eligiblePending}</Muted>
+                {pendingEligible.map((id) => (
+                  <View key={id} style={styles.feeRow}>
+                    <Text style={styles.name}>{displayName(profilesById.get(id) ?? null)}</Text>
+                    <Pressable disabled={busy} onPress={() => void onChargeManually(id)}>
+                      <Text style={styles.link}>{t.finance.chargeManually}</Text>
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+          </View>
+
+          {attendanceStats ? (
+            <View style={styles.card}>
+              <Subtitle>{t.finance.attendanceStats}</Subtitle>
+              <Muted>{t.finance.uniqueAttendees(attendanceStats.uniqueAttendeeCount)}</Muted>
+              {attendanceStats.memberAttendances.map((m) => (
+                <Text key={m.userId} style={styles.statLine}>
+                  {t.finance.memberStat(displayName(profilesById.get(m.userId) ?? null), m.count)}
+                </Text>
+              ))}
+              {attendanceStats.guestAttendances.map((g) => (
+                <Text key={g.guestId} style={styles.statLine}>
+                  {t.finance.guestStat(g.name, g.count, g.totalPaid)}
+                </Text>
               ))}
             </View>
           ) : null}
         </View>
       ) : null}
 
-      {attendanceStats ? (
-        <View style={styles.card}>
-          <Subtitle>{t.finance.attendanceStats}</Subtitle>
-          <Muted>{t.finance.uniqueAttendees(attendanceStats.uniqueAttendeeCount)}</Muted>
-          {attendanceStats.memberAttendances.map((m) => (
-            <Text key={m.userId} style={styles.statLine}>
-              {t.finance.memberStat(
-                displayName(profilesById.get(m.userId) ?? null),
-                m.count
-              )}
-            </Text>
-          ))}
-          {attendanceStats.guestAttendances.map((g) => (
-            <Text key={g.guestId} style={styles.statLine}>
-              {t.finance.guestStat(g.name, g.count, g.totalPaid)}
-            </Text>
-          ))}
+      {tab === 'expenses' ? (
+        <View style={{ gap: 12 }}>
+          {canManage ? (
+            !showAdd ? (
+              <Button label={t.finance.addExpense} onPress={() => setShowAdd(true)} />
+            ) : (
+              <View style={styles.card}>
+                <Subtitle>{t.finance.addExpense}</Subtitle>
+                <Muted>{t.finance.expenseHint}</Muted>
+                <Input
+                  label={t.finance.expenseTitle}
+                  value={title}
+                  onChangeText={setTitle}
+                  placeholder={t.finance.expenseTitleHint}
+                />
+                <Input
+                  label={t.finance.expenseAmount}
+                  value={amount}
+                  onChangeText={setAmount}
+                  keyboardType="decimal-pad"
+                />
+                <Muted>{t.finance.paidBy}</Muted>
+                <View style={styles.rowWrap}>
+                  <Chip
+                    label={t.finance.fromBudget}
+                    active={paidBy === 'budget'}
+                    onPress={() => setPaidBy('budget')}
+                  />
+                  {members.map((m) => (
+                    <Chip
+                      key={m.id}
+                      label={displayName(m)}
+                      active={paidBy === m.id}
+                      onPress={() => setPaidBy(m.id)}
+                    />
+                  ))}
+                </View>
+                {paidBy !== 'budget' ? (
+                  <>
+                    <Muted>{t.finance.splitAmong}</Muted>
+                    <View style={styles.rowWrap}>
+                      <Chip
+                        label={t.finance.splitAllInvitees}
+                        active={splitPreset === 'invitees'}
+                        onPress={() => applyPreset('invitees', inviteeIds, attendeeIds, members)}
+                      />
+                      <Chip
+                        label={t.finance.splitAttendees}
+                        active={splitPreset === 'attendees'}
+                        onPress={() => applyPreset('attendees', inviteeIds, attendeeIds, members)}
+                      />
+                      <Chip
+                        label={t.finance.splitCustom}
+                        active={splitPreset === 'custom'}
+                        onPress={() => setSplitPreset('custom')}
+                      />
+                    </View>
+                    <View style={styles.rowWrap}>
+                      {members.map((m) => {
+                        const on = selectedIds.includes(m.id);
+                        return (
+                          <Chip
+                            key={m.id}
+                            label={displayName(m)}
+                            active={on}
+                            onPress={() => {
+                              setSplitPreset('custom');
+                              setSelectedIds((prev) =>
+                                on ? prev.filter((id) => id !== m.id) : [...prev, m.id]
+                              );
+                            }}
+                          />
+                        );
+                      })}
+                    </View>
+                  </>
+                ) : (
+                  <Muted>{t.finance.fromBudgetHint}</Muted>
+                )}
+                <Button label={t.finance.createExpense} onPress={onAddExpense} loading={busy} />
+                <Text style={[styles.link, { marginTop: 4 }]} onPress={() => setShowAdd(false)}>
+                  {t.common.cancel}
+                </Text>
+              </View>
+            )
+          ) : null}
+
+          <ExpensesView
+            expenses={actualExpenses}
+            canManage={canManage}
+            busy={busy}
+            onDelete={onDeleteExpense}
+            t={t}
+          />
         </View>
       ) : null}
 
-      <View style={styles.tabRow}>
-        <Chip label={t.finance.balances} active={tab === 'balances'} onPress={() => setTab('balances')} />
-        <Chip label={t.finance.expenses} active={tab === 'expenses'} onPress={() => setTab('expenses')} />
-      </View>
-
-      {!showAdd ? (
-        <Button label={t.finance.addExpense} onPress={() => setShowAdd(true)} />
-      ) : (
-        <View style={styles.card}>
-          <Subtitle>{t.finance.addExpense}</Subtitle>
-          <Muted>{t.finance.expenseHint}</Muted>
-          <Input
-            label={t.finance.expenseTitle}
-            value={title}
-            onChangeText={setTitle}
-            placeholder={t.finance.expenseTitleHint}
-          />
-          <Input
-            label={t.finance.expenseAmount}
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="decimal-pad"
-          />
-          <Muted>{t.finance.paidBy}</Muted>
-          <View style={styles.rowWrap}>
-            <Chip
-              label={t.finance.fromBudget}
-              active={paidBy === 'budget'}
-              onPress={() => setPaidBy('budget')}
-            />
-            {members.map((m) => (
-              <Chip
-                key={m.id}
-                label={displayName(m)}
-                active={paidBy === m.id}
-                onPress={() => setPaidBy(m.id)}
+      {tab === 'collect' ? (
+        <View style={{ gap: 12 }}>
+          {!canManage ? (
+            <Muted>{t.finance.collectViewOnly}</Muted>
+          ) : (
+            <View style={styles.card}>
+              <Subtitle>{t.finance.collectTitle}</Subtitle>
+              <Muted>{t.finance.collectHint}</Muted>
+              <Input
+                label={t.finance.expenseTitle}
+                value={collectTitle}
+                onChangeText={setCollectTitle}
+                placeholder={t.finance.collectTitleHint}
               />
-            ))}
-          </View>
-          {paidBy !== 'budget' ? (
-            <>
-              <Muted>{t.finance.splitAmong}</Muted>
-              <View style={styles.rowWrap}>
-                <Chip
-                  label={t.finance.splitAllInvitees}
-                  active={splitPreset === 'invitees'}
-                  onPress={() => applyPreset('invitees', inviteeIds, attendeeIds, members)}
-                />
-                <Chip
-                  label={t.finance.splitAttendees}
-                  active={splitPreset === 'attendees'}
-                  onPress={() => applyPreset('attendees', inviteeIds, attendeeIds, members)}
-                />
-                <Chip
-                  label={t.finance.splitCustom}
-                  active={splitPreset === 'custom'}
-                  onPress={() => setSplitPreset('custom')}
-                />
-              </View>
+              <Input
+                label={t.finance.expenseAmount}
+                value={collectAmount}
+                onChangeText={setCollectAmount}
+                keyboardType="decimal-pad"
+              />
+              <Muted>{t.finance.collectFrom}</Muted>
               <View style={styles.rowWrap}>
                 {members.map((m) => {
-                  const on = selectedIds.includes(m.id);
+                  const on = collectIds.includes(m.id);
                   return (
                     <Chip
                       key={m.id}
                       label={displayName(m)}
                       active={on}
-                      onPress={() => {
-                        setSplitPreset('custom');
-                        setSelectedIds((prev) =>
+                      onPress={() =>
+                        setCollectIds((prev) =>
                           on ? prev.filter((id) => id !== m.id) : [...prev, m.id]
-                        );
-                      }}
+                        )
+                      }
                     />
                   );
                 })}
               </View>
-            </>
-          ) : (
-            <Muted>{t.finance.fromBudgetHint}</Muted>
+              <Button label={t.finance.collectCreate} onPress={onCollect} loading={busy} />
+            </View>
           )}
-          <Button label={t.finance.createExpense} onPress={onAddExpense} loading={busy} />
-          <Text style={[styles.link, { marginTop: 4 }]} onPress={() => setShowAdd(false)}>
-            {t.common.cancel}
-          </Text>
         </View>
-      )}
-
-      {tab === 'balances' ? (
-        <BalancesView
-          balances={balances}
-          transfers={transfers}
-          userId={userId}
-          busy={busy}
-          onSettle={onSettle}
-          t={t}
-        />
-      ) : (
-        <ExpensesView
-          expenses={actualExpenses}
-          userId={userId}
-          canManage={canManage}
-          busy={busy}
-          onDelete={onDeleteExpense}
-          t={t}
-        />
-      )}
+      ) : null}
     </View>
   );
 }
 
-function BalancesView({
-  balances,
-  transfers,
-  userId,
+function FeePayRow({
+  name,
+  amount,
+  paid,
+  canManage,
   busy,
-  onSettle,
+  editing,
+  editAmount,
+  onEditAmount,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onDelete,
+  onToggle,
   t,
 }: {
-  balances: PersonBalance[];
-  transfers: SuggestedTransfer[];
-  userId: string;
+  name: string;
+  amount: number;
+  paid: boolean;
+  canManage: boolean;
   busy: boolean;
-  onSettle: (tr: SuggestedTransfer) => void;
+  editing: boolean;
+  editAmount: string;
+  onEditAmount: (v: string) => void;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onSaveEdit: () => void;
+  onDelete: () => void;
+  onToggle: () => void;
   t: ReturnType<typeof useT>;
 }) {
-  if (!balances.length) {
-    return <Muted>{t.finance.allSettled}</Muted>;
-  }
-
   return (
-    <View style={{ gap: 12 }}>
-      <Subtitle>{t.finance.balances}</Subtitle>
-      {balances.map((b) => {
-        const name = displayName(b.profile);
-        const isMe = b.userId === userId;
-        const label =
-          b.net > 0
-            ? isMe
-              ? t.finance.youAreOwed(b.net)
-              : t.finance.isOwed(name, b.net)
-            : isMe
-              ? t.finance.youOwe(Math.abs(b.net))
-              : t.finance.owes(name, Math.abs(b.net));
-        return (
-          <View key={b.userId} style={styles.card}>
-            <Text style={[styles.name, b.net > 0 ? styles.positive : styles.negative]}>{label}</Text>
+    <View style={styles.feeRow}>
+      <View style={styles.feeTop}>
+        {canManage ? (
+          <Pressable
+            disabled={busy}
+            onPress={onToggle}
+            hitSlop={8}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: paid }}
+            style={[styles.check, paid && styles.checkOn]}>
+            <Text style={styles.checkMark}>{paid ? '✓' : ''}</Text>
+          </Pressable>
+        ) : (
+          <View style={[styles.check, paid && styles.checkOn, styles.checkReadonly]}>
+            <Text style={styles.checkMark}>{paid ? '✓' : ''}</Text>
           </View>
-        );
-      })}
-
-      <Subtitle>{t.finance.settleUp}</Subtitle>
-      {!transfers.length ? <Muted>{t.finance.allSettled}</Muted> : null}
-      {transfers.map((tr) => {
-        const from = displayName(tr.fromProfile);
-        const to = displayName(tr.toProfile);
-        const involvesMe = tr.fromUserId === userId || tr.toUserId === userId;
-        return (
-          <View key={`${tr.fromUserId}-${tr.toUserId}-${tr.amount}`} style={styles.card}>
-            <Text style={styles.itemLabel}>
-              {t.finance.shouldPay(from, to, tr.amount)}
-            </Text>
-            {involvesMe ? (
-              <Pressable disabled={busy} onPress={() => onSettle(tr)}>
-                <Text style={styles.link}>{t.finance.markSettled}</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        );
-      })}
+        )}
+        <View style={{ flex: 1, minWidth: 0 }}>
+          <Text style={styles.name}>{name}</Text>
+          <Text style={styles.amount}>{amount.toFixed(2)} €</Text>
+        </View>
+      </View>
+      {editing ? (
+        <View style={{ gap: 6 }}>
+          <Input
+            label={t.finance.expenseAmount}
+            value={editAmount}
+            onChangeText={onEditAmount}
+            keyboardType="decimal-pad"
+          />
+          <Button label={t.finance.saveFee} size="sm" loading={busy} onPress={onSaveEdit} />
+          <Text style={styles.link} onPress={onCancelEdit}>
+            {t.common.cancel}
+          </Text>
+        </View>
+      ) : canManage ? (
+        <View style={styles.feeActions}>
+          <Pressable disabled={busy} onPress={onStartEdit}>
+            <Text style={styles.link}>{t.finance.editFee}</Text>
+          </Pressable>
+          <Pressable disabled={busy} onPress={onDelete}>
+            <Text style={styles.linkMuted}>{t.finance.deleteExpense}</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 }
 
 function ExpensesView({
   expenses,
-  userId,
   canManage,
   busy,
   onDelete,
   t,
 }: {
   expenses: ExpenseWithMeta[];
-  userId: string;
   canManage: boolean;
   busy: boolean;
   onDelete: (id: string) => void;
@@ -710,7 +875,6 @@ function ExpensesView({
         const payerName = fromBudget ? t.finance.fromBudget : displayName(e.payer ?? null);
         const n = (e.members ?? []).length || 1;
         const share = (Number(e.amount) || 0) / n;
-        const canDelete = canManage || e.created_by === userId;
         return (
           <View key={e.id} style={styles.card}>
             <Text style={styles.name}>{e.title}</Text>
@@ -720,7 +884,7 @@ function ExpensesView({
                 ? t.finance.paidFromBudget
                 : `${t.finance.paidByName(payerName)} · ${t.finance.splitN(n, share)}`}
             </Muted>
-            {canDelete ? (
+            {canManage ? (
               <Pressable disabled={busy} onPress={() => onDelete(e.id)}>
                 <Text style={[styles.linkMuted, { marginTop: 6 }]}>{t.finance.deleteExpense}</Text>
               </Pressable>
@@ -764,9 +928,6 @@ const styles = StyleSheet.create({
   rowWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   name: { fontWeight: '700', fontSize: 15, color: theme.colors.text },
   amount: { fontWeight: '800', fontSize: 18, color: theme.colors.primary },
-  itemLabel: { color: theme.colors.text, fontWeight: '600' },
-  positive: { color: theme.colors.success },
-  negative: { color: theme.colors.danger },
   link: { color: theme.colors.primary, fontWeight: '700' },
   linkMuted: { color: theme.colors.textMuted, fontWeight: '600', fontSize: 13 },
   feeRow: {
@@ -776,7 +937,24 @@ const styles = StyleSheet.create({
     borderTopColor: theme.colors.border,
     gap: 4,
   },
+  feeTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
   feeActions: { flexDirection: 'row', gap: 16, marginTop: 4 },
+  check: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: theme.colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  checkOn: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  checkReadonly: { opacity: 0.85 },
+  checkMark: { color: '#fff', fontWeight: '800', fontSize: 14, lineHeight: 16 },
   error: { color: theme.colors.danger, fontWeight: '600' },
   statLine: { color: theme.colors.text, fontSize: 13, marginTop: 4 },
 });

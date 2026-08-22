@@ -174,19 +174,82 @@ export function fundingFeeUserId(periodKey: string | null | undefined): string |
   return m?.[1] ?? null;
 }
 
-export function computeBudget(expenses: ExpenseWithMeta[]): {
+export function computeBudget(
+  expenses: ExpenseWithMeta[],
+  obligations: Pick<ActivityObligation, 'expense_id' | 'amount_paid' | 'amount_due' | 'status'>[] = []
+): {
   funded: number;
   spent: number;
   remaining: number;
 } {
+  const paidByExpense = new Map<string, number>();
+  for (const o of obligations) {
+    if (o.status === 'waived') continue;
+    paidByExpense.set(
+      o.expense_id,
+      round2((paidByExpense.get(o.expense_id) ?? 0) + (Number(o.amount_paid) || 0))
+    );
+  }
+
   let funded = 0;
   let spent = 0;
   for (const e of expenses) {
     const amount = Number(e.amount) || 0;
-    if (isFundingExpense(e)) funded = round2(funded + amount);
-    else if (e.paid_from_budget) spent = round2(spent + amount);
+    if (isFundingExpense(e)) {
+      if (paidByExpense.has(e.id)) funded = round2(funded + (paidByExpense.get(e.id) ?? 0));
+      else funded = round2(funded + amount);
+    } else if (e.paid_from_budget) {
+      spent = round2(spent + amount);
+    }
   }
   return { funded, spent, remaining: round2(funded - spent) };
+}
+
+export async function fetchSeriesObligations(seriesId: string): Promise<ActivityObligation[]> {
+  const { data, error } = await supabase
+    .from('activity_obligations')
+    .select('*')
+    .eq('series_id', seriesId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data as ActivityObligation[]) ?? [];
+}
+
+/** Organizer/editor: mark a fee obligation fully paid or unpaid. */
+export async function setObligationPaid(obligationId: string, paid: boolean): Promise<void> {
+  const { error } = await supabase.rpc('set_obligation_paid', {
+    p_obligation_id: obligationId,
+    p_paid: paid,
+  });
+  if (error) throw error;
+}
+
+/** Charge selected people an extra amount into the budget (unpaid until checked). */
+export async function createExtraFundingCharges(input: {
+  seriesId: string;
+  activityId: string;
+  title: string;
+  amount: number;
+  userIds: string[];
+  organizerId: string;
+}): Promise<void> {
+  const batch =
+    typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `${Date.now()}`;
+  for (const uid of input.userIds) {
+    await createExpense({
+      seriesId: input.seriesId,
+      expenseType: 'manual',
+      title: input.title,
+      amount: input.amount,
+      splitMode: 'selected',
+      memberIds: [uid],
+      paidBy: input.organizerId,
+      activityId: input.activityId,
+      periodKey: `fee:extra:${batch}:user:${uid}`,
+    });
+  }
 }
 
 /** Positive = owed money; negative = owes money. */

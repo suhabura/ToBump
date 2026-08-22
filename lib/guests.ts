@@ -57,7 +57,7 @@ export async function addGuestToActivity(input: {
   activityId: string;
   name: string;
   amount: number;
-  feeTreatment: 'none' | 'split_all';
+  feeTreatment: 'none' | 'split_all' | 'to_budget';
   memberIds?: string[];
   /** Existing series guest id — reuse instead of creating by name */
   guestId?: string;
@@ -112,12 +112,24 @@ export async function addGuestToActivity(input: {
   }
 
   let expenseId: string | null = null;
-  if (amount > 0 && feeTreatment === 'split_all') {
+  const userId = (await supabase.auth.getUser()).data.user?.id;
+  if (!userId) throw new Error('Not authenticated');
+
+  if (amount > 0 && feeTreatment === 'to_budget') {
+    expenseId = await createExpense({
+      seriesId: sid,
+      title: `Guest fee: ${input.name.trim()}`,
+      amount,
+      splitMode: 'selected',
+      memberIds: [userId],
+      paidBy: userId,
+      activityId: input.activityId,
+      periodKey: `fee:guest:${guestId}:activity:${input.activityId}`,
+    });
+  } else if (amount > 0 && feeTreatment === 'split_all') {
     const memberIds = input.memberIds?.length
       ? input.memberIds
       : await defaultSplitMemberIds(input.activityId, sid);
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) throw new Error('Not authenticated');
     expenseId = await createExpense({
       seriesId: sid,
       title: `Guest fee: ${input.name.trim()}`,
@@ -128,9 +140,6 @@ export async function addGuestToActivity(input: {
       activityId: input.activityId,
     });
   }
-
-  const userId = (await supabase.auth.getUser()).data.user?.id;
-  if (!userId) throw new Error('Not authenticated');
 
   const { data: att, error: attErr } = await supabase
     .from('activity_guest_attendances')

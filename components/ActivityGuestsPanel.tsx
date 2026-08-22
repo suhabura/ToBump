@@ -7,8 +7,8 @@ import {
   type GuestAttendanceWithGuest,
   type SeriesGuestWithStats,
 } from '@/lib/guests';
-import { fetchSeriesInviteeIds, seriesKey } from '@/lib/finance';
-import type { ActivityWithRelations, GuestFeeTreatment } from '@/lib/types';
+import { seriesKey } from '@/lib/finance';
+import type { ActivityWithRelations } from '@/lib/types';
 import { useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
@@ -28,7 +28,6 @@ export function ActivityGuestsPanel({ activity, canManage, guestsOnEvent = [], o
   const [name, setName] = useState('');
   const [isFree, setIsFree] = useState(true);
   const [amount, setAmount] = useState('');
-  const [feeTreatment, setFeeTreatment] = useState<GuestFeeTreatment>('split_all');
   const [error, setError] = useState<string | null>(null);
 
   const hereIds = new Set(guestsOnEvent.map((a) => a.guest_id));
@@ -64,17 +63,11 @@ export function ActivityGuestsPanel({ activity, canManage, guestsOnEvent = [], o
     }
     setBusy(true);
     try {
-      const memberIds = await fetchSeriesInviteeIds(sid);
       await addGuestToActivity({
         activityId: activity.id,
         name: n,
         amount: pay,
-        feeTreatment: !isFree
-          ? activity.is_recurring || activity.finance_enabled
-            ? feeTreatment
-            : 'none'
-          : 'none',
-        memberIds,
+        feeTreatment: !isFree ? 'to_budget' : 'none',
       });
       setName('');
       setAmount('');
@@ -141,23 +134,7 @@ export function ActivityGuestsPanel({ activity, canManage, guestsOnEvent = [], o
                 onChangeText={setAmount}
                 keyboardType="decimal-pad"
               />
-              {activity.is_recurring || activity.finance_enabled ? (
-                <>
-                  <Muted>{t.guests.feeMeaning}</Muted>
-                  <View style={styles.chipRow}>
-                    <Chip
-                      label={t.guests.splitAll}
-                      active={feeTreatment === 'split_all'}
-                      onPress={() => setFeeTreatment('split_all')}
-                    />
-                    <Chip
-                      label={t.guests.feeRecordOnly}
-                      active={feeTreatment === 'none'}
-                      onPress={() => setFeeTreatment('none')}
-                    />
-                  </View>
-                </>
-              ) : null}
+              <Muted>{t.guests.toBudgetHint}</Muted>
             </>
           ) : null}
           <Button label={t.guests.save} onPress={() => submitGuest(name)} loading={busy} icon="user-plus" />

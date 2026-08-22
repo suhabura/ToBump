@@ -80,7 +80,7 @@ export type ActivityGuest = {
   created_at: string;
 };
 
-export type GuestFeeTreatment = 'none' | 'split_all';
+export type GuestFeeTreatment = 'none' | 'split_all' | 'to_budget';
 
 export type ActivityGuestAttendance = {
   id: string;
