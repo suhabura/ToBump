@@ -240,6 +240,9 @@ export const en = {
     fofDbFix:
       'Participants’ friends is not enabled in the database yet. Run supabase/privacy_fof.sql in Supabase SQL Editor, then try again.',
     orSelectGroup: 'Or select a group',
+    groupExpandsToPeople: 'Choosing a group adds its members to the friends list above.',
+    groupMembers: 'Group members',
+    groupEmpty: 'This group has no members yet.',
     recurrence: 'Recurrence',
     recurrenceHint:
       "Set start and duration for each day. When an occurrence starts, it's removed and the next opens; chat carries over.",

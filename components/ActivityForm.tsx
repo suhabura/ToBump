@@ -24,6 +24,7 @@ import {
 import { formatDuration, formatRecurrence, formatTime, hydrateRules, isoWeekday, normalizeRules, rulesFromLegacy, WEEKDAY_OPTIONS, type RecurrenceRule } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
 import type { Category, Enterprise, FinanceWhoPays, FundingMode, Privacy, Profile } from '@/lib/types';
+import { displayName } from '@/lib/types';
 import { categoryDisplayName, resolveActivityCategoryKey, useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
@@ -107,6 +108,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [friends, setFriends] = useState<Profile[]>([]);
   const [groups, setGroups] = useState<{ id: string; name: string }[]>([]);
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(initial?.group_id ?? null);
+  const [groupMembers, setGroupMembers] = useState<Profile[]>([]);
   const [inviteIds, setInviteIds] = useState<string[]>(initial?.invite_user_ids ?? []);
   const [editorIds, setEditorIds] = useState<string[]>(initial?.editor_user_ids ?? []);
   const [showEditors, setShowEditors] = useState(Boolean(initial?.editor_user_ids?.length));
@@ -234,6 +236,58 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       }
     })();
   }, [userId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!selectedGroupId) {
+        setGroupMembers([]);
+        return;
+      }
+      const { data } = await supabase
+        .from('friend_group_members')
+        .select('user_id')
+        .eq('group_id', selectedGroupId);
+      if (cancelled) return;
+      const ids = Array.from(
+        new Set((data ?? []).map((m: { user_id: string }) => m.user_id).filter((id) => id !== userId))
+      );
+      if (!ids.length) {
+        setGroupMembers([]);
+        return;
+      }
+      const { data: profiles } = await supabase.from('profiles').select('*').in('id', ids);
+      if (cancelled) return;
+      setGroupMembers(
+        dedupeProfilesByEmail((profiles as Profile[]) ?? []).sort((a, b) =>
+          displayName(a).localeCompare(displayName(b), undefined, { sensitivity: 'base' })
+        )
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedGroupId, userId]);
+
+  /** Expand a friend group into individual invite selections (shown as people, not the group name). */
+  async function applyGroupAsInvitees(groupId: string) {
+    const { data } = await supabase
+      .from('friend_group_members')
+      .select('user_id')
+      .eq('group_id', groupId);
+    const ids = Array.from(
+      new Set((data ?? []).map((m: { user_id: string }) => m.user_id).filter((id) => id !== userId))
+    );
+    const missing = ids.filter((id) => !friends.some((f) => f.id === id));
+    if (missing.length) {
+      const { data: profiles } = await supabase.from('profiles').select('*').in('id', missing);
+      if (profiles?.length) {
+        setFriends((prev) => dedupeProfilesByEmail([...prev, ...(profiles as Profile[])]));
+      }
+    }
+    setInviteIds((prev) => Array.from(new Set([...prev, ...ids])));
+    setSelectedGroupId(null);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -626,6 +680,18 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
               ))}
             </View>
           )}
+          {selectedGroupId && groupMembers.length ? (
+            <View style={{ marginTop: 8, gap: 6 }}>
+              <Muted>{t.form.groupMembers}</Muted>
+              <View style={styles.rowWrap}>
+                {groupMembers.map((p) => (
+                  <Chip key={p.id} label={displayName(p)} active onPress={() => {}} />
+                ))}
+              </View>
+            </View>
+          ) : selectedGroupId ? (
+            <Muted>{t.form.groupEmpty}</Muted>
+          ) : null}
           <Button label={t.form.manageGroups} variant="secondary" onPress={() => router.push('/groups')} />
         </View>
       ) : null}
@@ -652,12 +718,13 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
                 <Chip
                   key={g.id}
                   label={g.name}
-                  active={selectedGroupId === g.id}
-                  onPress={() => setSelectedGroupId(selectedGroupId === g.id ? null : g.id)}
+                  active={false}
+                  onPress={() => void applyGroupAsInvitees(g.id)}
                 />
               ))}
             </View>
           )}
+          <Muted>{t.form.groupExpandsToPeople}</Muted>
           <Button label={t.form.manageGroups} variant="secondary" onPress={() => router.push('/groups')} />
         </View>
       ) : null}

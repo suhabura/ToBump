@@ -240,6 +240,9 @@ export const sl = {
     fofDbFix:
       'Način »Prijatelji udeležencev« še ni omogočen v bazi. V Supabase SQL Editorju zaženi supabase/privacy_fof.sql in poskusi znova.',
     orSelectGroup: 'Ali izberi skupino',
+    groupExpandsToPeople: 'Izbira skupine doda člane v seznam prijateljev zgoraj.',
+    groupMembers: 'Člani skupine',
+    groupEmpty: 'Ta skupina še nima članov.',
     recurrence: 'Ponavljanje',
     recurrenceHint:
       'Nastavite začetek in trajanje za vsak dan. Ko se termin začne, se zapre in odpre naslednji; klepet se prenese.',
