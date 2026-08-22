@@ -287,7 +287,7 @@ export const sl = {
     whoPaysGroup: 'Skupina',
     whoPaysPeople: 'Osebe, ki lahko plačajo',
     whoPaysHint:
-      'Izberi upravičene. Strošek se ustvari šele po prvi udeležbi; pozneje ga lahko urediš v Finance.',
+      'Privzeto so označeni vsi povabljeni. Išči za dodajanje/odstranitev, ali spodaj izberi skupino.',
     needPayers: 'Izberi vsaj eno osebo, ki lahko plača.',
     needPayerGroup: 'Izberi skupino oseb, ki lahko plačajo.',
   },

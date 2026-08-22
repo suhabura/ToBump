@@ -23,7 +23,7 @@ import {
 } from '@/lib/finance';
 import { formatDuration, formatRecurrence, formatTime, hydrateRules, isoWeekday, normalizeRules, rulesFromLegacy, WEEKDAY_OPTIONS, type RecurrenceRule } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
-import type { Category, Enterprise, FinanceWhoPays, FundingMode, Privacy, Profile } from '@/lib/types';
+import type { Category, Enterprise, FundingMode, Privacy, Profile } from '@/lib/types';
 import { displayName } from '@/lib/types';
 import { categoryDisplayName, resolveActivityCategoryKey, useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
@@ -121,11 +121,10 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         : (initial.funding_mode as FundingMode)
       : 'per_event'
   );
-  const [whoPays, setWhoPays] = useState<FinanceWhoPays>(
-    initial?.who_pays === 'group' ? 'group' : 'selected'
-  );
   const [payerIds, setPayerIds] = useState<string[]>(initial?.payer_user_ids ?? []);
-  const [payerGroupId, setPayerGroupId] = useState<string | null>(initial?.payer_group_id ?? null);
+  const [payersTouched, setPayersTouched] = useState(
+    Boolean(initial?.payer_user_ids?.length) || initial?.who_pays === 'group'
+  );
   const [rules, setRules] = useState<RecurrenceRule[]>(() => initialRules(initial));
   const [recurrenceUntil, setRecurrenceUntil] = useState<Date | null>(() => {
     const raw = (initial as { recurrence_until?: string | null } | undefined)?.recurrence_until;
@@ -288,6 +287,70 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     setInviteIds((prev) => Array.from(new Set([...prev, ...ids])));
     setSelectedGroupId(null);
   }
+
+  /** Expand a friend group into who-pays selections. */
+  async function applyGroupAsPayers(groupId: string) {
+    const { data } = await supabase
+      .from('friend_group_members')
+      .select('user_id')
+      .eq('group_id', groupId);
+    const ids = Array.from(
+      new Set((data ?? []).map((m: { user_id: string }) => m.user_id).filter((id) => id !== userId))
+    );
+    const missing = ids.filter((id) => !friends.some((f) => f.id === id));
+    if (missing.length) {
+      const { data: profiles } = await supabase.from('profiles').select('*').in('id', missing);
+      if (profiles?.length) {
+        setFriends((prev) => dedupeProfilesByEmail([...prev, ...(profiles as Profile[])]));
+      }
+    }
+    setPayersTouched(true);
+    setPayerIds((prev) => Array.from(new Set([...prev, ...ids])));
+  }
+
+  const defaultPayerCandidateIds = useMemo(() => {
+    if (privacy === 'invite' || privacy === 'friends_of_friends') {
+      return inviteIds.filter((id) => id !== userId);
+    }
+    if (privacy === 'friends') {
+      return friends.map((f) => f.id).filter((id) => id !== userId);
+    }
+    if (privacy === 'group') {
+      return groupMembers.map((m) => m.id).filter((id) => id !== userId);
+    }
+    return [];
+  }, [privacy, inviteIds, friends, groupMembers, userId]);
+
+  useEffect(() => {
+    if (!financeEnabled || payersTouched) return;
+    setPayerIds(defaultPayerCandidateIds);
+  }, [financeEnabled, payersTouched, defaultPayerCandidateIds]);
+
+  // If edit loaded a payer group, expand once into people
+  useEffect(() => {
+    const gid = initial?.payer_group_id;
+    if (!gid || (initial?.payer_user_ids?.length ?? 0) > 0) return;
+    void (async () => {
+      const { data } = await supabase
+        .from('friend_group_members')
+        .select('user_id')
+        .eq('group_id', gid);
+      const ids = Array.from(
+        new Set((data ?? []).map((m: { user_id: string }) => m.user_id).filter((id) => id !== userId))
+      );
+      if (!ids.length) return;
+      const missing = ids.filter((id) => !friends.some((f) => f.id === id));
+      if (missing.length) {
+        const { data: profiles } = await supabase.from('profiles').select('*').in('id', missing);
+        if (profiles?.length) {
+          setFriends((prev) => dedupeProfilesByEmail([...prev, ...(profiles as Profile[])]));
+        }
+      }
+      setPayerIds(ids);
+      setPayersTouched(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initial?.payer_group_id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -453,12 +516,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         setFormError(t.form.needPrice);
         return;
       }
-      if (whoPays === 'selected' && payerIds.filter((id) => id !== userId).length === 0) {
+      if (payerIds.filter((id) => id !== userId).length === 0) {
         setFormError(t.form.needPayers);
-        return;
-      }
-      if (whoPays === 'group' && !payerGroupId) {
-        setFormError(t.form.needPayerGroup);
         return;
       }
     }
@@ -522,9 +581,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           seriesId: sid,
           fundingMode: modeToSave === 'annual' ? 'fixed' : modeToSave,
           amount: priceNum,
-          whoPays,
-          payerGroupId: whoPays === 'group' ? payerGroupId : null,
-          payerIds: whoPays === 'selected' ? payerIds.filter((id) => id !== userId) : [],
+          whoPays: 'selected',
+          payerGroupId: null,
+          payerIds: payerIds.filter((id) => id !== userId),
           userId,
         });
         try {
@@ -541,9 +600,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
               series_id: sid,
               funding_mode: modeToSave === 'annual' ? 'fixed' : modeToSave,
               amount: priceNum,
-              who_pays: whoPays,
-              payer_group_id: whoPays === 'group' ? payerGroupId : null,
-              payer_ids: whoPays === 'selected' ? payerIds.filter((id) => id !== userId) : [],
+              who_pays: 'selected',
+              payer_group_id: null,
+              payer_ids: payerIds.filter((id) => id !== userId),
               currency: 'EUR',
               updated_by: userId,
               updated_at: new Date().toISOString(),
@@ -843,41 +902,34 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             ) : null}
           </View>
           <Muted>{t.form.whoPays}</Muted>
-          <View style={styles.rowWrap}>
-            <Chip
-              label={t.form.whoPaysSelected}
-              active={whoPays === 'selected'}
-              onPress={() => setWhoPays('selected')}
-            />
-            <Chip
-              label={t.form.whoPaysGroup}
-              active={whoPays === 'group'}
-              onPress={() => setWhoPays('group')}
-            />
-          </View>
           <Muted>{t.form.whoPaysHint}</Muted>
-          {whoPays === 'selected' ? (
-            <FriendPicker
-              friends={friends}
-              selectedIds={payerIds}
-              onChange={setPayerIds}
-              label={t.form.whoPaysPeople}
-              placeholder={t.form.searchFriends}
-              emptyHint={t.form.noFriends}
-            />
+          <FriendPicker
+            friends={friends}
+            selectedIds={payerIds}
+            onChange={(ids) => {
+              setPayersTouched(true);
+              setPayerIds(ids);
+            }}
+            label={t.form.whoPaysPeople}
+            placeholder={t.form.searchFriends}
+            emptyHint={t.form.noFriends}
+          />
+          <Text style={styles.section}>{t.form.orSelectGroup}</Text>
+          {groups.length === 0 ? (
+            <Muted>{t.form.noGroups}</Muted>
           ) : (
             <View style={styles.rowWrap}>
-              {groups.length === 0 ? <Muted>{t.form.noGroups}</Muted> : null}
               {groups.map((g) => (
                 <Chip
                   key={g.id}
                   label={g.name}
-                  active={payerGroupId === g.id}
-                  onPress={() => setPayerGroupId(payerGroupId === g.id ? null : g.id)}
+                  active={false}
+                  onPress={() => void applyGroupAsPayers(g.id)}
                 />
               ))}
             </View>
           )}
+          <Muted>{t.form.groupExpandsToPeople}</Muted>
           <Input
             label={
               fundingMode === 'monthly'

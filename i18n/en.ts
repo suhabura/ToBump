@@ -287,7 +287,7 @@ export const en = {
     whoPaysGroup: 'A group',
     whoPaysPeople: 'People who may pay',
     whoPaysHint:
-      'Choose who is eligible. Their fee is created only after they attend at least once; you can edit fees later in Finance.',
+      'By default all invitees are selected. Search to add or remove people, or pick a group below.',
     needPayers: 'Select at least one person who may pay.',
     needPayerGroup: 'Select a group of people who may pay.',
     noGroups: 'No groups yet — create one under Groups.',
