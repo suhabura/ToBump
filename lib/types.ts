@@ -22,6 +22,17 @@ export type SeriesFinanceSettings = {
   created_at: string;
 };
 
+/** Per-person override of collection method / amount for a series. */
+export type SeriesFinanceMemberSettings = {
+  series_id: string;
+  user_id: string;
+  funding_mode: FundingMode;
+  amount: number;
+  updated_by: string | null;
+  updated_at: string;
+  created_at: string;
+};
+
 export type ActivityExpense = {
   id: string;
   series_id: string;

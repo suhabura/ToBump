@@ -639,6 +639,114 @@ export async function clearSeriesFinanceSettings(seriesId: string): Promise<void
   if (error && !/does not exist|permission/i.test(error.message)) throw error;
 }
 
+export async function fetchSeriesMemberFinanceSettings(
+  seriesId: string
+): Promise<import('@/lib/types').SeriesFinanceMemberSettings[]> {
+  const { data, error } = await supabase
+    .from('series_finance_member_settings')
+    .select('*')
+    .eq('series_id', seriesId);
+  if (error) {
+    if (/relation|does not exist/i.test(error.message)) return [];
+    throw error;
+  }
+  return (data as import('@/lib/types').SeriesFinanceMemberSettings[]) ?? [];
+}
+
+export function resolveMemberFinance(
+  settings: import('@/lib/types').SeriesFinanceSettings,
+  overrides: Map<string, import('@/lib/types').SeriesFinanceMemberSettings>,
+  userId: string
+): { mode: Exclude<import('@/lib/types').FundingMode, 'annual'> | 'fixed' | 'monthly' | 'per_event'; amount: number } {
+  const o = overrides.get(userId);
+  const raw = o?.funding_mode ?? settings.funding_mode;
+  const mode = raw === 'annual' ? 'fixed' : raw;
+  const amount = round2(o != null ? Number(o.amount) : Number(settings.amount) || 0);
+  return { mode, amount };
+}
+
+/** Organizer/editor: set per-person payment method and amount (applies to future fees + unpaid open fees). */
+export async function upsertMemberFinanceSettings(input: {
+  seriesId: string;
+  userId: string;
+  fundingMode: import('@/lib/types').FundingMode;
+  amount: number;
+  updatedBy: string;
+  activity: {
+    id: string;
+    series_id?: string | null;
+    created_by: string;
+    finance_enabled?: boolean;
+    title: string;
+    starts_at: string;
+  };
+  settings: import('@/lib/types').SeriesFinanceSettings;
+}): Promise<void> {
+  const mode = input.fundingMode === 'annual' ? 'fixed' : input.fundingMode;
+  const amount = round2(input.amount);
+  if (!Number.isFinite(amount) || amount < 0) throw new Error('Invalid amount');
+
+  const { error } = await supabase.from('series_finance_member_settings').upsert(
+    {
+      series_id: input.seriesId,
+      user_id: input.userId,
+      funding_mode: mode,
+      amount,
+      updated_by: input.updatedBy,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'series_id,user_id' }
+  );
+  if (error) throw error;
+
+  // Adjust monthly billing window when switching modes
+  if (mode === 'monthly') {
+    await ensureMonthlyBillingStarted(
+      input.seriesId,
+      input.userId,
+      monthKey(input.activity.starts_at)
+    );
+    await supabase
+      .from('series_finance_monthly_billing')
+      .update({ stopped: false, updated_at: new Date().toISOString() })
+      .eq('series_id', input.seriesId)
+      .eq('user_id', input.userId);
+  } else {
+    await supabase
+      .from('series_finance_monthly_billing')
+      .update({ stopped: true, updated_at: new Date().toISOString() })
+      .eq('series_id', input.seriesId)
+      .eq('user_id', input.userId);
+  }
+
+  // Update unpaid fee amounts for this person
+  const expenses = await fetchSeriesExpenses(input.seriesId);
+  const obligations = await fetchSeriesObligations(input.seriesId);
+  const unpaidByExpense = new Set(
+    obligations
+      .filter(
+        (o) =>
+          o.user_id === input.userId &&
+          o.status !== 'paid' &&
+          o.status !== 'waived' &&
+          (Number(o.amount_paid) || 0) <= 0
+      )
+      .map((o) => o.expense_id)
+  );
+  for (const e of expenses) {
+    if (!unpaidByExpense.has(e.id)) continue;
+    if (fundingFeeUserId(e.period_key) !== input.userId) continue;
+    await updateExpenseAmount(e.id, amount);
+  }
+
+  // Create any missing fee for the new method
+  await syncAttendeeFundingFees({
+    activity: input.activity,
+    settings: input.settings,
+    onlyUserId: input.userId,
+  });
+}
+
 function monthKey(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) {
@@ -879,9 +987,9 @@ export async function removeMonthlyFundingFee(input: {
 
 /**
  * Create per-person funding fees for eligible people who have attended
- * (idempotent). Does not overwrite manually edited existing fees.
+ * (idempotent). Uses series defaults or per-person overrides for mode/amount.
  * - per_event: charge when they join this occurrence
- * - monthly: start on first attendance, then every calendar month (even without attendance)
+ * - monthly: start on first attendance, then every calendar month
  * - fixed: charge on first join anywhere in the series
  */
 export async function syncAttendeeFundingFees(input: {
@@ -897,58 +1005,61 @@ export async function syncAttendeeFundingFees(input: {
   /** If set, only consider this user (e.g. right after they join). */
   onlyUserId?: string;
 }): Promise<{ created: number; total: number; perPerson: number; payerCount: number }> {
-  const perPerson = round2(Number(input.settings.amount) || 0);
-  const empty = { created: 0, total: 0, perPerson, payerCount: 0 };
-  if (!input.activity.finance_enabled || perPerson <= 0) return empty;
+  const seriesPerPerson = round2(Number(input.settings.amount) || 0);
+  const empty = { created: 0, total: 0, perPerson: seriesPerPerson, payerCount: 0 };
+  if (!input.activity.finance_enabled) return empty;
 
   const sid = seriesKey(input.activity);
   const organizerId = input.activity.created_by;
-  const mode =
-    input.settings.funding_mode === 'annual' ? 'fixed' : input.settings.funding_mode;
 
   const eligible = (await resolveEligiblePayerIds({ ...input.settings, series_id: sid })).filter(
     (id) => id !== organizerId
   );
   if (!eligible.length) return empty;
 
+  const overrideRows = await fetchSeriesMemberFinanceSettings(sid);
+  const overrides = new Map(overrideRows.map((r) => [r.user_id, r]));
+
   const existing = await fetchSeriesExpenses(sid);
   const existingKeys = new Set(existing.map((e) => e.period_key).filter(Boolean) as string[]);
   let created = 0;
 
-  if (mode === 'monthly') {
-    const attendees = await fetchSeriesAttendeeIds(sid);
-    const attendeeSet = new Set(attendees);
-    const startMonth = monthKey(input.activity.starts_at);
-    const throughMonth = maxMonth(startMonth, monthKey(new Date().toISOString()));
+  const [seriesAttendees, eventAttendees] = await Promise.all([
+    fetchSeriesAttendeeIds(sid),
+    fetchActivityAttendeeIds(input.activity.id),
+  ]);
+  const seriesSet = new Set(seriesAttendees);
+  const eventSet = new Set(eventAttendees);
 
-    let toStart = eligible.filter((id) => attendeeSet.has(id));
-    if (input.onlyUserId) {
-      toStart = toStart.filter((id) => id === input.onlyUserId);
-    }
-    for (const userId of toStart) {
+  let people = eligible.filter((id) => seriesSet.has(id) || eventSet.has(id));
+  if (input.onlyUserId) {
+    people = people.filter((id) => id === input.onlyUserId);
+  }
+
+  const startMonth = monthKey(input.activity.starts_at);
+  const throughMonth = maxMonth(startMonth, monthKey(new Date().toISOString()));
+  const skips = await fetchMonthlySkips(sid);
+
+  for (const userId of people) {
+    const { mode, amount } = resolveMemberFinance(input.settings, overrides, userId);
+    if (amount <= 0) continue;
+
+    if (mode === 'monthly') {
+      if (!seriesSet.has(userId)) continue;
       await ensureMonthlyBillingStarted(sid, userId, startMonth);
-    }
-
-    const [billing, skips] = await Promise.all([
-      fetchMonthlyBilling(sid),
-      fetchMonthlySkips(sid),
-    ]);
-    let active = billing.filter((b) => !b.stopped && eligible.includes(b.user_id));
-    if (input.onlyUserId) {
-      active = active.filter((b) => b.user_id === input.onlyUserId);
-    }
-
-    for (const row of active) {
+      const billing = await fetchMonthlyBilling(sid);
+      const row = billing.find((b) => b.user_id === userId && !b.stopped);
+      if (!row) continue;
       const months = monthsInclusive(row.started_month, throughMonth);
       for (const mk of months) {
-        if (skips.has(`${row.user_id}:${mk}`)) continue;
-        const periodKey = monthlyFeePeriodKey(mk, row.user_id);
+        if (skips.has(`${userId}:${mk}`)) continue;
+        const periodKey = monthlyFeePeriodKey(mk, userId);
         if (existingKeys.has(periodKey)) continue;
         await createPersonFee({
           seriesId: sid,
           organizerId,
-          userId: row.user_id,
-          perPerson,
+          userId,
+          perPerson: amount,
           mode: 'monthly',
           activityId: input.activity.id,
           title: input.activity.title,
@@ -958,24 +1069,13 @@ export async function syncAttendeeFundingFees(input: {
         existingKeys.add(periodKey);
         created += 1;
       }
+      continue;
     }
-  } else {
-    let attendees: string[];
+
     if (mode === 'fixed') {
-      attendees = await fetchSeriesAttendeeIds(sid);
-    } else {
-      attendees = await fetchActivityAttendeeIds(input.activity.id);
-    }
-
-    const attendeeSet = new Set(attendees);
-    let chargeable = eligible.filter((id) => attendeeSet.has(id));
-    if (input.onlyUserId) {
-      chargeable = chargeable.filter((id) => id === input.onlyUserId);
-    }
-
-    for (const userId of chargeable) {
+      if (!seriesSet.has(userId)) continue;
       const periodKey = feePeriodKey({
-        mode,
+        mode: 'fixed',
         activityId: input.activity.id,
         startsAt: input.activity.starts_at,
         userId,
@@ -985,8 +1085,8 @@ export async function syncAttendeeFundingFees(input: {
         seriesId: sid,
         organizerId,
         userId,
-        perPerson,
-        mode,
+        perPerson: amount,
+        mode: 'fixed',
         activityId: input.activity.id,
         title: input.activity.title,
         startsAt: input.activity.starts_at,
@@ -994,7 +1094,31 @@ export async function syncAttendeeFundingFees(input: {
       });
       existingKeys.add(periodKey);
       created += 1;
+      continue;
     }
+
+    // per_event
+    if (!eventSet.has(userId)) continue;
+    const periodKey = feePeriodKey({
+      mode: 'per_event',
+      activityId: input.activity.id,
+      startsAt: input.activity.starts_at,
+      userId,
+    });
+    if (existingKeys.has(periodKey)) continue;
+    await createPersonFee({
+      seriesId: sid,
+      organizerId,
+      userId,
+      perPerson: amount,
+      mode: 'per_event',
+      activityId: input.activity.id,
+      title: input.activity.title,
+      startsAt: input.activity.starts_at,
+      periodKey,
+    });
+    existingKeys.add(periodKey);
+    created += 1;
   }
 
   const feeExpenses = (await fetchSeriesExpenses(sid)).filter(
@@ -1005,7 +1129,7 @@ export async function syncAttendeeFundingFees(input: {
     feeExpenses.map((e) => fundingFeeUserId(e.period_key)).filter(Boolean)
   ).size;
 
-  return { created, total, perPerson, payerCount };
+  return { created, total, perPerson: seriesPerPerson, payerCount };
 }
 
 /** @deprecated alias — fees sync on attendance */
@@ -1038,13 +1162,15 @@ export async function createManualFundingFee(input: {
   userId: string;
   amount?: number;
 }): Promise<void> {
+  const sid = seriesKey(input.activity);
+  const overrideRows = await fetchSeriesMemberFinanceSettings(sid);
+  const overrides = new Map(overrideRows.map((r) => [r.user_id, r]));
+  const resolved = resolveMemberFinance(input.settings, overrides, input.userId);
   const perPerson = round2(
-    input.amount != null ? Number(input.amount) : Number(input.settings.amount) || 0
+    input.amount != null ? Number(input.amount) : resolved.amount
   );
   if (perPerson <= 0) throw new Error('Invalid amount');
-  const sid = seriesKey(input.activity);
-  const mode =
-    input.settings.funding_mode === 'annual' ? 'fixed' : input.settings.funding_mode;
+  const mode = resolved.mode;
   const periodKey = feePeriodKey({
     mode,
     activityId: input.activity.id,
@@ -1056,6 +1182,9 @@ export async function createManualFundingFee(input: {
   if (found) {
     await updateExpenseAmount(found.id, perPerson);
     return;
+  }
+  if (mode === 'monthly') {
+    await ensureMonthlyBillingStarted(sid, input.userId, monthKey(input.activity.starts_at));
   }
   let expenseType: ActivityExpense['expense_type'] = 'per_event';
   let title: string;
