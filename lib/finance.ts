@@ -184,6 +184,84 @@ export function fundingFeeUserId(periodKey: string | null | undefined): string |
   return m?.[1] ?? null;
 }
 
+export type FundingFeeKind = 'per_event' | 'monthly' | 'fixed';
+
+/** Person funding fee kind from period_key (not guest fees). */
+export function fundingFeeKind(periodKey: string | null | undefined): FundingFeeKind | null {
+  const key = periodKey ?? '';
+  if (key.startsWith('fee:month:') || key.startsWith('month:')) return 'monthly';
+  if (key.startsWith('fee:fixed:') || key === 'fixed') return 'fixed';
+  if (key.startsWith('fee:event:') || key.startsWith('event:')) return 'per_event';
+  return null;
+}
+
+function normalizeFundingMode(
+  mode: import('@/lib/types').FundingMode
+): FundingFeeKind {
+  if (mode === 'annual') return 'fixed';
+  if (mode === 'monthly') return 'monthly';
+  if (mode === 'fixed') return 'fixed';
+  return 'per_event';
+}
+
+/**
+ * When payment mode changes (monthly ↔ per_event ↔ fixed), remove funding fees
+ * of the old mode so amounts are replaced, not stacked.
+ * Ledger INCOME rows for already-recorded payments are left intact.
+ */
+export async function reconcileFundingFeesToMode(input: {
+  seriesId: string;
+  settings: import('@/lib/types').SeriesFinanceSettings;
+  overrides?: Map<string, import('@/lib/types').SeriesFinanceMemberSettings>;
+  onlyUserId?: string;
+}): Promise<void> {
+  const overrides =
+    input.overrides ??
+    new Map(
+      (await fetchSeriesMemberFinanceSettings(input.seriesId)).map((r) => [r.user_id, r])
+    );
+  const expenses = await fetchSeriesExpenses(input.seriesId);
+
+  for (const e of expenses) {
+    if (!isFundingExpense(e)) continue;
+    const kind = fundingFeeKind(e.period_key);
+    const uid = fundingFeeUserId(e.period_key);
+    if (!kind || !uid) continue;
+    if (input.onlyUserId && uid !== input.onlyUserId) continue;
+
+    const resolved = resolveMemberFinance(input.settings, overrides, uid);
+    const target = normalizeFundingMode(resolved.mode as import('@/lib/types').FundingMode);
+    if (kind === target) continue;
+
+    try {
+      await deleteExpense(e.id);
+    } catch {
+      /* RLS / missing row */
+    }
+  }
+
+  // Stop monthly auto-billing when the resolved mode is no longer monthly
+  try {
+    if (input.onlyUserId) {
+      const resolved = resolveMemberFinance(input.settings, overrides, input.onlyUserId);
+      if (normalizeFundingMode(resolved.mode as import('@/lib/types').FundingMode) !== 'monthly') {
+        await supabase
+          .from('series_finance_monthly_billing')
+          .update({ stopped: true })
+          .eq('series_id', input.seriesId)
+          .eq('user_id', input.onlyUserId);
+      }
+    } else if (normalizeFundingMode(input.settings.funding_mode) !== 'monthly') {
+      await supabase
+        .from('series_finance_monthly_billing')
+        .update({ stopped: true })
+        .eq('series_id', input.seriesId);
+    }
+  } catch {
+    /* optional table */
+  }
+}
+
 export function computeBudget(
   expenses: ExpenseWithMeta[],
   obligations: Pick<ActivityObligation, 'expense_id' | 'amount_paid' | 'amount_due' | 'status'>[] = []
@@ -919,10 +997,14 @@ export async function upsertSeriesFinanceSettings(input: {
 }): Promise<void> {
   const who: import('@/lib/types').FinanceWhoPays =
     input.whoPays === 'group' ? 'group' : 'selected';
+  const nextMode = input.fundingMode === 'annual' ? 'fixed' : input.fundingMode;
+  const prev = await fetchSeriesFinanceSettings(input.seriesId);
+  const modeChanged = Boolean(prev && normalizeFundingMode(prev.funding_mode) !== normalizeFundingMode(nextMode));
+
   const { error } = await supabase.from('series_finance_settings').upsert(
     {
       series_id: input.seriesId,
-      funding_mode: input.fundingMode,
+      funding_mode: nextMode,
       amount: input.amount,
       who_pays: who,
       payer_group_id: who === 'group' ? input.payerGroupId ?? null : null,
@@ -938,6 +1020,35 @@ export async function upsertSeriesFinanceSettings(input: {
     await replaceSeriesFinancePayers(input.seriesId, input.payerIds ?? []);
   } else {
     await replaceSeriesFinancePayers(input.seriesId, []);
+  }
+
+  if (modeChanged) {
+    // Per-person overrides must follow the new series payment method
+    try {
+      await supabase
+        .from('series_finance_member_settings')
+        .update({
+          funding_mode: nextMode,
+          updated_at: new Date().toISOString(),
+          updated_by: input.userId,
+        })
+        .eq('series_id', input.seriesId);
+    } catch {
+      /* optional */
+    }
+    const settings = (await fetchSeriesFinanceSettings(input.seriesId)) ?? {
+      series_id: input.seriesId,
+      funding_mode: nextMode,
+      amount: input.amount,
+      currency: 'EUR',
+      who_pays: who,
+      payer_group_id: null,
+      payer_ids: input.payerIds ?? [],
+      updated_by: input.userId,
+      updated_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+    };
+    await reconcileFundingFeesToMode({ seriesId: input.seriesId, settings });
   }
 }
 
@@ -1038,10 +1149,16 @@ export async function upsertMemberFinanceSettings(input: {
       .eq('user_id', input.userId);
   }
 
-  // Future charges only — do not rewrite historical unpaid obligations/amounts
+  const nextSettings = { ...input.settings, funding_mode: mode, amount };
+  await reconcileFundingFeesToMode({
+    seriesId: input.seriesId,
+    settings: nextSettings,
+    onlyUserId: input.userId,
+  });
+
   await syncAttendeeFundingFees({
     activity: input.activity,
-    settings: input.settings,
+    settings: nextSettings,
     onlyUserId: input.userId,
   });
 }
@@ -1360,14 +1477,26 @@ export async function syncAttendeeFundingFees(input: {
   const organizerId = input.activity.created_by;
   const editorIds = await fetchSeriesEditorIds(sid);
 
+  const overrideRows = await fetchSeriesMemberFinanceSettings(sid);
+  const overrides = new Map(overrideRows.map((r) => [r.user_id, r]));
+
+  // Drop fees from a previous payment method so monthly + per_event don't stack
+  try {
+    await reconcileFundingFeesToMode({
+      seriesId: sid,
+      settings: input.settings,
+      overrides,
+      onlyUserId: input.onlyUserId,
+    });
+  } catch {
+    /* best-effort */
+  }
+
   const eligible = withOrganizerAndEditors(
     await resolveEligiblePayerIds({ ...input.settings, series_id: sid }),
     organizerId,
     editorIds
   );
-
-  const overrideRows = await fetchSeriesMemberFinanceSettings(sid);
-  const overrides = new Map(overrideRows.map((r) => [r.user_id, r]));
 
   const existing = await fetchSeriesExpenses(sid);
   const existingKeys = new Set(existing.map((e) => e.period_key).filter(Boolean) as string[]);
