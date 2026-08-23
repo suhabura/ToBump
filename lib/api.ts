@@ -481,6 +481,14 @@ export async function joinActivity(activityId: string, userId: string, creatorId
 }
 
 export async function leaveActivity(activityId: string, userId: string) {
+  // Drop per-event fee debt before removing the join
+  try {
+    const { clearAttendanceFundingFee } = await import('@/lib/finance');
+    await clearAttendanceFundingFee({ activityId, userId });
+  } catch {
+    /* finance RPC / tables may be missing */
+  }
+
   const { error } = await supabase
     .from('activity_joins')
     .delete()

@@ -1,10 +1,10 @@
 import { supabase } from '@/lib/supabase';
 import type {
-  ActivityExpense,
-  ActivityObligation,
-  ActivitySettlement,
-  Profile,
-  SplitMode,
+    ActivityExpense,
+    ActivityObligation,
+    ActivitySettlement,
+    Profile,
+    SplitMode,
 } from '@/lib/types';
 import { displayName } from '@/lib/types';
 
@@ -641,6 +641,43 @@ export async function recordSettlement(input: {
 export async function deleteExpense(expenseId: string): Promise<void> {
   const { error } = await supabase.from('activity_expenses').delete().eq('id', expenseId);
   if (error) throw error;
+}
+
+/**
+ * Remove the per-event funding fee created when someone joined this occurrence.
+ * Monthly/fixed series fees are left intact. Safe if finance tables are missing.
+ */
+export async function clearAttendanceFundingFee(input: {
+  activityId: string;
+  userId: string;
+}): Promise<void> {
+  const { error: rpcErr } = await supabase.rpc('clear_attendance_funding_fee', {
+    p_activity_id: input.activityId,
+    p_user_id: input.userId,
+  });
+  if (!rpcErr) return;
+
+  // Fallback when RPC not migrated yet
+  if (!/function|does not exist|schema cache|Could not find the function/i.test(rpcErr.message)) {
+    throw rpcErr;
+  }
+
+  const periodKey = `fee:event:${input.activityId}:user:${input.userId}`;
+  const { data: expenses, error } = await supabase
+    .from('activity_expenses')
+    .select('id')
+    .eq('period_key', periodKey);
+  if (error) {
+    if (/relation|does not exist|schema cache/i.test(error.message)) return;
+    throw error;
+  }
+  for (const e of expenses ?? []) {
+    try {
+      await deleteExpense((e as { id: string }).id);
+    } catch {
+      /* RLS may block if expense was created by someone else — run clear_on_leave.sql */
+    }
+  }
 }
 
 /** Update a fee/expense amount and matching obligations (organizer manual edit). */
