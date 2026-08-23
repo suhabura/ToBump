@@ -1241,10 +1241,33 @@ async function createPersonFee(input: {
     amount: input.perPerson,
     splitMode: 'selected',
     memberIds: [input.userId],
+    // Funding fees are debts into the pot — not Tricount "payer already settled".
+    // paid_by is only metadata (who recorded); obligation stays unpaid until marked received.
     paidBy: input.organizerId,
     activityId,
     periodKey: input.periodKey,
   });
+
+  // Belt-and-suspenders if DB still auto-settles paid_by for fee:* rows
+  try {
+    const { data: feeRows } = await supabase
+      .from('activity_expenses')
+      .select('id')
+      .eq('series_id', input.seriesId)
+      .eq('period_key', input.periodKey)
+      .limit(1);
+    const feeId = (feeRows?.[0] as { id?: string } | undefined)?.id;
+    if (feeId) {
+      await supabase
+        .from('activity_obligations')
+        .update({ amount_paid: 0, status: 'unpaid', updated_at: new Date().toISOString() })
+        .eq('expense_id', feeId)
+        .eq('user_id', input.userId)
+        .gt('amount_paid', 0);
+    }
+  } catch {
+    /* ignore */
+  }
 
   // Lock historical price on the join for PER_EVENT (do not overwrite if already set)
   if (input.mode === 'per_event') {
@@ -1342,7 +1365,6 @@ export async function syncAttendeeFundingFees(input: {
     organizerId,
     editorIds
   );
-  if (!eligible.length) return empty;
 
   const overrideRows = await fetchSeriesMemberFinanceSettings(sid);
   const overrides = new Map(overrideRows.map((r) => [r.user_id, r]));
@@ -1358,10 +1380,22 @@ export async function syncAttendeeFundingFees(input: {
   const seriesSet = new Set(seriesAttendees);
   const eventSet = new Set(eventAttendees);
 
-  let people = eligible.filter((id) => seriesSet.has(id) || eventSet.has(id));
+  // Eligible list + anyone who actually joined (FoF / walk-ins get charged on attendance)
+  let people = Array.from(
+    new Set([
+      ...eligible.filter((id) => seriesSet.has(id) || eventSet.has(id)),
+      ...eventAttendees,
+      ...seriesAttendees.filter((id) => eligible.includes(id)),
+    ])
+  );
   if (input.onlyUserId) {
-    people = people.filter((id) => id === input.onlyUserId);
+    // On join: always consider this attendee (even if not pre-listed as payer)
+    people = [input.onlyUserId].filter(
+      (id) => eventSet.has(id) || seriesSet.has(id) || eligible.includes(id)
+    );
   }
+
+  if (!people.length) return empty;
 
   const startMonth = monthKey(input.activity.starts_at);
   const throughMonth = maxMonth(startMonth, monthKey(new Date().toISOString()));

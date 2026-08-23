@@ -292,6 +292,16 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       setLedger(led);
       setJoins(jns);
 
+      // Attendees always show in finance (FoF / walk-ins), not only preselected payers
+      if (activity.finance_enabled) {
+        setEligibleIds((prev) =>
+          withOrganizerAndEditors(
+            [...prev, ...jns.map((j) => j.user_id), ...inviteIds],
+            activity.created_by
+          )
+        );
+      }
+
       // If finance is on but settings row missing, use activity defaults so the card is usable
       if (!settings && activity.finance_enabled) {
         const fallback: SeriesFinanceSettings = {
