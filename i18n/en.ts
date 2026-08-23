@@ -409,7 +409,7 @@ export const en = {
     someoneElsePaid: 'Someone else paid',
     noObligations: 'No shared expenses yet.',
     runSql:
-      'Run supabase/activity_finance.sql (+ enabled, budget, payers, monthly, paid_budget, member_settings, ledger) in Supabase first.',
+      'In Supabase SQL Editor run supabase/activity_finance_ledger_fix.sql. If tables are missing, run activity_finance_ledger.sql first.',
     needMembers: 'Select at least one person to split with.',
     needAmount: 'Enter a valid amount.',
     needTitle: 'Enter what the expense was for.',
@@ -465,7 +465,7 @@ export const en = {
     needName: 'Enter the guest name.',
     needAmount: 'Enter a valid fee amount.',
     seriesGuests: 'Known series guests — tap to add again',
-    runSql: 'Run supabase/activity_guests.sql and activity_finance_paid_budget.sql, activity_finance_member_settings.sql, activity_finance_ledger.sql in Supabase first.',
+    runSql: 'Run supabase/activity_guests.sql, then activity_finance_paid_budget.sql and activity_finance_ledger_fix.sql in Supabase first.',
   },
   common: {
     cancel: 'Cancel',

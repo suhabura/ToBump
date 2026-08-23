@@ -44,49 +44,7 @@ create policy "member_finance_delete" on public.series_finance_member_settings
 
 grant select, insert, update, delete on public.series_finance_member_settings to authenticated;
 
--- Mark paid/unpaid and record ledger transactions
-create or replace function public.set_obligation_paid(
-  p_obligation_id uuid,
-  p_paid boolean
-)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  o public.activity_obligations%rowtype;
-  remaining numeric;
-begin
-  select * into o from public.activity_obligations where id = p_obligation_id for update;
-  if not found then raise exception 'Obligation not found'; end if;
-  if not public.can_manage_series_finance(o.series_id) then
-    raise exception 'Not allowed';
-  end if;
-  if o.status = 'waived' then raise exception 'Obligation is waived'; end if;
-
-  if coalesce(p_paid, false) then
-    remaining := greatest(o.amount_due - coalesce(o.amount_paid, 0), 0);
-    if remaining > 0.001 then
-      insert into public.activity_payments (obligation_id, amount, note, recorded_by)
-      values (p_obligation_id, remaining, 'Marked received', auth.uid());
-    end if;
-    update public.activity_obligations
-    set
-      amount_paid = amount_due,
-      status = 'paid',
-      updated_at = now()
-    where id = p_obligation_id;
-  else
-    delete from public.activity_payments where obligation_id = p_obligation_id;
-    update public.activity_obligations
-    set
-      amount_paid = 0,
-      status = 'unpaid',
-      updated_at = now()
-    where id = p_obligation_id;
-  end if;
-end;
-$$;
-
-grant execute on function public.set_obligation_paid(uuid, boolean) to authenticated;
+-- NOTE: Do NOT redefine set_obligation_paid here.
+-- The live payment + INCOME ledger path lives in activity_finance_ledger.sql
+-- (and activity_finance_ledger_fix.sql). Re-run that file if payments
+-- do not appear in series_finance_ledger.

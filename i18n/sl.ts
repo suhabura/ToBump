@@ -408,7 +408,7 @@ export const sl = {
     someoneElsePaid: 'Plačal je kdo drug',
     noObligations: 'Še ni skupnih stroškov.',
     runSql:
-      'Najprej v Supabase zaženi activity_finance.sql (+ enabled, budget, payers, monthly, paid_budget, member_settings, ledger).',
+      'V Supabase SQL Editorju zaženi supabase/activity_finance_ledger_fix.sql (popravi plačila → ledger). Če tabel še ni, najprej activity_finance_ledger.sql.',
     needMembers: 'Izberi vsaj eno osebo za delitev.',
     needAmount: 'Vnesi veljaven znesek.',
     needTitle: 'Vnesi, za kaj gre strošek.',
@@ -464,7 +464,7 @@ export const sl = {
     needName: 'Vnesi ime gosta.',
     needAmount: 'Vnesi veljaven znesek.',
     seriesGuests: 'Znani gosti serije — tapni za ponovno dodajanje',
-    runSql: 'Najprej v Supabase zaženi activity_guests.sql in activity_finance_paid_budget.sql, member_settings, ledger).',
+    runSql: 'Najprej v Supabase zaženi activity_guests.sql, nato activity_finance_paid_budget.sql in activity_finance_ledger_fix.sql.',
   },
   common: {
     cancel: 'Prekliči',

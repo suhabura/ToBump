@@ -1,45 +1,10 @@
--- Mark fee obligations paid/unpaid (organizer/editor only).
 -- Guest fees go into the budget pot (fee_treatment = to_budget).
 -- Idempotent: safe to re-run in Supabase SQL Editor.
-
-create or replace function public.set_obligation_paid(
-  p_obligation_id uuid,
-  p_paid boolean
-)
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  o public.activity_obligations%rowtype;
-begin
-  select * into o from public.activity_obligations where id = p_obligation_id for update;
-  if not found then raise exception 'Obligation not found'; end if;
-  if not public.can_manage_series_finance(o.series_id) then
-    raise exception 'Not allowed';
-  end if;
-  if o.status = 'waived' then raise exception 'Obligation is waived'; end if;
-
-  if coalesce(p_paid, false) then
-    update public.activity_obligations
-    set
-      amount_paid = amount_due,
-      status = 'paid',
-      updated_at = now()
-    where id = p_obligation_id;
-  else
-    update public.activity_obligations
-    set
-      amount_paid = 0,
-      status = 'unpaid',
-      updated_at = now()
-    where id = p_obligation_id;
-  end if;
-end;
-$$;
-
-grant execute on function public.set_obligation_paid(uuid, boolean) to authenticated;
+--
+-- NOTE: Do NOT redefine set_obligation_paid here.
+-- Live payment + INCOME ledger path: activity_finance_ledger.sql
+-- / activity_finance_ledger_fix.sql. This older stub only flipped
+-- amount_paid and never wrote series_finance_ledger.
 
 -- Allow to_budget guest fee treatment
 alter table public.activity_guest_attendances

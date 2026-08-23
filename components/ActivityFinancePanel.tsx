@@ -90,6 +90,12 @@ function formatDate(iso?: string | null): string {
   return d.toLocaleDateString();
 }
 
+function isMissingSchemaError(msg: string): boolean {
+  return /could not find the table|relation ['"]?[\w.]+['"]? does not exist|column [\w.]+ does not exist|Could not find the .* column|schema cache/i.test(
+    msg
+  );
+}
+
 function errorMessage(e: unknown, fallback: string): string {
   if (e instanceof Error && e.message) return e.message;
   if (e && typeof e === 'object' && 'message' in e) {
@@ -272,11 +278,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       const inviteIds = settled[5].status === 'fulfilled' ? settled[5].value : [];
 
       const hardFail = settled.find(
-        (r) =>
-          r.status === 'rejected' &&
-          /relation|does not exist|function|column|schema cache/i.test(
-            errorMessage(r.reason, '')
-          )
+        (r) => r.status === 'rejected' && isMissingSchemaError(errorMessage(r.reason, ''))
       );
       // Soft warning only — don't block the whole finance card
       if (hardFail && hardFail.status === 'rejected') {
@@ -285,7 +287,8 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         const otherFail = settled.find((r) => r.status === 'rejected');
         if (otherFail && otherFail.status === 'rejected') {
           const msg = errorMessage(otherFail.reason, '');
-          if (msg) setError(msg);
+          // Ignore noisy auth/empty errors; show real failures
+          if (msg && !/jwt|not authenticated|permission|rls/i.test(msg)) setError(msg);
         }
       }
 
@@ -293,6 +296,27 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       setObligations(obls);
       setLedger(led);
       setJoins(jns);
+
+      // If finance is on but settings row missing, use activity defaults so the card is usable
+      if (!settings && activity.finance_enabled) {
+        const fallback: SeriesFinanceSettings = {
+          series_id: sid,
+          funding_mode: 'per_event',
+          amount: Number(activity.price) || 0,
+          currency: 'EUR',
+          who_pays: 'selected',
+          payer_group_id: null,
+          payer_ids: [
+            ...inviteIds,
+            ...(activity.series_invite_user_ids ?? []),
+          ].filter((id) => id !== activity.created_by),
+          updated_by: null,
+          updated_at: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+        };
+        settings = fallback;
+        setFinanceSettings(fallback);
+      }
 
       const needProfileIds = Array.from(
         new Set([
@@ -337,7 +361,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       }
     } catch (e) {
       const msg = errorMessage(e, t.common.error);
-      setError(/relation|does not exist|function|column|schema cache/i.test(msg) ? t.finance.runSql : msg);
+      setError(isMissingSchemaError(msg) ? t.finance.runSql : msg);
     } finally {
       setLoading(false);
     }

@@ -133,12 +133,13 @@ begin
   values (p_obligation_id, pay_amt, p_note, auth.uid())
   returning id into pay_id;
 
+  -- Use precomputed new_paid (SET expressions see OLD row values; be explicit)
   update public.activity_obligations
   set
-    amount_paid = amount_paid + pay_amt,
+    amount_paid = coalesce(o.amount_paid, 0) + pay_amt,
     status = case
-      when amount_paid + pay_amt + 0.001 >= amount_due then 'paid'
-      when amount_paid + pay_amt > 0 then 'partial'
+      when coalesce(o.amount_paid, 0) + pay_amt + 0.001 >= o.amount_due then 'paid'
+      when coalesce(o.amount_paid, 0) + pay_amt > 0 then 'partial'
       else 'unpaid'
     end,
     updated_at = now()
