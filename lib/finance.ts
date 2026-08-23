@@ -99,7 +99,17 @@ export async function fetchSeriesExpenses(seriesId: string): Promise<ExpenseWith
     .select('*, activity_expense_members(user_id, profiles(id, first_name, last_name, email))')
     .eq('series_id', seriesId)
     .order('created_at', { ascending: false });
-  if (error) throw error;
+  if (error) {
+    // Fallback without embed if relationship/schema cache is stale
+    const plain = await supabase
+      .from('activity_expenses')
+      .select('*')
+      .eq('series_id', seriesId)
+      .order('created_at', { ascending: false });
+    if (plain.error) return [];
+    const rows = (plain.data as ExpenseWithMeta[]) ?? [];
+    return rows.map((r) => ({ ...r, members: undefined, payer: null }));
+  }
 
   type Row = ExpenseWithMeta & {
     activity_expense_members?: ExpenseWithMeta['members'];
@@ -347,7 +357,7 @@ export async function fetchSeriesJoinsWithSessions(seriesId: string): Promise<Se
     .select('id, title, starts_at')
     .or(`id.eq.${seriesId},series_id.eq.${seriesId}`)
     .order('starts_at', { ascending: true });
-  if (aErr) throw aErr;
+  if (aErr) return [];
   const actRows = (acts ?? []) as { id: string; title: string; starts_at: string }[];
   if (!actRows.length) return [];
   const byId = new Map(actRows.map((a) => [a.id, a]));
@@ -358,7 +368,7 @@ export async function fetchSeriesJoinsWithSessions(seriesId: string): Promise<Se
     .from('activity_joins')
     .select('activity_id, user_id, created_at')
     .in('activity_id', activityIds);
-  if (error) throw error;
+  if (error) return [];
 
   const rows: SeriesJoinRow[] = ((joins ?? []) as {
     activity_id: string;
@@ -418,7 +428,7 @@ export async function fetchSeriesObligations(seriesId: string): Promise<Activity
     .select('*')
     .eq('series_id', seriesId)
     .order('created_at', { ascending: true });
-  if (error) throw error;
+  if (error) return [];
   return (data as ActivityObligation[]) ?? [];
 }
 

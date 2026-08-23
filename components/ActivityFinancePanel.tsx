@@ -90,12 +90,6 @@ function formatDate(iso?: string | null): string {
   return d.toLocaleDateString();
 }
 
-function isMissingSchemaError(msg: string): boolean {
-  return /could not find the table|relation ['"]?[\w.]+['"]? does not exist|column [\w.]+ does not exist|Could not find the .* column|schema cache/i.test(
-    msg
-  );
-}
-
 function errorMessage(e: unknown, fallback: string): string {
   if (e instanceof Error && e.message) return e.message;
   if (e && typeof e === 'object' && 'message' in e) {
@@ -277,18 +271,17 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       const jns = settled[4].status === 'fulfilled' ? settled[4].value : [];
       const inviteIds = settled[5].status === 'fulfilled' ? settled[5].value : [];
 
-      const hardFail = settled.find(
-        (r) => r.status === 'rejected' && isMissingSchemaError(errorMessage(r.reason, ''))
-      );
-      // Soft warning only — don't block the whole finance card
-      if (hardFail && hardFail.status === 'rejected') {
-        setError(t.finance.runSql);
-      } else {
-        const otherFail = settled.find((r) => r.status === 'rejected');
-        if (otherFail && otherFail.status === 'rejected') {
-          const msg = errorMessage(otherFail.reason, '');
-          // Ignore noisy auth/empty errors; show real failures
-          if (msg && !/jwt|not authenticated|permission|rls/i.test(msg)) setError(msg);
+      // Soft-load: keep the card usable. Schema is deployed; don't show migration banners.
+      const otherFail = settled.find((r) => r.status === 'rejected');
+      if (otherFail && otherFail.status === 'rejected') {
+        const msg = errorMessage(otherFail.reason, '');
+        if (
+          msg &&
+          !/jwt|not authenticated|permission|rls|schema cache|does not exist|could not find/i.test(
+            msg
+          )
+        ) {
+          setError(msg);
         }
       }
 
@@ -360,12 +353,11 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         }
       }
     } catch (e) {
-      const msg = errorMessage(e, t.common.error);
-      setError(isMissingSchemaError(msg) ? t.finance.runSql : msg);
+      setError(errorMessage(e, t.common.error));
     } finally {
       setLoading(false);
     }
-  }, [activity, attendees, sid, t.common.error, t.finance.runSql]);
+  }, [activity, attendees, sid, t.common.error]);
 
   useEffect(() => {
     void load();
