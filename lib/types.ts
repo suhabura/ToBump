@@ -143,6 +143,9 @@ export type ActivityGuestAttendance = {
   expense_id: string | null;
   recorded_by: string;
   created_at: string;
+  /** Collected so far (to_budget guest fees). */
+  amount_paid?: number;
+  payment_status?: 'unpaid' | 'paid' | 'waived';
 };
 
 export type ActivityStatus = 'active' | 'cancelled' | 'completed';

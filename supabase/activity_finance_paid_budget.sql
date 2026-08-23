@@ -36,7 +36,6 @@ declare
   is_free boolean;
   treat text;
   members uuid[];
-  period text;
 begin
   if auth.uid() is null then raise exception 'Not authenticated'; end if;
   nm := trim(p_name);
@@ -89,23 +88,10 @@ begin
 
   exp_id := null;
 
-  -- Guest fee → budget pot (marked paid immediately)
-  if not is_free and treat = 'to_budget' then
-    period := format('fee:guest:%s:activity:%s', g_id, p_activity_id);
-    exp_id := public.create_series_expense(
-      sid,
-      'manual',
-      format('Guest fee: %s', nm),
-      p_amount,
-      'selected',
-      array[auth.uid()],
-      p_activity_id,
-      period,
-      null,
-      auth.uid(),
-      false
-    );
-  elsif not is_free and treat = 'split_all' then
+  -- to_budget: unpaid guest debt in Finance (mark paid → ledger INCOME).
+  -- See activity_finance_guest_debt.sql for set_guest_attendance_paid.
+  -- split_all: legacy Tricount split among members
+  if not is_free and treat = 'split_all' then
     -- Legacy Tricount split (kept for old clients)
     members := p_member_ids;
     if members is null or array_length(members, 1) is null then

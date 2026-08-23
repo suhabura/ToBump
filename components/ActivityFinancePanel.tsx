@@ -39,6 +39,11 @@ import type {
   SeriesFinanceSettings,
 } from '@/lib/types';
 import { displayName } from '@/lib/types';
+import {
+  fetchSeriesGuestDebts,
+  setGuestAttendancePaid,
+  type GuestDebtRow,
+} from '@/lib/guests';
 import { useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
@@ -118,6 +123,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const [joins, setJoins] = useState<SeriesJoinRow[]>([]);
   const [members, setMembers] = useState<Profile[]>([]);
   const [eligibleIds, setEligibleIds] = useState<string[]>([]);
+  const [guestDebts, setGuestDebts] = useState<GuestDebtRow[]>([]);
 
   const [detailUserId, setDetailUserId] = useState<string | null>(null);
   const [payAmount, setPayAmount] = useState('');
@@ -142,7 +148,12 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   );
 
   const budget = useMemo(() => computeLedgerBudget(ledger), [ledger]);
-  const unpaidTotal = useMemo(() => computeOpenObligations(obligations), [obligations]);
+  const unpaidMembers = useMemo(() => computeOpenObligations(obligations), [obligations]);
+  const unpaidGuests = useMemo(
+    () => guestDebts.reduce((s, g) => s + (g.status === 'unpaid' ? g.open : 0), 0),
+    [guestDebts]
+  );
+  const unpaidTotal = Math.round((unpaidMembers + unpaidGuests) * 100) / 100;
 
   const visitsByUser = useMemo(() => {
     const map = new Map<string, number>();
@@ -215,7 +226,8 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     profilesById,
   ]);
 
-  const hasAnyActivity = joins.length > 0 || obligations.length > 0 || ledger.length > 0;
+  const hasAnyActivity =
+    joins.length > 0 || obligations.length > 0 || ledger.length > 0 || guestDebts.length > 0;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -264,6 +276,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         fetchSeriesMemberProfiles(sid),
         fetchSeriesJoinsWithSessions(sid),
         fetchSeriesInviteeIds(sid),
+        fetchSeriesGuestDebts(sid),
       ]);
 
       const exps = settled[0].status === 'fulfilled' ? settled[0].value : [];
@@ -272,6 +285,8 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       const mems = settled[3].status === 'fulfilled' ? settled[3].value : [];
       const jns = settled[4].status === 'fulfilled' ? settled[4].value : [];
       const inviteIds = settled[5].status === 'fulfilled' ? settled[5].value : [];
+      const guests = settled[6].status === 'fulfilled' ? settled[6].value : [];
+      setGuestDebts(guests);
 
       // Soft-load: keep the card usable. Schema is deployed; don't show migration banners.
       const otherFail = settled.find((r) => r.status === 'rejected');
@@ -470,6 +485,19 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     }
   }
 
+  async function onToggleGuestPaid(guest: GuestDebtRow, paid: boolean) {
+    if (!canManage) return;
+    setBusy(true);
+    try {
+      await setGuestAttendancePaid(guest.attendanceId, paid);
+      await load();
+    } catch (e) {
+      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function onAddExpense() {
     if (!canManage) return;
     const n = Number(expAmount.replace(',', '.'));
@@ -571,7 +599,44 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
             <Muted>
               {!hasAnyActivity ? t.finance.participantsHintBefore : t.finance.participantsHint}
             </Muted>
-            {!personRows.length ? <Muted>{t.finance.noParticipantsYet}</Muted> : null}
+            {!personRows.length && !guestDebts.length ? (
+              <Muted>{t.finance.noParticipantsYet}</Muted>
+            ) : null}
+
+            {guestDebts.map((g) => {
+              const status =
+                g.status === 'paid' ? 'paid' : g.status === 'waived' ? 'none' : 'unpaid';
+              return (
+                <View key={`guest:${g.attendanceId}`} style={styles.personBlock}>
+                  <View style={styles.personHeader}>
+                    <View style={{ flex: 1, gap: 2 }}>
+                      <Text style={styles.name}>
+                        {g.name} {t.finance.guestSuffix}
+                      </Text>
+                      <Muted>{t.finance.guestFeeHint}</Muted>
+                      <Text style={styles.amountLine}>
+                        {t.finance.paidTotal}: {g.amountPaid.toFixed(2)} € · {t.finance.openDebt}:{' '}
+                        {g.open.toFixed(2)} €
+                      </Text>
+                    </View>
+                    <StatusBadge status={status} t={t} />
+                  </View>
+                  {canManage ? (
+                    <View style={[styles.actions, { paddingHorizontal: 4, paddingBottom: 8 }]}>
+                      {g.status !== 'paid' ? (
+                        <Pressable disabled={busy} onPress={() => void onToggleGuestPaid(g, true)}>
+                          <Text style={styles.link}>{t.finance.markReceived}</Text>
+                        </Pressable>
+                      ) : (
+                        <Pressable disabled={busy} onPress={() => void onToggleGuestPaid(g, false)}>
+                          <Text style={styles.link}>{t.finance.markUnpaid}</Text>
+                        </Pressable>
+                      )}
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
 
             {personRows.map((row) => {
               const open = detailUserId === row.userId;

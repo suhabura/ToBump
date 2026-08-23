@@ -116,16 +116,8 @@ export async function addGuestToActivity(input: {
   if (!userId) throw new Error('Not authenticated');
 
   if (amount > 0 && feeTreatment === 'to_budget') {
-    expenseId = await createExpense({
-      seriesId: sid,
-      title: `Guest fee: ${input.name.trim()}`,
-      amount,
-      splitMode: 'selected',
-      memberIds: [userId],
-      paidBy: userId,
-      activityId: input.activityId,
-      periodKey: `fee:guest:${guestId}:activity:${input.activityId}`,
-    });
+    // Unpaid guest debt — collected later in Finance (no expense until paid → ledger)
+    expenseId = null;
   } else if (amount > 0 && feeTreatment === 'split_all') {
     const memberIds = input.memberIds?.length
       ? input.memberIds
@@ -152,6 +144,9 @@ export async function addGuestToActivity(input: {
       fee_treatment: feeTreatment,
       expense_id: expenseId,
       recorded_by: userId,
+      amount_paid: 0,
+      payment_status:
+        amount <= 0 || feeTreatment === 'none' ? 'waived' : 'unpaid',
     })
     .select('id')
     .single();
@@ -183,6 +178,75 @@ async function defaultSplitMemberIds(activityId: string, seriesId: string): Prom
 
 export async function removeGuestAttendance(attendanceId: string): Promise<void> {
   const { error } = await supabase.from('activity_guest_attendances').delete().eq('id', attendanceId);
+  if (error) throw error;
+}
+
+export type GuestDebtRow = {
+  attendanceId: string;
+  guestId: string;
+  name: string;
+  activityId: string;
+  amount: number;
+  amountPaid: number;
+  open: number;
+  status: 'unpaid' | 'paid' | 'waived';
+  feeTreatment: string;
+};
+
+/** Guest fees owed into the budget pot (series-wide). */
+export async function fetchSeriesGuestDebts(seriesId: string): Promise<GuestDebtRow[]> {
+  const { data, error } = await supabase
+    .from('activity_guest_attendances')
+    .select('id, guest_id, activity_id, amount, amount_paid, payment_status, fee_treatment, is_free, activity_guests(name)')
+    .eq('series_id', seriesId)
+    .order('created_at', { ascending: true });
+  if (error) {
+    if (/relation|does not exist|column/i.test(error.message)) return [];
+    throw error;
+  }
+  return ((data ?? []) as Array<{
+    id: string;
+    guest_id: string;
+    activity_id: string;
+    amount: number;
+    amount_paid?: number;
+    payment_status?: string;
+    fee_treatment: string;
+    is_free: boolean;
+    activity_guests?: { name?: string } | null;
+  }>)
+    .filter((a) => !a.is_free && a.fee_treatment === 'to_budget' && Number(a.amount) > 0)
+    .map((a) => {
+      const due = Number(a.amount) || 0;
+      const paid = Number(a.amount_paid) || 0;
+      const status =
+        a.payment_status === 'paid' || a.payment_status === 'waived'
+          ? a.payment_status
+          : paid + 0.001 >= due
+            ? 'paid'
+            : 'unpaid';
+      return {
+        attendanceId: a.id,
+        guestId: a.guest_id,
+        name: a.activity_guests?.name?.trim() || 'Guest',
+        activityId: a.activity_id,
+        amount: due,
+        amountPaid: paid,
+        open: Math.max(0, Math.round((due - paid) * 100) / 100),
+        status: status as GuestDebtRow['status'],
+        feeTreatment: a.fee_treatment,
+      };
+    });
+}
+
+export async function setGuestAttendancePaid(
+  attendanceId: string,
+  paid: boolean
+): Promise<void> {
+  const { error } = await supabase.rpc('set_guest_attendance_paid', {
+    p_attendance_id: attendanceId,
+    p_paid: paid,
+  });
   if (error) throw error;
 }
 
