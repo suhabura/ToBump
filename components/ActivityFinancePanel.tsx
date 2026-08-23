@@ -90,6 +90,16 @@ function formatDate(iso?: string | null): string {
   return d.toLocaleDateString();
 }
 
+function errorMessage(e: unknown, fallback: string): string {
+  if (e instanceof Error && e.message) return e.message;
+  if (e && typeof e === 'object' && 'message' in e) {
+    const m = (e as { message?: unknown }).message;
+    if (typeof m === 'string' && m.trim()) return m;
+  }
+  if (typeof e === 'string' && e.trim()) return e;
+  return fallback;
+}
+
 export function ActivityFinancePanel({ activity, userId, canManage, attendees }: Props) {
   const t = useT();
   const sid = seriesKey(activity);
@@ -220,9 +230,21 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         settings = await fetchSeriesFinanceSettings(sid);
         setFinanceSettings(settings);
         if (settings && activity.finance_enabled) {
-          await syncAttendeeFundingFees({ activity, settings });
-          setEligibleIds(await resolveEligiblePayerIds(settings));
-          setMemberOverrides(await fetchSeriesMemberFinanceSettings(sid));
+          try {
+            await syncAttendeeFundingFees({ activity, settings });
+          } catch {
+            /* fee sync is best-effort; panel should still open */
+          }
+          try {
+            setEligibleIds(await resolveEligiblePayerIds(settings));
+          } catch {
+            setEligibleIds(settings.payer_ids ?? []);
+          }
+          try {
+            setMemberOverrides(await fetchSeriesMemberFinanceSettings(sid));
+          } catch {
+            setMemberOverrides([]);
+          }
         } else {
           setEligibleIds([]);
           setMemberOverrides([]);
@@ -233,20 +255,45 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         setMemberOverrides([]);
       }
 
-      const [exps, obls, led, mems, jns, inviteIds] = await Promise.all([
+      const settled = await Promise.allSettled([
         fetchSeriesExpenses(sid),
         fetchSeriesObligations(sid),
         fetchSeriesLedger(sid),
         fetchSeriesMemberProfiles(sid),
         fetchSeriesJoinsWithSessions(sid),
-        fetchSeriesInviteeIds(sid).catch(() => [] as string[]),
+        fetchSeriesInviteeIds(sid),
       ]);
+
+      const exps = settled[0].status === 'fulfilled' ? settled[0].value : [];
+      const obls = settled[1].status === 'fulfilled' ? settled[1].value : [];
+      const led = settled[2].status === 'fulfilled' ? settled[2].value : [];
+      const mems = settled[3].status === 'fulfilled' ? settled[3].value : [];
+      const jns = settled[4].status === 'fulfilled' ? settled[4].value : [];
+      const inviteIds = settled[5].status === 'fulfilled' ? settled[5].value : [];
+
+      const hardFail = settled.find(
+        (r) =>
+          r.status === 'rejected' &&
+          /relation|does not exist|function|column|schema cache/i.test(
+            errorMessage(r.reason, '')
+          )
+      );
+      // Soft warning only — don't block the whole finance card
+      if (hardFail && hardFail.status === 'rejected') {
+        setError(t.finance.runSql);
+      } else {
+        const otherFail = settled.find((r) => r.status === 'rejected');
+        if (otherFail && otherFail.status === 'rejected') {
+          const msg = errorMessage(otherFail.reason, '');
+          if (msg) setError(msg);
+        }
+      }
+
       setExpenses(exps);
       setObligations(obls);
       setLedger(led);
       setJoins(jns);
 
-      // Ensure invitees / eligible payers appear even before first attendance
       const needProfileIds = Array.from(
         new Set([
           ...mems.map((m) => m.id),
@@ -258,31 +305,39 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       );
       let people = mems.length ? [...mems] : [...attendees];
       const have = new Set(people.map((p) => p.id));
-      const missing = needProfileIds.filter((id) => !have.has(id));
+      const missing = needProfileIds.filter((id) => id && !have.has(id));
       if (missing.length) {
-        const { data: extra } = await supabase
-          .from('profiles')
-          .select('id, first_name, last_name, email')
-          .in('id', missing);
-        if (extra?.length) people = [...people, ...(extra as Profile[])];
+        try {
+          const { data: extra } = await supabase
+            .from('profiles')
+            .select('id, first_name, last_name, email')
+            .in('id', missing);
+          if (extra?.length) people = [...people, ...(extra as Profile[])];
+        } catch {
+          /* ignore profile enrich failures */
+        }
       }
       setMembers(people);
 
       if (settings && activity.finance_enabled) {
-        const eligible = await resolveEligiblePayerIds(settings);
-        const merged = Array.from(
-          new Set([
-            ...eligible,
-            ...inviteIds,
-            ...(activity.series_invite_user_ids ?? []),
-            ...(settings.payer_ids ?? []),
-          ])
-        ).filter((id) => id !== activity.created_by);
-        setEligibleIds(merged.length ? merged : eligible);
+        try {
+          const eligible = await resolveEligiblePayerIds(settings);
+          setEligibleIds(
+            Array.from(
+              new Set([...eligible, ...inviteIds, ...(settings.payer_ids ?? [])])
+            ).filter((id) => id && id !== activity.created_by)
+          );
+        } catch {
+          setEligibleIds(
+            Array.from(
+              new Set([...(settings.payer_ids ?? []), ...inviteIds, ...(activity.series_invite_user_ids ?? [])])
+            ).filter((id) => id && id !== activity.created_by)
+          );
+        }
       }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : t.common.error;
-      setError(/relation|does not exist|function|column/i.test(msg) ? t.finance.runSql : msg);
+      const msg = errorMessage(e, t.common.error);
+      setError(/relation|does not exist|function|column|schema cache/i.test(msg) ? t.finance.runSql : msg);
     } finally {
       setLoading(false);
     }
@@ -417,10 +472,10 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   }
 
   if (loading) return <Muted>{t.common.loading}</Muted>;
-  if (error) return <Text style={styles.error}>{error}</Text>;
 
   return (
     <View style={{ gap: 12 }}>
+      {error ? <Text style={styles.error}>{error}</Text> : null}
       <View style={styles.tabRow}>
         <Chip
           label={t.finance.budgetTab}

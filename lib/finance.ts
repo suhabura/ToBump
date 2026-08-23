@@ -351,45 +351,56 @@ export async function fetchSeriesJoinsWithSessions(seriesId: string): Promise<Se
   const actRows = (acts ?? []) as { id: string; title: string; starts_at: string }[];
   if (!actRows.length) return [];
   const byId = new Map(actRows.map((a) => [a.id, a]));
+  const activityIds = actRows.map((a) => a.id);
+
+  // Base columns only — fee_amount may be missing until ledger migration
   const { data: joins, error } = await supabase
     .from('activity_joins')
-    .select('activity_id, user_id, created_at, fee_amount, fee_obligation_id')
-    .in(
-      'activity_id',
-      actRows.map((a) => a.id)
-    );
-  if (error) {
-    // Fallback if fee columns not migrated yet
-    if (/fee_amount|column/i.test(error.message)) {
-      const { data: plain, error: e2 } = await supabase
-        .from('activity_joins')
-        .select('activity_id, user_id, created_at')
-        .in(
-          'activity_id',
-          actRows.map((a) => a.id)
-        );
-      if (e2) throw e2;
-      return ((plain ?? []) as SeriesJoinRow[]).map((j) => {
-        const act = byId.get(j.activity_id);
-        return {
-          ...j,
-          fee_amount: null,
-          fee_obligation_id: null,
-          starts_at: act?.starts_at,
-          activity_title: act?.title,
-        };
-      });
-    }
-    throw error;
-  }
-  return ((joins ?? []) as SeriesJoinRow[]).map((j) => {
+    .select('activity_id, user_id, created_at')
+    .in('activity_id', activityIds);
+  if (error) throw error;
+
+  const rows: SeriesJoinRow[] = ((joins ?? []) as {
+    activity_id: string;
+    user_id: string;
+    created_at: string;
+  }[]).map((j) => {
     const act = byId.get(j.activity_id);
     return {
-      ...j,
+      activity_id: j.activity_id,
+      user_id: j.user_id,
+      created_at: j.created_at,
+      fee_amount: null,
+      fee_obligation_id: null,
       starts_at: act?.starts_at,
       activity_title: act?.title,
     };
   });
+
+  try {
+    const { data: withFees, error: feeErr } = await supabase
+      .from('activity_joins')
+      .select('activity_id, user_id, fee_amount, fee_obligation_id')
+      .in('activity_id', activityIds);
+    if (!feeErr && withFees?.length) {
+      const feeMap = new Map(
+        withFees.map((j: { activity_id: string; user_id: string; fee_amount: number | null; fee_obligation_id: string | null }) => [
+          `${j.activity_id}:${j.user_id}`,
+          j,
+        ])
+      );
+      for (const row of rows) {
+        const f = feeMap.get(`${row.activity_id}:${row.user_id}`);
+        if (!f) continue;
+        row.fee_amount = f.fee_amount != null ? Number(f.fee_amount) : null;
+        row.fee_obligation_id = f.fee_obligation_id;
+      }
+    }
+  } catch {
+    /* optional fee columns */
+  }
+
+  return rows;
 }
 
 export const EXPENSE_CATEGORIES = [
