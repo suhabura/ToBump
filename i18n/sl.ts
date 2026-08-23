@@ -348,7 +348,13 @@ export const sl = {
     visits: 'Obiski',
     participants: 'Udeleženci',
     participantsHint: 'S kljukico označi prejem plačila — shrani se kot transakcija in poviša budget.',
-    noParticipantsYet: 'Še ni udeležencev.',
+    participantsHintBefore:
+      'Upravičeni so na seznamu z načinom plačila. Dolg nastane šele po njihovi prvi udeležbi.',
+    beforeFirstTitle: 'Pred prvo udeležbo',
+    beforeFirstBody:
+      'Budget in neplačano ostaneta 0 €, dokler se kdo ne udeleži (nastane dolg) in dokler ne zabeležiš prejetega plačila (INCOME).',
+    noParticipantsYet: 'Še ni upravičenih — dodaj povabljene ali “kdo lahko plača” v nastavitvah dogodka.',
+    statusWaiting: 'ČAKA',
     participantMeta: (seriesCount: number, here: boolean, method: string) =>
       `${seriesCount}× v seriji · ${here ? 'na tem terminu' : 'ni na tem terminu'} · ${method}`,
     occurrenceHeadcount: (n: number) => `${n} oseb na tem terminu`,

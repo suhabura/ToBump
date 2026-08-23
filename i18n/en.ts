@@ -349,7 +349,13 @@ export const en = {
     visits: 'Visits',
     participants: 'Participants',
     participantsHint: 'Tick when you received payment — it is saved as a transaction and increases budget.',
-    noParticipantsYet: 'No participants yet.',
+    participantsHintBefore:
+      'Eligible people are listed with their payment settings. Debt appears after their first attendance.',
+    beforeFirstTitle: 'Before the first attendance',
+    beforeFirstBody:
+      'Budget and outstanding debt stay at 0 € until someone attends (creates a debt) and you record a received payment (INCOME).',
+    noParticipantsYet: 'No eligible people yet — add invitees or who may pay in event settings.',
+    statusWaiting: 'WAITING',
     participantMeta: (seriesCount: number, here: boolean, method: string) =>
       `${seriesCount}× in series · ${here ? 'here today' : 'not on this occurrence'} · ${method}`,
     occurrenceHeadcount: (n: number) => `${n} people on this occurrence`,

@@ -14,7 +14,7 @@ import {
   fetchSeriesMemberProfiles,
   fetchSeriesObligations,
   fetchSeriesExpenses,
-  fundingFeeUserId,
+  fetchSeriesInviteeIds,
   isActualExpense,
   isFundingExpense,
   recordPersonPayment,
@@ -26,6 +26,7 @@ import {
   type ExpenseWithMeta,
   type SeriesJoinRow,
 } from '@/lib/finance';
+import { supabase } from '@/lib/supabase';
 import type {
   ActivityObligation,
   ActivityWithRelations,
@@ -56,7 +57,7 @@ type PersonRow = {
   due: number;
   paid: number;
   open: number;
-  status: 'paid' | 'partial' | 'unpaid' | 'none';
+  status: 'paid' | 'partial' | 'unpaid' | 'none' | 'waiting';
 };
 
 function modeLabel(mode: FundingMode, t: ReturnType<typeof useT>): string {
@@ -145,6 +146,9 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     for (const id of eligibleIds) {
       if (id !== activity.created_by) ids.add(id);
     }
+    for (const id of activity.series_invite_user_ids ?? []) {
+      if (id !== activity.created_by) ids.add(id);
+    }
     for (const id of visitsByUser.keys()) {
       if (id !== activity.created_by) ids.add(id);
     }
@@ -165,17 +169,20 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       const due = personObls.reduce((s, o) => s + (Number(o.amount_due) || 0), 0);
       const paid = personObls.reduce((s, o) => s + (Number(o.amount_paid) || 0), 0);
       const open = Math.max(0, due - paid);
-      let status: PersonRow['status'] = 'none';
+      const visits = visitsByUser.get(uid) ?? 0;
+      let status: PersonRow['status'] = 'waiting';
       if (due > 0.001) {
         if (open <= 0.001) status = 'paid';
         else if (paid > 0.001) status = 'partial';
         else status = 'unpaid';
+      } else if (visits > 0) {
+        status = 'none';
       }
       rows.push({
         userId: uid,
         mode,
         amount,
-        visits: visitsByUser.get(uid) ?? 0,
+        visits,
         due: Math.round(due * 100) / 100,
         paid: Math.round(paid * 100) / 100,
         open: Math.round(open * 100) / 100,
@@ -183,7 +190,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       });
     }
     rows.sort((a, b) => {
-      const order = { unpaid: 0, partial: 1, none: 2, paid: 3 };
+      const order = { unpaid: 0, partial: 1, none: 2, waiting: 3, paid: 4 };
       if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
       return displayName(profilesById.get(a.userId) ?? null).localeCompare(
         displayName(profilesById.get(b.userId) ?? null)
@@ -194,12 +201,15 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     financeSettings,
     eligibleIds,
     activity.created_by,
+    activity.series_invite_user_ids,
     visitsByUser,
     obligations,
     expenses,
     overrideMap,
     profilesById,
   ]);
+
+  const hasAnyActivity = joins.length > 0 || obligations.length > 0 || ledger.length > 0;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -223,18 +233,53 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         setMemberOverrides([]);
       }
 
-      const [exps, obls, led, mems, jns] = await Promise.all([
+      const [exps, obls, led, mems, jns, inviteIds] = await Promise.all([
         fetchSeriesExpenses(sid),
         fetchSeriesObligations(sid),
         fetchSeriesLedger(sid),
         fetchSeriesMemberProfiles(sid),
         fetchSeriesJoinsWithSessions(sid),
+        fetchSeriesInviteeIds(sid).catch(() => [] as string[]),
       ]);
       setExpenses(exps);
       setObligations(obls);
       setLedger(led);
-      setMembers(mems.length ? mems : attendees);
       setJoins(jns);
+
+      // Ensure invitees / eligible payers appear even before first attendance
+      const needProfileIds = Array.from(
+        new Set([
+          ...mems.map((m) => m.id),
+          ...attendees.map((a) => a.id),
+          ...inviteIds,
+          ...(settings?.payer_ids ?? []),
+          ...(activity.series_invite_user_ids ?? []),
+        ])
+      );
+      let people = mems.length ? [...mems] : [...attendees];
+      const have = new Set(people.map((p) => p.id));
+      const missing = needProfileIds.filter((id) => !have.has(id));
+      if (missing.length) {
+        const { data: extra } = await supabase
+          .from('profiles')
+          .select('id, first_name, last_name, email')
+          .in('id', missing);
+        if (extra?.length) people = [...people, ...(extra as Profile[])];
+      }
+      setMembers(people);
+
+      if (settings && activity.finance_enabled) {
+        const eligible = await resolveEligiblePayerIds(settings);
+        const merged = Array.from(
+          new Set([
+            ...eligible,
+            ...inviteIds,
+            ...(activity.series_invite_user_ids ?? []),
+            ...(settings.payer_ids ?? []),
+          ])
+        ).filter((id) => id !== activity.created_by);
+        setEligibleIds(merged.length ? merged : eligible);
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : t.common.error;
       setError(/relation|does not exist|function|column/i.test(msg) ? t.finance.runSql : msg);
@@ -425,9 +470,18 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
             </Muted>
           ) : null}
 
+          {!hasAnyActivity ? (
+            <View style={styles.infoCard}>
+              <Text style={styles.infoTitle}>{t.finance.beforeFirstTitle}</Text>
+              <Muted>{t.finance.beforeFirstBody}</Muted>
+            </View>
+          ) : null}
+
           <View style={styles.card}>
             <Subtitle>{t.finance.participants}</Subtitle>
-            <Muted>{t.finance.participantsHint}</Muted>
+            <Muted>
+              {!hasAnyActivity ? t.finance.participantsHintBefore : t.finance.participantsHint}
+            </Muted>
             {!personRows.length ? <Muted>{t.finance.noParticipantsYet}</Muted> : null}
 
             {personRows.map((row) => {
@@ -685,7 +739,9 @@ function StatusBadge({
         ? t.finance.statusPartial
         : status === 'unpaid'
           ? t.finance.statusUnpaidFull
-          : '—';
+          : status === 'waiting'
+            ? t.finance.statusWaiting
+            : '—';
   const color =
     status === 'paid'
       ? theme.colors.success
@@ -775,6 +831,15 @@ const styles = StyleSheet.create({
     padding: theme.space.md,
     gap: 6,
   },
+  infoCard: {
+    backgroundColor: theme.colors.primarySoft,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: theme.space.md,
+    gap: 4,
+  },
+  infoTitle: { fontWeight: '800', fontSize: 14, color: theme.colors.primaryDark },
   rowWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   name: { fontWeight: '700', fontSize: 15, color: theme.colors.text },
   amountLine: { fontWeight: '600', fontSize: 13, color: theme.colors.text },
