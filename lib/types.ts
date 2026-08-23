@@ -45,7 +45,46 @@ export type ActivityExpense = {
   paid_by: string | null;
   /** When true, paid from event budget pot; paid_by is null. */
   paid_from_budget?: boolean;
+  category?: string | null;
   created_by: string;
+  created_at: string;
+};
+
+export type FinanceLedgerEntryType = 'INCOME' | 'EXPENSE';
+
+export type ExpenseCategory =
+  | 'equipment'
+  | 'venue'
+  | 'referees'
+  | 'transport'
+  | 'food'
+  | 'other';
+
+export type SeriesFinanceLedgerEntry = {
+  id: string;
+  series_id: string;
+  entry_type: FinanceLedgerEntryType;
+  amount: number;
+  occurred_at: string;
+  activity_id: string | null;
+  user_id: string | null;
+  obligation_id: string | null;
+  payment_id: string | null;
+  expense_id: string | null;
+  category: string | null;
+  description: string | null;
+  created_by: string;
+  created_at: string;
+};
+
+export type SeriesFinanceAudit = {
+  id: string;
+  series_id: string;
+  actor_id: string;
+  action: string;
+  target_user_id: string | null;
+  old_value: Record<string, unknown> | null;
+  new_value: Record<string, unknown> | null;
   created_at: string;
 };
 

@@ -205,6 +205,202 @@ export function computeBudget(
   return { funded, spent, remaining: round2(funded - spent) };
 }
 
+/** Preferred budget: SUM(INCOME) − SUM(EXPENSE) from ledger. Unpaid debts are separate. */
+export function computeLedgerBudget(
+  ledger: Pick<import('@/lib/types').SeriesFinanceLedgerEntry, 'entry_type' | 'amount'>[]
+): {
+  received: number;
+  spent: number;
+  available: number;
+} {
+  let received = 0;
+  let spent = 0;
+  for (const row of ledger) {
+    const amount = Number(row.amount) || 0;
+    if (row.entry_type === 'INCOME') received = round2(received + amount);
+    else if (row.entry_type === 'EXPENSE') spent = round2(spent + amount);
+  }
+  return { received, spent, available: round2(received - spent) };
+}
+
+export function computeOpenObligations(
+  obligations: Pick<ActivityObligation, 'amount_due' | 'amount_paid' | 'status'>[]
+): number {
+  let open = 0;
+  for (const o of obligations) {
+    if (o.status === 'waived') continue;
+    open = round2(open + Math.max(0, Number(o.amount_due) - Number(o.amount_paid)));
+  }
+  return open;
+}
+
+export async function fetchSeriesLedger(
+  seriesId: string
+): Promise<import('@/lib/types').SeriesFinanceLedgerEntry[]> {
+  const { data, error } = await supabase
+    .from('series_finance_ledger')
+    .select('*')
+    .eq('series_id', seriesId)
+    .order('occurred_at', { ascending: false });
+  if (error) {
+    if (/relation|does not exist/i.test(error.message)) return [];
+    throw error;
+  }
+  return (data as import('@/lib/types').SeriesFinanceLedgerEntry[]) ?? [];
+}
+
+export async function fetchSeriesFinanceAudit(
+  seriesId: string
+): Promise<import('@/lib/types').SeriesFinanceAudit[]> {
+  const { data, error } = await supabase
+    .from('series_finance_audit')
+    .select('*')
+    .eq('series_id', seriesId)
+    .order('created_at', { ascending: false })
+    .limit(100);
+  if (error) {
+    if (/relation|does not exist/i.test(error.message)) return [];
+    throw error;
+  }
+  return (data as import('@/lib/types').SeriesFinanceAudit[]) ?? [];
+}
+
+/** Record a (partial) payment → obligation + INCOME ledger. */
+export async function recordParticipantPayment(input: {
+  obligationId: string;
+  amount: number;
+  note?: string | null;
+  activityId?: string | null;
+}): Promise<string> {
+  const { data, error } = await supabase.rpc('record_participant_payment', {
+    p_obligation_id: input.obligationId,
+    p_amount: input.amount,
+    p_note: input.note ?? null,
+    p_activity_id: input.activityId ?? null,
+  });
+  if (error) throw error;
+  return data as string;
+}
+
+/** Pay open debt for a person across obligations (FIFO by created_at). */
+export async function recordPersonPayment(input: {
+  seriesId: string;
+  userId: string;
+  amount: number;
+  note?: string | null;
+  activityId?: string | null;
+}): Promise<void> {
+  let left = round2(input.amount);
+  if (left <= 0) throw new Error('Invalid amount');
+  const obligations = (await fetchSeriesObligations(input.seriesId))
+    .filter((o) => o.user_id === input.userId && o.status !== 'waived' && o.status !== 'paid')
+    .sort((a, b) => a.created_at.localeCompare(b.created_at));
+  for (const o of obligations) {
+    if (left <= 0.001) break;
+    const due = round2(Math.max(0, Number(o.amount_due) - Number(o.amount_paid)));
+    if (due <= 0.001) continue;
+    const pay = Math.min(left, due);
+    await recordParticipantPayment({
+      obligationId: o.id,
+      amount: pay,
+      note: input.note,
+      activityId: input.activityId,
+    });
+    left = round2(left - pay);
+  }
+  if (left > 0.01) throw new Error('Payment exceeds open debt');
+}
+
+export async function writeFinanceAudit(input: {
+  seriesId: string;
+  actorId: string;
+  action: string;
+  targetUserId?: string | null;
+  oldValue?: Record<string, unknown> | null;
+  newValue?: Record<string, unknown> | null;
+}): Promise<void> {
+  const { error } = await supabase.from('series_finance_audit').insert({
+    series_id: input.seriesId,
+    actor_id: input.actorId,
+    action: input.action,
+    target_user_id: input.targetUserId ?? null,
+    old_value: input.oldValue ?? null,
+    new_value: input.newValue ?? null,
+  });
+  if (error && !/relation|does not exist/i.test(error.message)) throw error;
+}
+
+export type SeriesJoinRow = {
+  activity_id: string;
+  user_id: string;
+  fee_amount: number | null;
+  fee_obligation_id: string | null;
+  created_at: string;
+  starts_at?: string;
+  activity_title?: string;
+};
+
+/** All joins in a series with occurrence start times. */
+export async function fetchSeriesJoinsWithSessions(seriesId: string): Promise<SeriesJoinRow[]> {
+  const { data: acts, error: aErr } = await supabase
+    .from('activities')
+    .select('id, title, starts_at')
+    .or(`id.eq.${seriesId},series_id.eq.${seriesId}`)
+    .order('starts_at', { ascending: true });
+  if (aErr) throw aErr;
+  const actRows = (acts ?? []) as { id: string; title: string; starts_at: string }[];
+  if (!actRows.length) return [];
+  const byId = new Map(actRows.map((a) => [a.id, a]));
+  const { data: joins, error } = await supabase
+    .from('activity_joins')
+    .select('activity_id, user_id, created_at, fee_amount, fee_obligation_id')
+    .in(
+      'activity_id',
+      actRows.map((a) => a.id)
+    );
+  if (error) {
+    // Fallback if fee columns not migrated yet
+    if (/fee_amount|column/i.test(error.message)) {
+      const { data: plain, error: e2 } = await supabase
+        .from('activity_joins')
+        .select('activity_id, user_id, created_at')
+        .in(
+          'activity_id',
+          actRows.map((a) => a.id)
+        );
+      if (e2) throw e2;
+      return ((plain ?? []) as SeriesJoinRow[]).map((j) => {
+        const act = byId.get(j.activity_id);
+        return {
+          ...j,
+          fee_amount: null,
+          fee_obligation_id: null,
+          starts_at: act?.starts_at,
+          activity_title: act?.title,
+        };
+      });
+    }
+    throw error;
+  }
+  return ((joins ?? []) as SeriesJoinRow[]).map((j) => {
+    const act = byId.get(j.activity_id);
+    return {
+      ...j,
+      starts_at: act?.starts_at,
+      activity_title: act?.title,
+    };
+  });
+}
+
+export const EXPENSE_CATEGORIES = [
+  'equipment',
+  'venue',
+  'referees',
+  'transport',
+  'food',
+  'other',
+] as const;
+
 export async function fetchSeriesObligations(seriesId: string): Promise<ActivityObligation[]> {
   const { data, error } = await supabase
     .from('activity_obligations')
@@ -360,6 +556,7 @@ export async function createExpense(input: {
   activityId?: string | null;
   periodKey?: string | null;
   dueDate?: string | null;
+  category?: string | null;
 }): Promise<string> {
   const fromBudget = Boolean(input.paidFromBudget);
   const { data, error } = await supabase.rpc('create_series_expense', {
@@ -376,7 +573,30 @@ export async function createExpense(input: {
     p_paid_from_budget: fromBudget,
   });
   if (error) throw error;
-  return data as string;
+  const expenseId = data as string;
+
+  if (input.category) {
+    await supabase.from('activity_expenses').update({ category: input.category }).eq('id', expenseId);
+  }
+
+  if (fromBudget) {
+    const user = (await supabase.auth.getUser()).data.user;
+    if (!user?.id) throw new Error('Not authenticated');
+    const { error: lErr } = await supabase.from('series_finance_ledger').insert({
+      series_id: input.seriesId,
+      entry_type: 'EXPENSE',
+      amount: input.amount,
+      occurred_at: new Date().toISOString(),
+      activity_id: input.activityId ?? null,
+      expense_id: expenseId,
+      category: input.category ?? null,
+      description: input.title,
+      created_by: user.id,
+    });
+    if (lErr && !/relation|does not exist/i.test(lErr.message)) throw lErr;
+  }
+
+  return expenseId;
 }
 
 export async function recordSettlement(input: {
@@ -699,6 +919,18 @@ export async function upsertMemberFinanceSettings(input: {
   );
   if (error) throw error;
 
+  await writeFinanceAudit({
+    seriesId: input.seriesId,
+    actorId: input.updatedBy,
+    action: 'member_settings_changed',
+    targetUserId: input.userId,
+    oldValue: {
+      funding_mode: input.settings.funding_mode,
+      amount: input.settings.amount,
+    },
+    newValue: { funding_mode: mode, amount },
+  });
+
   // Adjust monthly billing window when switching modes
   if (mode === 'monthly') {
     await ensureMonthlyBillingStarted(
@@ -719,27 +951,7 @@ export async function upsertMemberFinanceSettings(input: {
       .eq('user_id', input.userId);
   }
 
-  // Update unpaid fee amounts for this person
-  const expenses = await fetchSeriesExpenses(input.seriesId);
-  const obligations = await fetchSeriesObligations(input.seriesId);
-  const unpaidByExpense = new Set(
-    obligations
-      .filter(
-        (o) =>
-          o.user_id === input.userId &&
-          o.status !== 'paid' &&
-          o.status !== 'waived' &&
-          (Number(o.amount_paid) || 0) <= 0
-      )
-      .map((o) => o.expense_id)
-  );
-  for (const e of expenses) {
-    if (!unpaidByExpense.has(e.id)) continue;
-    if (fundingFeeUserId(e.period_key) !== input.userId) continue;
-    await updateExpenseAmount(e.id, amount);
-  }
-
-  // Create any missing fee for the new method
+  // Future charges only — do not rewrite historical unpaid obligations/amounts
   await syncAttendeeFundingFees({
     activity: input.activity,
     settings: input.settings,
@@ -946,6 +1158,31 @@ async function createPersonFee(input: {
     activityId,
     periodKey: input.periodKey,
   });
+
+  // Lock historical price on the join for PER_EVENT (do not overwrite if already set)
+  if (input.mode === 'per_event') {
+    try {
+      const { data: obl } = await supabase
+        .from('activity_obligations')
+        .select('id')
+        .eq('series_id', input.seriesId)
+        .eq('user_id', input.userId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      await supabase
+        .from('activity_joins')
+        .update({
+          fee_amount: input.perPerson,
+          fee_obligation_id: obl?.id ?? null,
+        })
+        .eq('activity_id', input.activityId)
+        .eq('user_id', input.userId)
+        .is('fee_amount', null);
+    } catch {
+      /* column may be missing until migration */
+    }
+  }
 }
 
 /**

@@ -2,36 +2,36 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button, Chip, Input, Muted, Subtitle } from '@/components/ui';
 import {
-  computeBudget,
+  EXPENSE_CATEGORIES,
+  computeLedgerBudget,
+  computeOpenObligations,
   createExpense,
-  createExtraFundingCharges,
   createManualFundingFee,
-  deleteExpense,
+  fetchSeriesFinanceSettings,
+  fetchSeriesJoinsWithSessions,
+  fetchSeriesLedger,
   fetchSeriesMemberFinanceSettings,
+  fetchSeriesMemberProfiles,
   fetchSeriesObligations,
+  fetchSeriesExpenses,
   fundingFeeUserId,
-  parseMonthlyFeeKey,
-  removeMonthlyFundingFee,
+  isActualExpense,
+  isFundingExpense,
+  recordPersonPayment,
   resolveEligiblePayerIds,
   resolveMemberFinance,
-  syncAttendeeFundingFees,
-  fetchActivityAttendeeIds,
-  fetchSeriesExpenses,
-  fetchSeriesFinanceSettings,
-  fetchSeriesInviteeIds,
-  fetchSeriesMemberProfiles,
-  isActualExpense,
   seriesKey,
-  setObligationPaid,
+  syncAttendeeFundingFees,
   upsertMemberFinanceSettings,
   type ExpenseWithMeta,
+  type SeriesJoinRow,
 } from '@/lib/finance';
-import { fetchSeriesAttendanceStats } from '@/lib/guests';
 import type {
   ActivityObligation,
   ActivityWithRelations,
   FundingMode,
   Profile,
+  SeriesFinanceLedgerEntry,
   SeriesFinanceMemberSettings,
   SeriesFinanceSettings,
 } from '@/lib/types';
@@ -46,69 +46,76 @@ type Props = {
   attendees: Profile[];
 };
 
-type Tab = 'budget' | 'expenses' | 'collect';
-type SplitPreset = 'invitees' | 'attendees' | 'custom';
-type PayerChoice = string | 'budget';
+type Tab = 'overview' | 'transactions' | 'expense';
 
-type ParticipantRow = {
+type PersonRow = {
   userId: string;
-  seriesCount: number;
-  here: boolean;
   mode: FundingMode;
   amount: number;
-  unpaidObligations: ActivityObligation[];
-  paidObligations: ActivityObligation[];
-  feeExpenses: ExpenseWithMeta[];
-  allPaid: boolean;
-  openDue: number;
+  visits: number;
+  due: number;
+  paid: number;
+  open: number;
+  status: 'paid' | 'partial' | 'unpaid' | 'none';
 };
 
-function isGuestFeeKey(periodKey: string | null | undefined): boolean {
-  return (periodKey ?? '').startsWith('fee:guest:');
-}
-
-function modeLabel(
-  mode: FundingMode,
-  t: ReturnType<typeof useT>
-): string {
+function modeLabel(mode: FundingMode, t: ReturnType<typeof useT>): string {
   if (mode === 'monthly') return t.form.payMonthly;
   if (mode === 'fixed' || mode === 'annual') return t.form.payFixed;
   return t.form.payPerEvent;
 }
 
+function categoryLabel(cat: string | null | undefined, t: ReturnType<typeof useT>): string {
+  switch (cat) {
+    case 'equipment':
+      return t.finance.catEquipment;
+    case 'venue':
+      return t.finance.catVenue;
+    case 'referees':
+      return t.finance.catReferees;
+    case 'transport':
+      return t.finance.catTransport;
+    case 'food':
+      return t.finance.catFood;
+    default:
+      return t.finance.catOther;
+  }
+}
+
+function formatDate(iso?: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString();
+}
+
 export function ActivityFinancePanel({ activity, userId, canManage, attendees }: Props) {
   const t = useT();
   const sid = seriesKey(activity);
-  const [tab, setTab] = useState<Tab>('budget');
-  const [expenses, setExpenses] = useState<ExpenseWithMeta[]>([]);
-  const [obligations, setObligations] = useState<ActivityObligation[]>([]);
-  const [memberOverrides, setMemberOverrides] = useState<SeriesFinanceMemberSettings[]>([]);
-  const [members, setMembers] = useState<Profile[]>([]);
-  const [inviteeIds, setInviteeIds] = useState<string[]>([]);
-  const [attendeeIds, setAttendeeIds] = useState<string[]>([]);
-  const [eligibleIds, setEligibleIds] = useState<string[]>([]);
-  const [splitPreset, setSplitPreset] = useState<SplitPreset>('invitees');
+  const [tab, setTab] = useState<Tab>('overview');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [financeSettings, setFinanceSettings] = useState<SeriesFinanceSettings | null>(null);
-  const [attendanceStats, setAttendanceStats] = useState<Awaited<
-    ReturnType<typeof fetchSeriesAttendanceStats>
-  > | null>(null);
 
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [financeSettings, setFinanceSettings] = useState<SeriesFinanceSettings | null>(null);
+  const [memberOverrides, setMemberOverrides] = useState<SeriesFinanceMemberSettings[]>([]);
+  const [obligations, setObligations] = useState<ActivityObligation[]>([]);
+  const [expenses, setExpenses] = useState<ExpenseWithMeta[]>([]);
+  const [ledger, setLedger] = useState<SeriesFinanceLedgerEntry[]>([]);
+  const [joins, setJoins] = useState<SeriesJoinRow[]>([]);
+  const [members, setMembers] = useState<Profile[]>([]);
+  const [eligibleIds, setEligibleIds] = useState<string[]>([]);
+
+  const [detailUserId, setDetailUserId] = useState<string | null>(null);
+  const [payAmount, setPayAmount] = useState('');
+  const [payNote, setPayNote] = useState('');
+  const [editing, setEditing] = useState(false);
   const [editMode, setEditMode] = useState<FundingMode>('per_event');
   const [editAmount, setEditAmount] = useState('');
 
-  const [showAdd, setShowAdd] = useState(false);
-  const [title, setTitle] = useState('');
-  const [amount, setAmount] = useState('');
-  const [paidBy, setPaidBy] = useState<PayerChoice>('budget');
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-
-  const [collectTitle, setCollectTitle] = useState('');
-  const [collectAmount, setCollectAmount] = useState('');
-  const [collectIds, setCollectIds] = useState<string[]>([]);
+  const [expTitle, setExpTitle] = useState('');
+  const [expAmount, setExpAmount] = useState('');
+  const [expCategory, setExpCategory] = useState<(typeof EXPENSE_CATEGORIES)[number]>('other');
 
   const profilesById = useMemo(() => {
     const map = new Map(members.map((m) => [m.id, m]));
@@ -121,68 +128,63 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     [memberOverrides]
   );
 
-  const budget = useMemo(() => computeBudget(expenses, obligations), [expenses, obligations]);
-  const actualExpenses = useMemo(() => expenses.filter(isActualExpense), [expenses]);
-  const feeExpenses = useMemo(
-    () => expenses.filter((e) => (e.period_key ?? '').startsWith('fee:') && !isGuestFeeKey(e.period_key)),
-    [expenses]
-  );
-  const guestFeeRows = useMemo(
-    () => expenses.filter((e) => isGuestFeeKey(e.period_key)),
-    [expenses]
-  );
+  const budget = useMemo(() => computeLedgerBudget(ledger), [ledger]);
+  const unpaidTotal = useMemo(() => computeOpenObligations(obligations), [obligations]);
 
-  const seriesCountByUser = useMemo(() => {
+  const visitsByUser = useMemo(() => {
     const map = new Map<string, number>();
-    for (const m of attendanceStats?.memberAttendances ?? []) {
-      map.set(m.userId, m.count);
+    for (const j of joins) {
+      map.set(j.user_id, (map.get(j.user_id) ?? 0) + 1);
     }
     return map;
-  }, [attendanceStats]);
+  }, [joins]);
 
-  const participantRows = useMemo((): ParticipantRow[] => {
+  const personRows = useMemo((): PersonRow[] => {
     if (!financeSettings) return [];
-    const hereSet = new Set(attendeeIds);
     const ids = new Set<string>();
     for (const id of eligibleIds) {
       if (id !== activity.created_by) ids.add(id);
     }
-    for (const id of seriesCountByUser.keys()) {
+    for (const id of visitsByUser.keys()) {
       if (id !== activity.created_by) ids.add(id);
     }
-    for (const e of feeExpenses) {
-      const uid = fundingFeeUserId(e.period_key);
-      if (uid) ids.add(uid);
+    for (const o of obligations) {
+      if (o.user_id !== activity.created_by) ids.add(o.user_id);
     }
 
-    const rows: ParticipantRow[] = [];
+    const feeExpenseIds = new Set(
+      expenses.filter((e) => isFundingExpense(e)).map((e) => e.id)
+    );
+
+    const rows: PersonRow[] = [];
     for (const uid of ids) {
-      const { mode, amount: amt } = resolveMemberFinance(financeSettings, overrideMap, uid);
-      const personFees = feeExpenses.filter((e) => fundingFeeUserId(e.period_key) === uid);
+      const { mode, amount } = resolveMemberFinance(financeSettings, overrideMap, uid);
       const personObls = obligations.filter(
-        (o) => o.user_id === uid && personFees.some((e) => e.id === o.expense_id)
+        (o) => o.user_id === uid && feeExpenseIds.has(o.expense_id)
       );
-      const unpaid = personObls.filter(
-        (o) => o.status !== 'paid' && o.status !== 'waived' && (Number(o.amount_paid) || 0) < Number(o.amount_due) - 0.001
-      );
-      const paid = personObls.filter((o) => o.status === 'paid' || (Number(o.amount_paid) || 0) > 0);
-      const openDue = unpaid.reduce((s, o) => s + Math.max(0, Number(o.amount_due) - Number(o.amount_paid)), 0);
+      const due = personObls.reduce((s, o) => s + (Number(o.amount_due) || 0), 0);
+      const paid = personObls.reduce((s, o) => s + (Number(o.amount_paid) || 0), 0);
+      const open = Math.max(0, due - paid);
+      let status: PersonRow['status'] = 'none';
+      if (due > 0.001) {
+        if (open <= 0.001) status = 'paid';
+        else if (paid > 0.001) status = 'partial';
+        else status = 'unpaid';
+      }
       rows.push({
         userId: uid,
-        seriesCount: seriesCountByUser.get(uid) ?? 0,
-        here: hereSet.has(uid),
         mode,
-        amount: amt,
-        unpaidObligations: unpaid,
-        paidObligations: paid,
-        feeExpenses: personFees,
-        allPaid: personFees.length > 0 && unpaid.length === 0,
-        openDue: Math.round(openDue * 100) / 100,
+        amount,
+        visits: visitsByUser.get(uid) ?? 0,
+        due: Math.round(due * 100) / 100,
+        paid: Math.round(paid * 100) / 100,
+        open: Math.round(open * 100) / 100,
+        status,
       });
     }
-
     rows.sort((a, b) => {
-      if (a.allPaid !== b.allPaid) return a.allPaid ? 1 : -1;
+      const order = { unpaid: 0, partial: 1, none: 2, paid: 3 };
+      if (order[a.status] !== order[b.status]) return order[a.status] - order[b.status];
       return displayName(profilesById.get(a.userId) ?? null).localeCompare(
         displayName(profilesById.get(b.userId) ?? null)
       );
@@ -192,32 +194,12 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     financeSettings,
     eligibleIds,
     activity.created_by,
-    seriesCountByUser,
-    feeExpenses,
+    visitsByUser,
     obligations,
+    expenses,
     overrideMap,
-    attendeeIds,
     profilesById,
   ]);
-
-  const totalSpent = useMemo(
-    () => actualExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0),
-    [actualExpenses]
-  );
-
-  const applyPreset = useCallback(
-    (preset: SplitPreset, invitees: string[], attendeesList: string[], people: Profile[]) => {
-      setSplitPreset(preset);
-      if (preset === 'invitees') {
-        const ids = invitees.length ? invitees : people.map((p) => p.id);
-        setSelectedIds(ids);
-      } else if (preset === 'attendees') {
-        const ids = attendeesList.length ? attendeesList : people.map((p) => p.id);
-        setSelectedIds(ids);
-      }
-    },
-    []
-  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -241,96 +223,65 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         setMemberOverrides([]);
       }
 
-      const [exps, mems, obls, invites, attendeesForEvent, stats] = await Promise.all([
+      const [exps, obls, led, mems, jns] = await Promise.all([
         fetchSeriesExpenses(sid),
-        fetchSeriesMemberProfiles(sid),
         fetchSeriesObligations(sid),
-        fetchSeriesInviteeIds(sid),
-        fetchActivityAttendeeIds(activity.id),
-        fetchSeriesAttendanceStats(sid).catch(() => null),
+        fetchSeriesLedger(sid),
+        fetchSeriesMemberProfiles(sid),
+        fetchSeriesJoinsWithSessions(sid),
       ]);
-      const people = mems.length ? mems : attendees;
-      const inviteSet = invites.length
-        ? invites
-        : [
-            activity.created_by,
-            ...(activity.series_invite_user_ids ?? []),
-            ...people.map((p) => p.id),
-          ];
-      const uniqueInvites = Array.from(new Set(inviteSet));
       setExpenses(exps);
       setObligations(obls);
-      setMembers(people);
-      setInviteeIds(uniqueInvites);
-      setAttendeeIds(attendeesForEvent);
-      setAttendanceStats(stats);
-
-      setSelectedIds((prev) => {
-        if (prev.length) return prev.filter((id) => people.some((p) => p.id === id));
-        return uniqueInvites.filter((id) => people.some((p) => p.id === id)).length
-          ? uniqueInvites.filter((id) => people.some((p) => p.id === id))
-          : people.map((p) => p.id);
-      });
-      setCollectIds((prev) =>
-        prev.length
-          ? prev.filter((id) => people.some((p) => p.id === id))
-          : uniqueInvites.filter((id) => people.some((p) => p.id === id))
-      );
-      applyPreset('invitees', uniqueInvites, attendeesForEvent, people);
-      setPaidBy('budget');
-      setEditingUserId(null);
+      setLedger(led);
+      setMembers(mems.length ? mems : attendees);
+      setJoins(jns);
     } catch (e) {
       const msg = e instanceof Error ? e.message : t.common.error;
       setError(/relation|does not exist|function|column/i.test(msg) ? t.finance.runSql : msg);
     } finally {
       setLoading(false);
     }
-  }, [activity, attendees, applyPreset, sid, t.common.error, t.finance.runSql]);
+  }, [activity, attendees, sid, t.common.error, t.finance.runSql]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  async function onAddExpense() {
-    if (!canManage) return;
-    const n = Number(amount.replace(',', '.'));
-    const fromBudget = paidBy === 'budget';
-    if (!title.trim()) {
-      Alert.alert(t.common.error, t.finance.needTitle);
-      return;
-    }
+  const detailRow = personRows.find((r) => r.userId === detailUserId) ?? null;
+  const detailJoins = useMemo(
+    () =>
+      joins
+        .filter((j) => j.user_id === detailUserId)
+        .sort((a, b) => (a.starts_at ?? '').localeCompare(b.starts_at ?? '')),
+    [joins, detailUserId]
+  );
+  const detailLedger = useMemo(
+    () => ledger.filter((l) => l.user_id === detailUserId),
+    [ledger, detailUserId]
+  );
+  const oblById = useMemo(() => {
+    const map = new Map(obligations.map((o) => [o.id, o]));
+    return map;
+  }, [obligations]);
+
+  async function onRecordPayment() {
+    if (!canManage || !detailUserId) return;
+    const n = Number(payAmount.replace(',', '.'));
     if (!Number.isFinite(n) || n <= 0) {
       Alert.alert(t.common.error, t.finance.needAmount);
       return;
     }
-    if (!fromBudget && !selectedIds.length) {
-      Alert.alert(t.common.error, t.finance.needMembers);
-      return;
-    }
     setBusy(true);
     try {
-      await createExpense({
+      await recordPersonPayment({
         seriesId: sid,
-        title: title.trim(),
+        userId: detailUserId,
         amount: n,
-        splitMode:
-          splitPreset === 'attendees'
-            ? 'equal_attendees'
-            : splitPreset === 'invitees'
-              ? 'equal_all'
-              : 'selected',
-        memberIds: fromBudget
-          ? selectedIds.length
-            ? selectedIds
-            : [activity.created_by]
-          : selectedIds,
-        paidBy: fromBudget ? null : paidBy,
-        paidFromBudget: fromBudget,
+        note: payNote.trim() || null,
         activityId: activity.id,
       });
-      setTitle('');
-      setAmount('');
-      setShowAdd(false);
+      setPayAmount('');
+      setPayNote('');
       await load();
     } catch (e) {
       Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
@@ -339,69 +290,8 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     }
   }
 
-  async function onCollect() {
-    if (!canManage) return;
-    const n = Number(collectAmount.replace(',', '.'));
-    if (!collectTitle.trim()) {
-      Alert.alert(t.common.error, t.finance.needTitle);
-      return;
-    }
-    if (!Number.isFinite(n) || n <= 0) {
-      Alert.alert(t.common.error, t.finance.needAmount);
-      return;
-    }
-    if (!collectIds.length) {
-      Alert.alert(t.common.error, t.finance.needMembers);
-      return;
-    }
-    setBusy(true);
-    try {
-      await createExtraFundingCharges({
-        seriesId: sid,
-        activityId: activity.id,
-        title: collectTitle.trim(),
-        amount: n,
-        userIds: collectIds,
-        organizerId: activity.created_by,
-      });
-      setCollectTitle('');
-      setCollectAmount('');
-      setTab('budget');
-      await load();
-    } catch (e) {
-      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onTogglePersonPaid(row: ParticipantRow, paid: boolean) {
-    if (!canManage) return;
-    const targets = paid
-      ? row.unpaidObligations
-      : row.paidObligations.length
-        ? row.paidObligations
-        : row.feeExpenses
-            .map((e) =>
-              obligations.find((o) => o.expense_id === e.id && o.user_id === row.userId)
-            )
-            .filter(Boolean);
-    if (!targets.length) return;
-    setBusy(true);
-    try {
-      for (const obl of targets as ActivityObligation[]) {
-        await setObligationPaid(obl.id, paid);
-      }
-      await load();
-    } catch (e) {
-      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onSaveMemberSettings(row: ParticipantRow) {
-    if (!canManage || !financeSettings) return;
+  async function onSaveSettings() {
+    if (!canManage || !detailUserId || !financeSettings) return;
     const n = Number(editAmount.replace(',', '.'));
     if (!Number.isFinite(n) || n < 0) {
       Alert.alert(t.common.error, t.finance.needAmount);
@@ -411,14 +301,14 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     try {
       await upsertMemberFinanceSettings({
         seriesId: sid,
-        userId: row.userId,
+        userId: detailUserId,
         fundingMode: editMode,
         amount: n,
         updatedBy: userId,
         activity,
         settings: financeSettings,
       });
-      setEditingUserId(null);
+      setEditing(false);
       await load();
     } catch (e) {
       Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
@@ -427,92 +317,52 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     }
   }
 
-  async function onDeleteExpense(id: string) {
-    if (!canManage) return;
+  async function onChargeIfNeeded() {
+    if (!canManage || !detailUserId || !financeSettings) return;
     setBusy(true);
     try {
-      await deleteExpense(id);
-      await load();
-    } catch (e) {
-      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onDeletePersonFees(row: ParticipantRow) {
-    if (!canManage || !row.feeExpenses.length) return;
-    const first = row.feeExpenses[0];
-    const monthly = parseMonthlyFeeKey(first.period_key);
-    if (!monthly) {
-      for (const e of row.feeExpenses) {
-        await onDeleteExpense(e.id);
-      }
-      return;
-    }
-    Alert.alert(t.finance.removeMonthlyTitle, t.finance.removeMonthlyBody, [
-      { text: t.common.cancel, style: 'cancel' },
-      {
-        text: t.finance.removeThisMonthOnly,
-        onPress: () => {
-          void (async () => {
-            setBusy(true);
-            try {
-              for (const e of row.feeExpenses) {
-                if (!parseMonthlyFeeKey(e.period_key)) continue;
-                await removeMonthlyFundingFee({
-                  seriesId: sid,
-                  expenseId: e.id,
-                  periodKey: e.period_key!,
-                  mode: 'this_month',
-                });
-              }
-              await load();
-            } catch (err) {
-              Alert.alert(t.common.error, err instanceof Error ? err.message : t.common.error);
-            } finally {
-              setBusy(false);
-            }
-          })();
-        },
-      },
-      {
-        text: t.finance.stopFutureMonths,
-        style: 'destructive',
-        onPress: () => {
-          void (async () => {
-            setBusy(true);
-            try {
-              const e = row.feeExpenses[0];
-              await removeMonthlyFundingFee({
-                seriesId: sid,
-                expenseId: e.id,
-                periodKey: e.period_key!,
-                mode: 'stop_future',
-              });
-              await load();
-            } catch (err) {
-              Alert.alert(t.common.error, err instanceof Error ? err.message : t.common.error);
-            } finally {
-              setBusy(false);
-            }
-          })();
-        },
-      },
-    ]);
-  }
-
-  async function onChargeManually(personId: string) {
-    if (!canManage || !financeSettings) return;
-    setBusy(true);
-    try {
-      const { amount: amt } = resolveMemberFinance(financeSettings, overrideMap, personId);
+      const { amount } = resolveMemberFinance(financeSettings, overrideMap, detailUserId);
       await createManualFundingFee({
         activity,
         settings: financeSettings,
-        userId: personId,
-        amount: amt,
+        userId: detailUserId,
+        amount,
       });
+      await load();
+    } catch (e) {
+      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function onAddExpense() {
+    if (!canManage) return;
+    const n = Number(expAmount.replace(',', '.'));
+    if (!expTitle.trim()) {
+      Alert.alert(t.common.error, t.finance.needTitle);
+      return;
+    }
+    if (!Number.isFinite(n) || n <= 0) {
+      Alert.alert(t.common.error, t.finance.needAmount);
+      return;
+    }
+    setBusy(true);
+    try {
+      await createExpense({
+        seriesId: sid,
+        title: expTitle.trim(),
+        amount: n,
+        splitMode: 'selected',
+        memberIds: [activity.created_by],
+        paidFromBudget: true,
+        activityId: activity.id,
+        category: expCategory,
+      });
+      setExpTitle('');
+      setExpAmount('');
+      setExpCategory('other');
+      setTab('transactions');
       await load();
     } catch (e) {
       Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
@@ -524,35 +374,43 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   if (loading) return <Muted>{t.common.loading}</Muted>;
   if (error) return <Text style={styles.error}>{error}</Text>;
 
-  const hereCount = attendeeIds.length;
-
   return (
     <View style={{ gap: 12 }}>
       <View style={styles.tabRow}>
-        <Chip label={t.finance.budgetTab} active={tab === 'budget'} onPress={() => setTab('budget')} />
         <Chip
-          label={t.finance.expenses}
-          active={tab === 'expenses'}
-          onPress={() => setTab('expenses')}
+          label={t.finance.budgetTab}
+          active={tab === 'overview'}
+          onPress={() => setTab('overview')}
         />
         <Chip
-          label={t.finance.collectTab}
-          active={tab === 'collect'}
-          onPress={() => setTab('collect')}
+          label={t.finance.allTransactions}
+          active={tab === 'transactions'}
+          onPress={() => setTab('transactions')}
         />
+        {canManage ? (
+          <Chip
+            label={t.finance.addExpenseAction}
+            active={tab === 'expense'}
+            onPress={() => setTab('expense')}
+          />
+        ) : null}
       </View>
 
       {!canManage ? <Muted>{t.finance.viewOnly}</Muted> : null}
 
-      {tab === 'budget' ? (
+      {tab === 'overview' ? (
         <View style={{ gap: 12 }}>
           <View style={styles.summaryRow}>
-            <SummaryCard label={t.finance.budget} value={`${budget.remaining.toFixed(2)} €`} />
-            <SummaryCard label={t.finance.totalSpent} value={`${totalSpent.toFixed(2)} €`} />
+            <SummaryCard
+              label={t.finance.ledgerAvailable}
+              value={`${budget.available.toFixed(2)} €`}
+              emphasize
+            />
           </View>
           <View style={styles.summaryRow}>
-            <SummaryCard label={t.finance.budgetIn} value={`${budget.funded.toFixed(2)} €`} />
-            <SummaryCard label={t.finance.budgetOut} value={`${budget.spent.toFixed(2)} €`} />
+            <SummaryCard label={t.finance.ledgerReceived} value={`${budget.received.toFixed(2)} €`} />
+            <SummaryCard label={t.finance.ledgerSpent} value={`${budget.spent.toFixed(2)} €`} />
+            <SummaryCard label={t.finance.ledgerUnpaid} value={`${unpaidTotal.toFixed(2)} €`} />
           </View>
 
           {financeSettings ? (
@@ -567,366 +425,347 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
             </Muted>
           ) : null}
 
-          <Muted>{t.finance.occurrenceHeadcount(hereCount)}</Muted>
-
           <View style={styles.card}>
             <Subtitle>{t.finance.participants}</Subtitle>
             <Muted>{t.finance.participantsHint}</Muted>
+            {!personRows.length ? <Muted>{t.finance.noParticipantsYet}</Muted> : null}
 
-            {!participantRows.length ? <Muted>{t.finance.noParticipantsYet}</Muted> : null}
-
-            {participantRows.map((row) => {
-              const editing = editingUserId === row.userId;
-              const paid = row.allPaid && row.feeExpenses.length > 0;
-              const displayAmount = paid
-                ? row.paidObligations.reduce((s, o) => s + (Number(o.amount_paid) || 0), 0) ||
-                  row.amount
-                : row.openDue > 0
-                  ? row.openDue
-                  : row.amount;
+            {personRows.map((row) => {
+              const open = detailUserId === row.userId;
               return (
-                <View key={row.userId} style={styles.feeRow}>
-                  <View style={styles.feeTop}>
-                    {row.feeExpenses.length || row.openDue > 0 ? (
-                      canManage ? (
-                        <Pressable
-                          disabled={busy || (!paid && !row.unpaidObligations.length)}
-                          onPress={() => void onTogglePersonPaid(row, !paid)}
-                          hitSlop={8}
-                          accessibilityRole="checkbox"
-                          accessibilityState={{ checked: paid }}
-                          style={[styles.check, paid && styles.checkOn]}>
-                          <Text style={styles.checkMark}>{paid ? '✓' : ''}</Text>
-                        </Pressable>
-                      ) : (
-                        <View style={[styles.check, paid && styles.checkOn, styles.checkReadonly]}>
-                          <Text style={styles.checkMark}>{paid ? '✓' : ''}</Text>
-                        </View>
-                      )
-                    ) : (
-                      <View style={[styles.check, styles.checkEmpty]} />
-                    )}
-                    <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                <View key={row.userId} style={styles.personBlock}>
+                  <Pressable
+                    onPress={() => {
+                      setDetailUserId(open ? null : row.userId);
+                      setEditing(false);
+                      setPayAmount(row.open > 0 ? String(row.open) : '');
+                      setEditMode(row.mode === 'annual' ? 'fixed' : row.mode);
+                      setEditAmount(String(row.amount));
+                    }}
+                    style={styles.personHeader}>
+                    <View style={{ flex: 1, gap: 2 }}>
                       <Text style={styles.name}>
                         {displayName(profilesById.get(row.userId) ?? null)}
                       </Text>
                       <Muted>
-                        {t.finance.participantMeta(
-                          row.seriesCount,
-                          row.here,
-                          modeLabel(row.mode, t)
-                        )}
+                        {modeLabel(row.mode, t)} · {row.amount.toFixed(2)} € · {t.finance.visits}:{' '}
+                        {row.visits}
                       </Muted>
-                      <Text style={styles.amount}>{displayAmount.toFixed(2)} €</Text>
-                      <Muted>
-                        {paid
-                          ? t.finance.statusPaid
-                          : row.feeExpenses.length
-                            ? t.finance.statusUnpaid
-                            : row.seriesCount > 0 || row.here
-                              ? t.finance.statusNotCharged
-                              : t.finance.statusNoAttendance}
-                      </Muted>
-                    </View>
-                  </View>
-
-                  {editing ? (
-                    <View style={{ gap: 8, marginTop: 6 }}>
-                      <Muted>{t.finance.paymentMethod}</Muted>
-                      <View style={styles.rowWrap}>
-                        <Chip
-                          label={t.form.payPerEvent}
-                          active={editMode === 'per_event'}
-                          onPress={() => setEditMode('per_event')}
-                        />
-                        {activity.is_recurring ? (
-                          <>
-                            <Chip
-                              label={t.form.payMonthly}
-                              active={editMode === 'monthly'}
-                              onPress={() => setEditMode('monthly')}
-                            />
-                            <Chip
-                              label={t.form.payFixed}
-                              active={editMode === 'fixed'}
-                              onPress={() => setEditMode('fixed')}
-                            />
-                          </>
-                        ) : null}
-                      </View>
-                      <Input
-                        label={t.finance.expenseAmount}
-                        value={editAmount}
-                        onChangeText={setEditAmount}
-                        keyboardType="decimal-pad"
-                      />
-                      <Button
-                        label={t.finance.saveFee}
-                        size="sm"
-                        loading={busy}
-                        onPress={() => void onSaveMemberSettings(row)}
-                      />
-                      <Text style={styles.link} onPress={() => setEditingUserId(null)}>
-                        {t.common.cancel}
+                      <Text style={styles.amountLine}>
+                        {t.finance.paidTotal}: {row.paid.toFixed(2)} € · {t.finance.openDebt}:{' '}
+                        {row.open.toFixed(2)} €
                       </Text>
                     </View>
-                  ) : canManage ? (
-                    <View style={styles.feeActions}>
-                      <Pressable
-                        disabled={busy}
-                        onPress={() => {
-                          setEditingUserId(row.userId);
-                          setEditMode(row.mode === 'annual' ? 'fixed' : row.mode);
-                          setEditAmount(String(row.amount));
-                        }}>
-                        <Text style={styles.link}>{t.finance.editPerson}</Text>
-                      </Pressable>
-                      {!row.feeExpenses.length && (row.here || row.seriesCount > 0) ? (
-                        <Pressable disabled={busy} onPress={() => void onChargeManually(row.userId)}>
-                          <Text style={styles.link}>{t.finance.chargeManually}</Text>
-                        </Pressable>
+                    <StatusBadge status={row.status} t={t} />
+                  </Pressable>
+
+                  {open && detailRow ? (
+                    <View style={styles.detail}>
+                      <Muted>
+                        {t.finance.expectedTotal}: {detailRow.due.toFixed(2)} €
+                      </Muted>
+                      <Muted>
+                        {t.finance.paidTotal}: {detailRow.paid.toFixed(2)} €
+                      </Muted>
+                      <Muted>
+                        {t.finance.openDebt}: {detailRow.open.toFixed(2)} €
+                      </Muted>
+
+                      {canManage ? (
+                        <>
+                          {!editing ? (
+                            <View style={styles.actions}>
+                              <Pressable
+                                onPress={() => {
+                                  setEditing(true);
+                                  setEditMode(detailRow.mode === 'annual' ? 'fixed' : detailRow.mode);
+                                  setEditAmount(String(detailRow.amount));
+                                }}>
+                                <Text style={styles.link}>{t.finance.editPerson}</Text>
+                              </Pressable>
+                              {detailRow.due <= 0 && detailRow.visits > 0 ? (
+                                <Pressable disabled={busy} onPress={() => void onChargeIfNeeded()}>
+                                  <Text style={styles.link}>{t.finance.chargeManually}</Text>
+                                </Pressable>
+                              ) : null}
+                            </View>
+                          ) : (
+                            <View style={{ gap: 8 }}>
+                              <Muted>{t.finance.paymentMethod}</Muted>
+                              <View style={styles.rowWrap}>
+                                <Chip
+                                  label={t.form.payPerEvent}
+                                  active={editMode === 'per_event'}
+                                  onPress={() => setEditMode('per_event')}
+                                />
+                                {activity.is_recurring ? (
+                                  <>
+                                    <Chip
+                                      label={t.form.payMonthly}
+                                      active={editMode === 'monthly'}
+                                      onPress={() => setEditMode('monthly')}
+                                    />
+                                    <Chip
+                                      label={t.form.payFixed}
+                                      active={editMode === 'fixed'}
+                                      onPress={() => setEditMode('fixed')}
+                                    />
+                                  </>
+                                ) : null}
+                              </View>
+                              <Input
+                                label={t.finance.expenseAmount}
+                                value={editAmount}
+                                onChangeText={setEditAmount}
+                                keyboardType="decimal-pad"
+                              />
+                              <Muted>{t.finance.feesToBudget}</Muted>
+                              <Button
+                                label={t.finance.saveFee}
+                                size="sm"
+                                loading={busy}
+                                onPress={() => void onSaveSettings()}
+                              />
+                              <Text style={styles.link} onPress={() => setEditing(false)}>
+                                {t.common.cancel}
+                              </Text>
+                            </View>
+                          )}
+
+                          {detailRow.open > 0 ? (
+                            <View style={{ gap: 8, marginTop: 8 }}>
+                              <Subtitle>{t.finance.recordPayment}</Subtitle>
+                              <Input
+                                label={t.finance.paymentAmount}
+                                value={payAmount}
+                                onChangeText={setPayAmount}
+                                keyboardType="decimal-pad"
+                              />
+                              <Input
+                                label={t.finance.paymentNote}
+                                value={payNote}
+                                onChangeText={setPayNote}
+                              />
+                              <Button
+                                label={t.finance.recordPayment}
+                                loading={busy}
+                                onPress={() => void onRecordPayment()}
+                              />
+                            </View>
+                          ) : null}
+                        </>
                       ) : null}
-                      {row.feeExpenses.length ? (
-                        <Pressable disabled={busy} onPress={() => void onDeletePersonFees(row)}>
-                          <Text style={styles.linkMuted}>{t.finance.deleteExpense}</Text>
-                        </Pressable>
-                      ) : null}
+
+                      <Subtitle>{t.finance.attendances}</Subtitle>
+                      {!detailJoins.length ? <Muted>—</Muted> : null}
+                      {detailJoins.map((j, idx) => {
+                        const obl = j.fee_obligation_id
+                          ? oblById.get(j.fee_obligation_id)
+                          : null;
+                        const price =
+                          j.fee_amount != null
+                            ? Number(j.fee_amount)
+                            : detailRow.mode === 'per_event'
+                              ? detailRow.amount
+                              : null;
+                        const paidSession =
+                          obl != null
+                            ? Number(obl.amount_paid) + 0.001 >= Number(obl.amount_due)
+                            : detailRow.mode !== 'per_event'
+                              ? detailRow.status === 'paid'
+                              : false;
+                        return (
+                          <View key={`${j.activity_id}-${j.user_id}`} style={styles.sessionRow}>
+                            <Text style={styles.sessionTitle}>
+                              {formatDate(j.starts_at)} · #{idx + 1} · {t.finance.sessionPresent}
+                            </Text>
+                            {price != null ? (
+                              <Muted>
+                                {t.finance.sessionPrice}: {price.toFixed(2)} € ·{' '}
+                                {paidSession ? t.finance.sessionPaidYes : t.finance.sessionPaidNo}
+                              </Muted>
+                            ) : (
+                              <Muted>
+                                {modeLabel(detailRow.mode, t)} · {detailRow.amount.toFixed(2)} €
+                              </Muted>
+                            )}
+                          </View>
+                        );
+                      })}
+
+                      <Subtitle>{t.finance.personTransactions}</Subtitle>
+                      {!detailLedger.length ? <Muted>{t.finance.noTransactions}</Muted> : null}
+                      {detailLedger.map((l) => (
+                        <LedgerLine
+                          key={l.id}
+                          entry={l}
+                          profilesById={profilesById}
+                          t={t}
+                        />
+                      ))}
                     </View>
                   ) : null}
                 </View>
               );
             })}
+          </View>
+        </View>
+      ) : null}
 
-            {guestFeeRows.map((e) => (
-              <View key={e.id} style={styles.feeRow}>
-                <Text style={styles.name}>{e.title}</Text>
-                <Text style={styles.amount}>{Number(e.amount).toFixed(2)} €</Text>
-                <Muted>{t.finance.guestIntoBudget}</Muted>
-              </View>
+      {tab === 'transactions' ? (
+        <View style={styles.card}>
+          <Subtitle>{t.finance.allTransactions}</Subtitle>
+          {!ledger.length ? <Muted>{t.finance.noTransactions}</Muted> : null}
+          {ledger.map((l) => (
+            <LedgerLine key={l.id} entry={l} profilesById={profilesById} t={t} />
+          ))}
+          {expenses.filter(isActualExpense).length ? (
+            <>
+              <Subtitle>{t.finance.expenses}</Subtitle>
+              {expenses.filter(isActualExpense).map((e) => (
+                <View key={e.id} style={styles.txRow}>
+                  <Text style={styles.txExpense}>-{Number(e.amount).toFixed(2)} €</Text>
+                  <Text style={styles.name}>{e.title}</Text>
+                  <Muted>
+                    {categoryLabel(e.category, t)} · {formatDate(e.created_at)}
+                    {e.paid_from_budget ? ` · ${t.finance.paidFromBudget}` : ''}
+                  </Muted>
+                </View>
+              ))}
+            </>
+          ) : null}
+        </View>
+      ) : null}
+
+      {tab === 'expense' && canManage ? (
+        <View style={styles.card}>
+          <Subtitle>{t.finance.addExpenseAction}</Subtitle>
+          <Muted>{t.finance.fromBudgetHint}</Muted>
+          <Input
+            label={t.finance.expenseTitle}
+            value={expTitle}
+            onChangeText={setExpTitle}
+            placeholder={t.finance.expenseTitleHint}
+          />
+          <Input
+            label={t.finance.expenseAmount}
+            value={expAmount}
+            onChangeText={setExpAmount}
+            keyboardType="decimal-pad"
+          />
+          <Muted>{t.finance.expenseCategory}</Muted>
+          <View style={styles.rowWrap}>
+            {EXPENSE_CATEGORIES.map((c) => (
+              <Chip
+                key={c}
+                label={categoryLabel(c, t)}
+                active={expCategory === c}
+                onPress={() => setExpCategory(c)}
+              />
             ))}
           </View>
-
-          {attendanceStats?.guestAttendances.length ? (
-            <View style={styles.card}>
-              <Subtitle>{t.finance.attendanceStats}</Subtitle>
-              {attendanceStats.guestAttendances.map((g) => (
-                <Text key={g.guestId} style={styles.statLine}>
-                  {t.finance.guestStat(g.name, g.count, g.totalPaid)}
-                </Text>
-              ))}
-            </View>
-          ) : null}
-        </View>
-      ) : null}
-
-      {tab === 'expenses' ? (
-        <View style={{ gap: 12 }}>
-          {canManage ? (
-            !showAdd ? (
-              <Button label={t.finance.addExpense} onPress={() => setShowAdd(true)} />
-            ) : (
-              <View style={styles.card}>
-                <Subtitle>{t.finance.addExpense}</Subtitle>
-                <Muted>{t.finance.expenseHint}</Muted>
-                <Input
-                  label={t.finance.expenseTitle}
-                  value={title}
-                  onChangeText={setTitle}
-                  placeholder={t.finance.expenseTitleHint}
-                />
-                <Input
-                  label={t.finance.expenseAmount}
-                  value={amount}
-                  onChangeText={setAmount}
-                  keyboardType="decimal-pad"
-                />
-                <Muted>{t.finance.paidBy}</Muted>
-                <View style={styles.rowWrap}>
-                  <Chip
-                    label={t.finance.fromBudget}
-                    active={paidBy === 'budget'}
-                    onPress={() => setPaidBy('budget')}
-                  />
-                  {members.map((m) => (
-                    <Chip
-                      key={m.id}
-                      label={displayName(m)}
-                      active={paidBy === m.id}
-                      onPress={() => setPaidBy(m.id)}
-                    />
-                  ))}
-                </View>
-                {paidBy !== 'budget' ? (
-                  <>
-                    <Muted>{t.finance.splitAmong}</Muted>
-                    <View style={styles.rowWrap}>
-                      <Chip
-                        label={t.finance.splitAllInvitees}
-                        active={splitPreset === 'invitees'}
-                        onPress={() => applyPreset('invitees', inviteeIds, attendeeIds, members)}
-                      />
-                      <Chip
-                        label={t.finance.splitAttendees}
-                        active={splitPreset === 'attendees'}
-                        onPress={() => applyPreset('attendees', inviteeIds, attendeeIds, members)}
-                      />
-                      <Chip
-                        label={t.finance.splitCustom}
-                        active={splitPreset === 'custom'}
-                        onPress={() => setSplitPreset('custom')}
-                      />
-                    </View>
-                    <View style={styles.rowWrap}>
-                      {members.map((m) => {
-                        const on = selectedIds.includes(m.id);
-                        return (
-                          <Chip
-                            key={m.id}
-                            label={displayName(m)}
-                            active={on}
-                            onPress={() => {
-                              setSplitPreset('custom');
-                              setSelectedIds((prev) =>
-                                on ? prev.filter((id) => id !== m.id) : [...prev, m.id]
-                              );
-                            }}
-                          />
-                        );
-                      })}
-                    </View>
-                  </>
-                ) : (
-                  <Muted>{t.finance.fromBudgetHint}</Muted>
-                )}
-                <Button label={t.finance.createExpense} onPress={onAddExpense} loading={busy} />
-                <Text style={[styles.link, { marginTop: 4 }]} onPress={() => setShowAdd(false)}>
-                  {t.common.cancel}
-                </Text>
-              </View>
-            )
-          ) : null}
-
-          <ExpensesView
-            expenses={actualExpenses}
-            canManage={canManage}
-            busy={busy}
-            onDelete={onDeleteExpense}
-            t={t}
-          />
-        </View>
-      ) : null}
-
-      {tab === 'collect' ? (
-        <View style={{ gap: 12 }}>
-          {!canManage ? (
-            <Muted>{t.finance.collectViewOnly}</Muted>
-          ) : (
-            <View style={styles.card}>
-              <Subtitle>{t.finance.collectTitle}</Subtitle>
-              <Muted>{t.finance.collectHint}</Muted>
-              <Input
-                label={t.finance.expenseTitle}
-                value={collectTitle}
-                onChangeText={setCollectTitle}
-                placeholder={t.finance.collectTitleHint}
-              />
-              <Input
-                label={t.finance.expenseAmount}
-                value={collectAmount}
-                onChangeText={setCollectAmount}
-                keyboardType="decimal-pad"
-              />
-              <Muted>{t.finance.collectFrom}</Muted>
-              <View style={styles.rowWrap}>
-                {members.map((m) => {
-                  const on = collectIds.includes(m.id);
-                  return (
-                    <Chip
-                      key={m.id}
-                      label={displayName(m)}
-                      active={on}
-                      onPress={() =>
-                        setCollectIds((prev) =>
-                          on ? prev.filter((id) => id !== m.id) : [...prev, m.id]
-                        )
-                      }
-                    />
-                  );
-                })}
-              </View>
-              <Button label={t.finance.collectCreate} onPress={onCollect} loading={busy} />
-            </View>
-          )}
+          <Button label={t.finance.createExpense} loading={busy} onPress={() => void onAddExpense()} />
         </View>
       ) : null}
     </View>
   );
 }
 
-function ExpensesView({
-  expenses,
-  canManage,
-  busy,
-  onDelete,
+function StatusBadge({
+  status,
   t,
 }: {
-  expenses: ExpenseWithMeta[];
-  canManage: boolean;
-  busy: boolean;
-  onDelete: (id: string) => void;
+  status: PersonRow['status'];
   t: ReturnType<typeof useT>;
 }) {
-  if (!expenses.length) return <Muted>{t.finance.noExpenses}</Muted>;
-
+  const label =
+    status === 'paid'
+      ? t.finance.statusPaidFull
+      : status === 'partial'
+        ? t.finance.statusPartial
+        : status === 'unpaid'
+          ? t.finance.statusUnpaidFull
+          : '—';
+  const color =
+    status === 'paid'
+      ? theme.colors.success
+      : status === 'partial'
+        ? theme.colors.warning
+        : status === 'unpaid'
+          ? theme.colors.danger
+          : theme.colors.textMuted;
   return (
-    <View style={{ gap: 8 }}>
-      <Subtitle>{t.finance.expenses}</Subtitle>
-      {expenses.map((e) => {
-        const fromBudget = Boolean(e.paid_from_budget);
-        const payerName = fromBudget ? t.finance.fromBudget : displayName(e.payer ?? null);
-        const n = (e.members ?? []).length || 1;
-        const share = (Number(e.amount) || 0) / n;
-        return (
-          <View key={e.id} style={styles.card}>
-            <Text style={styles.name}>{e.title}</Text>
-            <Text style={styles.amount}>{Number(e.amount).toFixed(2)} €</Text>
-            <Muted>
-              {fromBudget
-                ? t.finance.paidFromBudget
-                : `${t.finance.paidByName(payerName)} · ${t.finance.splitN(n, share)}`}
-            </Muted>
-            {canManage ? (
-              <Pressable disabled={busy} onPress={() => onDelete(e.id)}>
-                <Text style={[styles.linkMuted, { marginTop: 6 }]}>{t.finance.deleteExpense}</Text>
-              </Pressable>
-            ) : null}
-          </View>
-        );
-      })}
+    <View style={[styles.badge, { borderColor: color }]}>
+      <Text style={[styles.badgeText, { color }]}>{label}</Text>
     </View>
   );
 }
 
-function SummaryCard({ label, value }: { label: string; value: string }) {
+function LedgerLine({
+  entry,
+  profilesById,
+  t,
+}: {
+  entry: SeriesFinanceLedgerEntry;
+  profilesById: Map<string, Profile>;
+  t: ReturnType<typeof useT>;
+}) {
+  const income = entry.entry_type === 'INCOME';
+  const who = entry.user_id ? displayName(profilesById.get(entry.user_id) ?? null) : null;
+  const by = displayName(profilesById.get(entry.created_by) ?? null);
   return (
-    <View style={styles.summaryCard}>
+    <View style={styles.txRow}>
+      <Text style={income ? styles.txIncome : styles.txExpense}>
+        {income ? '+' : '-'}
+        {Number(entry.amount).toFixed(2)} €
+      </Text>
+      <Text style={styles.name}>
+        {entry.description || (income ? t.finance.incomeLabel : t.finance.expenseLabel)}
+      </Text>
+      <Muted>
+        {formatDate(entry.occurred_at)}
+        {who ? ` · ${who}` : ''}
+        {entry.category ? ` · ${categoryLabel(entry.category, t)}` : ''}
+        {` · ${t.finance.receivedBy(by)}`}
+      </Muted>
+    </View>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  emphasize,
+}: {
+  label: string;
+  value: string;
+  emphasize?: boolean;
+}) {
+  return (
+    <View style={[styles.summaryCard, emphasize && styles.summaryEmphasize]}>
       <Muted>{label}</Muted>
-      <Text style={styles.summaryValue}>{value}</Text>
+      <Text style={[styles.summaryValue, emphasize && styles.summaryValueBig]}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  summaryRow: { flexDirection: 'row', gap: 8 },
+  summaryRow: { flexDirection: 'row', gap: 8, flexWrap: 'wrap' },
   summaryCard: {
     flex: 1,
+    minWidth: 90,
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
     padding: 10,
   },
+  summaryEmphasize: {
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.primarySoft,
+  },
   summaryValue: { fontWeight: '800', fontSize: 16, color: theme.colors.text, marginTop: 4 },
+  summaryValueBig: { fontSize: 22, color: theme.colors.primaryDark },
   tabRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   card: {
     backgroundColor: theme.colors.surface,
@@ -938,35 +777,34 @@ const styles = StyleSheet.create({
   },
   rowWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   name: { fontWeight: '700', fontSize: 15, color: theme.colors.text },
-  amount: { fontWeight: '800', fontSize: 18, color: theme.colors.primary },
+  amountLine: { fontWeight: '600', fontSize: 13, color: theme.colors.text },
   link: { color: theme.colors.primary, fontWeight: '700' },
-  linkMuted: { color: theme.colors.textMuted, fontWeight: '600', fontSize: 13 },
-  feeRow: {
+  personBlock: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.border,
+    paddingTop: 10,
+    marginTop: 8,
+  },
+  personHeader: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
+  detail: { marginTop: 10, gap: 6, paddingLeft: 4 },
+  actions: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 4 },
+  sessionRow: { marginTop: 4, gap: 2 },
+  sessionTitle: { fontWeight: '600', color: theme.colors.text, fontSize: 13 },
+  txRow: {
     marginTop: 8,
     paddingTop: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: theme.colors.border,
-    gap: 4,
+    gap: 2,
   },
-  feeTop: { flexDirection: 'row', alignItems: 'flex-start', gap: 10 },
-  feeActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 16, marginTop: 4 },
-  check: {
-    width: 24,
-    height: 24,
+  txIncome: { fontWeight: '800', fontSize: 16, color: theme.colors.success },
+  txExpense: { fontWeight: '800', fontSize: 16, color: theme.colors.danger },
+  badge: {
+    borderWidth: 1,
     borderRadius: 6,
-    borderWidth: 2,
-    borderColor: theme.colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 2,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
   },
-  checkOn: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  checkEmpty: { opacity: 0.35 },
-  checkReadonly: { opacity: 0.85 },
-  checkMark: { color: '#fff', fontWeight: '800', fontSize: 14, lineHeight: 16 },
+  badgeText: { fontSize: 10, fontWeight: '800' },
   error: { color: theme.colors.danger, fontWeight: '600' },
-  statLine: { color: theme.colors.text, fontSize: 13, marginTop: 4 },
 });
