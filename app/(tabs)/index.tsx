@@ -76,6 +76,11 @@ export default function EventsScreen() {
         )
         .on(
           'postgres_changes',
+          { event: '*', schema: 'public', table: 'activity_guest_attendances' },
+          () => scheduleLiveReload()
+        )
+        .on(
+          'postgres_changes',
           { event: '*', schema: 'public', table: 'activities' },
           () => scheduleLiveReload()
         )

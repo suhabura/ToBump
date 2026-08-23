@@ -17,10 +17,17 @@ export {
 } from '@/i18n/categories';
 
 const ACTIVITIES_SELECT_BASIC =
-  `*, profiles:created_by(id, first_name, last_name, avatar_url), categories(id, name, icon), enterprises(id, name, address, provider_kind, latitude, longitude), activity_joins(count)`;
+  `*, profiles:created_by(id, first_name, last_name, avatar_url), categories(id, name, icon), enterprises(id, name, address, provider_kind, latitude, longitude), activity_joins(count), activity_guest_attendances(count)`;
 
 const ACTIVITIES_SELECT_WITH_PARENT =
-  `*, profiles:created_by(id, first_name, last_name, avatar_url), categories(id, name, icon, parent_id), enterprises(id, name, address, provider_kind, latitude, longitude), activity_joins(count)`;
+  `*, profiles:created_by(id, first_name, last_name, avatar_url), categories(id, name, icon, parent_id), enterprises(id, name, address, provider_kind, latitude, longitude), activity_joins(count), activity_guest_attendances(count)`;
+
+function nestedCount(rel: unknown): number {
+  if (Array.isArray(rel) && rel[0] && typeof rel[0] === 'object' && 'count' in (rel[0] as object)) {
+    return Number((rel[0] as { count: number }).count) || 0;
+  }
+  return 0;
+}
 
 async function hydrateCategoryParents(activities: ActivityWithRelations[]) {
   const parentIds = Array.from(
@@ -178,9 +185,8 @@ export async function fetchActivities(opts: {
     return {
       ...a,
       join_count:
-        Array.isArray(a.activity_joins) && a.activity_joins[0] && 'count' in a.activity_joins[0]
-          ? Number((a.activity_joins[0] as { count: number }).count)
-          : 0,
+        nestedCount((a as { activity_joins?: unknown }).activity_joins) +
+        nestedCount((a as { activity_guest_attendances?: unknown }).activity_guest_attendances),
       is_joined: joinedIds.has(a.id),
       is_invited,
       is_from_friend,
