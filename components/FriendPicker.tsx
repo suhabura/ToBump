@@ -12,6 +12,10 @@ type Props = {
   label?: string;
   placeholder?: string;
   emptyHint?: string;
+  /** Always shown when selected; cannot be removed */
+  lockedIds?: string[];
+  /** Profiles for selected people who may not be in `friends` (self, editors, …) */
+  extraProfiles?: Profile[];
 };
 
 export function FriendPicker({
@@ -21,9 +25,19 @@ export function FriendPicker({
   label = 'Friend',
   placeholder = 'Search by name…',
   emptyHint = 'Add friends first.',
+  lockedIds = [],
+  extraProfiles = [],
 }: Props) {
   const [query, setQuery] = useState('');
   const picking = useRef(false);
+  const locked = useMemo(() => new Set(lockedIds), [lockedIds]);
+
+  const people = useMemo(() => {
+    const byId = new Map<string, Profile>();
+    for (const f of friends) byId.set(f.id, f);
+    for (const p of extraProfiles) byId.set(p.id, p);
+    return byId;
+  }, [friends, extraProfiles]);
 
   const matches = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -43,12 +57,13 @@ export function FriendPicker({
 
   const selected = useMemo(
     () =>
-      friends
-        .filter((f) => selectedIds.includes(f.id))
+      selectedIds
+        .map((id) => people.get(id))
+        .filter((p): p is Profile => Boolean(p))
         .sort((a, b) =>
           displayName(a).localeCompare(displayName(b), undefined, { sensitivity: 'base' })
         ),
-    [friends, selectedIds]
+    [people, selectedIds]
   );
 
   function pick(friend: Profile) {
@@ -60,10 +75,11 @@ export function FriendPicker({
   }
 
   function remove(id: string) {
+    if (locked.has(id)) return;
     onChange(selectedIds.filter((x) => x !== id));
   }
 
-  if (friends.length === 0) {
+  if (friends.length === 0 && extraProfiles.length === 0) {
     return <Muted>{emptyHint}</Muted>;
   }
 
@@ -112,7 +128,7 @@ export function FriendPicker({
             {selected.map((f) => (
               <Chip
                 key={f.id}
-                label={`${displayName(f)} ×`}
+                label={locked.has(f.id) ? displayName(f) : `${displayName(f)} ×`}
                 active
                 onPress={() => remove(f.id)}
               />

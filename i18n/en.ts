@@ -287,7 +287,7 @@ export const en = {
     whoPaysGroup: 'A group',
     whoPaysPeople: 'People who may pay',
     whoPaysHint:
-      'By default all invitees are selected. Search to add or remove people, or pick a group below.',
+      'Organizer and editors are always included. By default invitees are selected too — search to add or remove others, or pick a group below.',
     needPayers: 'Select at least one person who may pay.',
     needPayerGroup: 'Select a group of people who may pay.',
     noGroups: 'No groups yet — create one under Groups.',

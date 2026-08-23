@@ -842,6 +842,35 @@ export async function resolveEligiblePayerIds(
   return fetchSeriesFinancePayerIds(settings.series_id);
 }
 
+/** Editors across all occurrences in a series. */
+export async function fetchSeriesEditorIds(seriesId: string): Promise<string[]> {
+  const { data: acts } = await supabase
+    .from('activities')
+    .select('id')
+    .or(`id.eq.${seriesId},series_id.eq.${seriesId}`);
+  const ids = (acts ?? []).map((a: { id: string }) => a.id);
+  if (!ids.length) return [];
+  const { data, error } = await supabase
+    .from('activity_editors')
+    .select('user_id')
+    .in('activity_id', ids);
+  if (error) return [];
+  return Array.from(new Set((data ?? []).map((r: { user_id: string }) => r.user_id)));
+}
+
+/** Organizer + editors are always eligible payers alongside the configured list. */
+export function withOrganizerAndEditors(
+  payerIds: string[],
+  organizerId?: string | null,
+  editorIds: string[] = []
+): string[] {
+  return Array.from(
+    new Set(
+      [...payerIds, ...(organizerId ? [organizerId] : []), ...editorIds].filter(Boolean)
+    )
+  );
+}
+
 export async function upsertSeriesFinanceSettings(input: {
   seriesId: string;
   fundingMode: import('@/lib/types').FundingMode;
@@ -1269,9 +1298,12 @@ export async function syncAttendeeFundingFees(input: {
 
   const sid = seriesKey(input.activity);
   const organizerId = input.activity.created_by;
+  const editorIds = await fetchSeriesEditorIds(sid);
 
-  const eligible = (await resolveEligiblePayerIds({ ...input.settings, series_id: sid })).filter(
-    (id) => id !== organizerId
+  const eligible = withOrganizerAndEditors(
+    await resolveEligiblePayerIds({ ...input.settings, series_id: sid }),
+    organizerId,
+    editorIds
   );
   if (!eligible.length) return empty;
 

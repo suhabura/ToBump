@@ -287,7 +287,7 @@ export const sl = {
     whoPaysGroup: 'Skupina',
     whoPaysPeople: 'Osebe, ki lahko plačajo',
     whoPaysHint:
-      'Privzeto so označeni vsi povabljeni. Išči za dodajanje/odstranitev, ali spodaj izberi skupino.',
+      'Organizator in uredniki so vedno vključeni. Privzeto so označeni tudi povabljeni — išči za dodajanje/odstranitev, ali spodaj izberi skupino.',
     needPayers: 'Izberi vsaj eno osebo, ki lahko plača.',
     needPayerGroup: 'Izberi skupino oseb, ki lahko plačajo.',
   },

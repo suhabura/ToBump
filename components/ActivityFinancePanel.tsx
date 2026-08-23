@@ -23,6 +23,8 @@ import {
   seriesKey,
   syncAttendeeFundingFees,
   upsertMemberFinanceSettings,
+  withOrganizerAndEditors,
+  fetchSeriesEditorIds,
   type ExpenseWithMeta,
   type SeriesJoinRow,
 } from '@/lib/finance';
@@ -153,18 +155,11 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const personRows = useMemo((): PersonRow[] => {
     if (!financeSettings) return [];
     const ids = new Set<string>();
-    for (const id of eligibleIds) {
-      if (id !== activity.created_by) ids.add(id);
-    }
-    for (const id of activity.series_invite_user_ids ?? []) {
-      if (id !== activity.created_by) ids.add(id);
-    }
-    for (const id of visitsByUser.keys()) {
-      if (id !== activity.created_by) ids.add(id);
-    }
-    for (const o of obligations) {
-      if (o.user_id !== activity.created_by) ids.add(o.user_id);
-    }
+    for (const id of eligibleIds) ids.add(id);
+    for (const id of activity.series_invite_user_ids ?? []) ids.add(id);
+    for (const id of visitsByUser.keys()) ids.add(id);
+    for (const o of obligations) ids.add(o.user_id);
+    if (activity.created_by) ids.add(activity.created_by);
 
     const feeExpenseIds = new Set(
       expenses.filter((e) => isFundingExpense(e)).map((e) => e.id)
@@ -172,6 +167,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
 
     const rows: PersonRow[] = [];
     for (const uid of ids) {
+      if (!uid) continue;
       const { mode, amount } = resolveMemberFinance(financeSettings, overrideMap, uid);
       const personObls = obligations.filter(
         (o) => o.user_id === uid && feeExpenseIds.has(o.expense_id)
@@ -236,9 +232,15 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
             /* fee sync is best-effort; panel should still open */
           }
           try {
-            setEligibleIds(await resolveEligiblePayerIds(settings));
+            const [eligible, editorIds] = await Promise.all([
+              resolveEligiblePayerIds(settings),
+              fetchSeriesEditorIds(sid),
+            ]);
+            setEligibleIds(withOrganizerAndEditors(eligible, activity.created_by, editorIds));
           } catch {
-            setEligibleIds(settings.payer_ids ?? []);
+            setEligibleIds(
+              withOrganizerAndEditors(settings.payer_ids ?? [], activity.created_by)
+            );
           }
           try {
             setMemberOverrides(await fetchSeriesMemberFinanceSettings(sid));
@@ -299,10 +301,10 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
           currency: 'EUR',
           who_pays: 'selected',
           payer_group_id: null,
-          payer_ids: [
-            ...inviteIds,
-            ...(activity.series_invite_user_ids ?? []),
-          ].filter((id) => id !== activity.created_by),
+          payer_ids: withOrganizerAndEditors(
+            [...inviteIds, ...(activity.series_invite_user_ids ?? [])],
+            activity.created_by
+          ),
           updated_by: null,
           updated_at: new Date().toISOString(),
           created_at: new Date().toISOString(),
@@ -338,17 +340,23 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
 
       if (settings && activity.finance_enabled) {
         try {
-          const eligible = await resolveEligiblePayerIds(settings);
+          const [eligible, editorIds] = await Promise.all([
+            resolveEligiblePayerIds(settings),
+            fetchSeriesEditorIds(sid),
+          ]);
           setEligibleIds(
-            Array.from(
-              new Set([...eligible, ...inviteIds, ...(settings.payer_ids ?? [])])
-            ).filter((id) => id && id !== activity.created_by)
+            withOrganizerAndEditors(
+              [...eligible, ...inviteIds, ...(settings.payer_ids ?? [])],
+              activity.created_by,
+              editorIds
+            )
           );
         } catch {
           setEligibleIds(
-            Array.from(
-              new Set([...(settings.payer_ids ?? []), ...inviteIds, ...(activity.series_invite_user_ids ?? [])])
-            ).filter((id) => id && id !== activity.created_by)
+            withOrganizerAndEditors(
+              [...(settings.payer_ids ?? []), ...inviteIds, ...(activity.series_invite_user_ids ?? [])],
+              activity.created_by
+            )
           );
         }
       }

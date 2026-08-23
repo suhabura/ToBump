@@ -295,7 +295,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       .select('user_id')
       .eq('group_id', groupId);
     const ids = Array.from(
-      new Set((data ?? []).map((m: { user_id: string }) => m.user_id).filter((id) => id !== userId))
+      new Set((data ?? []).map((m: { user_id: string }) => m.user_id).concat([userId, ...editorIds]))
     );
     const missing = ids.filter((id) => !friends.some((f) => f.id === id));
     if (missing.length) {
@@ -305,26 +305,31 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       }
     }
     setPayersTouched(true);
-    setPayerIds((prev) => Array.from(new Set([...prev, ...ids])));
+    setPayerIds((prev) => Array.from(new Set([userId, ...editorIds, ...prev, ...ids])));
   }
 
   const defaultPayerCandidateIds = useMemo(() => {
+    let base: string[] = [];
     if (privacy === 'invite' || privacy === 'friends_of_friends') {
-      return inviteIds.filter((id) => id !== userId);
+      base = [...inviteIds];
+    } else if (privacy === 'friends') {
+      base = friends.map((f) => f.id);
+    } else if (privacy === 'group') {
+      base = groupMembers.map((m) => m.id);
     }
-    if (privacy === 'friends') {
-      return friends.map((f) => f.id).filter((id) => id !== userId);
-    }
-    if (privacy === 'group') {
-      return groupMembers.map((m) => m.id).filter((id) => id !== userId);
-    }
-    return [];
-  }, [privacy, inviteIds, friends, groupMembers, userId]);
+    return Array.from(new Set([userId, ...editorIds, ...base]));
+  }, [privacy, inviteIds, friends, groupMembers, userId, editorIds]);
 
   useEffect(() => {
     if (!financeEnabled || payersTouched) return;
     setPayerIds(defaultPayerCandidateIds);
   }, [financeEnabled, payersTouched, defaultPayerCandidateIds]);
+
+  // Keep organizer + editors locked in the payer list once finance is on
+  useEffect(() => {
+    if (!financeEnabled) return;
+    setPayerIds((prev) => Array.from(new Set([userId, ...editorIds, ...prev])));
+  }, [financeEnabled, userId, editorIds]);
 
   // If edit loaded a payer group, expand once into people
   useEffect(() => {
@@ -336,7 +341,11 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         .select('user_id')
         .eq('group_id', gid);
       const ids = Array.from(
-        new Set((data ?? []).map((m: { user_id: string }) => m.user_id).filter((id) => id !== userId))
+        new Set(
+          (data ?? [])
+            .map((m: { user_id: string }) => m.user_id)
+            .concat([userId, ...editorIds])
+        )
       );
       if (!ids.length) return;
       const missing = ids.filter((id) => !friends.some((f) => f.id === id));
@@ -516,7 +525,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         setFormError(t.form.needPrice);
         return;
       }
-      if (payerIds.filter((id) => id !== userId).length === 0) {
+      if (payerIds.length === 0) {
         setFormError(t.form.needPayers);
         return;
       }
@@ -577,13 +586,14 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
       const sid = seriesKey({ id, series_id: initial?.series_id ?? null });
       if (financeEnabled) {
+        const payersToSave = Array.from(new Set([userId, ...editorIds, ...payerIds]));
         await upsertSeriesFinanceSettings({
           seriesId: sid,
           fundingMode: modeToSave === 'annual' ? 'fixed' : modeToSave,
           amount: priceNum,
           whoPays: 'selected',
           payerGroupId: null,
-          payerIds: payerIds.filter((id) => id !== userId),
+          payerIds: payersToSave,
           userId,
         });
         try {
@@ -602,7 +612,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
               amount: priceNum,
               who_pays: 'selected',
               payer_group_id: null,
-              payer_ids: payerIds.filter((id) => id !== userId),
+              payer_ids: payersToSave,
               currency: 'EUR',
               updated_by: userId,
               updated_at: new Date().toISOString(),
@@ -909,9 +919,11 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           <FriendPicker
             friends={friends}
             selectedIds={payerIds}
+            lockedIds={[userId, ...editorIds]}
+            extraProfiles={profile ? [profile as Profile] : []}
             onChange={(ids) => {
               setPayersTouched(true);
-              setPayerIds(ids);
+              setPayerIds(Array.from(new Set([userId, ...editorIds, ...ids])));
             }}
             label={t.form.whoPaysPeople}
             placeholder={t.form.searchFriends}
