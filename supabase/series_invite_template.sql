@@ -181,12 +181,8 @@ begin
   )
   returning id into new_id;
 
-  -- Carry participants forward
-  insert into public.activity_joins (activity_id, user_id)
-  select new_id, user_id from public.activity_joins where activity_id = cur.id
-  on conflict do nothing;
-
-  -- Invites always from series template (first event), not from edited current invites
+  -- Attendance starts empty — people must join each new occurrence themselves
+  -- Invites always from series template (first event), not who joined last time
   insert into public.activity_invites (activity_id, user_id, invited_by)
   select new_id, uid, cur.created_by
   from unnest(tpl_invites) as uid
