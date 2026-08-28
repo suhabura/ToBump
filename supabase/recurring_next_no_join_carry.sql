@@ -1,4 +1,6 @@
--- Recurring next occurrence: attendance starts at 0; invites from original series list.
+-- Recurring next occurrence: attendance starts at 0 (including organizer).
+-- Organizer and invitees must join the new occurrence themselves.
+-- Invites come from the original series list (series_invite_user_ids).
 -- Do NOT copy activity_joins from the closed event.
 -- Safe to re-run in Supabase SQL Editor.
 
@@ -165,7 +167,8 @@ begin
   )
   returning id into new_id;
 
-  -- Attendance starts empty — people must join the new occurrence themselves.
+  -- Attendance starts empty — nobody is joined (not even the organizer).
+  -- Organizer and invitees must tap Join on the new occurrence.
   -- (Do not copy activity_joins from the closed event.)
 
   -- Invites = original series invite list

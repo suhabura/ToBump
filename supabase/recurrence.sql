@@ -197,9 +197,7 @@ begin
   )
   returning id into new_id;
 
-  insert into public.activity_joins (activity_id, user_id)
-  select new_id, user_id from public.activity_joins where activity_id = cur.id
-  on conflict do nothing;
+  -- Attendance starts at 0 (including organizer — they must join themselves)
 
   insert into public.activity_invites (activity_id, user_id, invited_by)
   select new_id, user_id, invited_by from public.activity_invites where activity_id = cur.id
