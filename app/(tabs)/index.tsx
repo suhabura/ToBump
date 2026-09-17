@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import { enUS } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Button, EmptyState, Input, Loading, Screen, Subtitle } from '@/components/ui';
@@ -61,6 +61,21 @@ export default function EventsScreen() {
       void load({ silent: true });
     }, 250);
   }, [load]);
+
+  // Drop events from the list the moment they start (without waiting for focus)
+  useEffect(() => {
+    const now = Date.now();
+    const nextStart = items
+      .map((a) => new Date(a.starts_at).getTime())
+      .filter((t) => t > now)
+      .sort((a, b) => a - b)[0];
+    if (nextStart == null) return;
+    const delay = Math.min(Math.max(nextStart - now + 100, 100), 2_147_483_647);
+    const timer = setTimeout(() => {
+      void load({ silent: true });
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [items, load]);
 
   useFocusEffect(
     useCallback(() => {
@@ -169,48 +184,56 @@ export default function EventsScreen() {
             const cat = categoryLabel(item.categories) ?? `${item.title} (${t.events.uncategorized})`;
             const busy = busyId === item.id;
             return (
-              <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
-                <Pressable onPress={() => router.push(`/activity/${item.id}`)} style={styles.cardBody}>
-                  <View style={styles.cardTop}>
-                    {isOrganizer ? (
-                      <Text style={[styles.tag, styles.tagOrganizing]}>{t.events.organizing}</Text>
-                    ) : item.is_invited ? (
-                      <Text style={[styles.tag, styles.tagInvited]}>{t.events.invitedBadge}</Text>
-                    ) : item.is_open_to_you ? (
-                      <Text style={[styles.tag, styles.tagOpen]}>{t.events.openToYou}</Text>
-                    ) : item.is_from_friend ? (
-                      <Text style={[styles.tag, styles.tagOpen]}>{t.events.friend}</Text>
-                    ) : (
-                      <View />
-                    )}
-                    <Text style={styles.count}>
-                      <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
-                      {item.join_count ?? 0}
-                      {item.max_participants ? `/${item.max_participants}` : ''}
+              <Pressable
+                style={[styles.card, isOrganizer ? styles.cardMine : null]}
+                onPress={() => router.push(`/activity/${item.id}`)}
+              >
+                <View style={styles.cardRow}>
+                  {/* Left: info */}
+                  <View style={styles.cardBody}>
+                    <View style={styles.cardTop}>
+                      {isOrganizer ? (
+                        <Text style={[styles.tag, styles.tagOrganizing]}>{t.events.organizing}</Text>
+                      ) : item.is_invited ? (
+                        <Text style={[styles.tag, styles.tagInvited]}>{t.events.invitedBadge}</Text>
+                      ) : item.is_open_to_you ? (
+                        <Text style={[styles.tag, styles.tagOpen]}>{t.events.openToYou}</Text>
+                      ) : item.is_from_friend ? (
+                        <Text style={[styles.tag, styles.tagOpen]}>{t.events.friend}</Text>
+                      ) : (
+                        <View />
+                      )}
+                      <Text style={styles.count}>
+                        <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
+                        {item.join_count ?? 0}
+                        {item.max_participants ? `/${item.max_participants}` : ''}
+                      </Text>
+                    </View>
+
+                    <Subtitle>{cat}</Subtitle>
+                    <Text style={styles.when}>
+                      {format(new Date(item.starts_at), 'EEE, d MMM · HH:mm', { locale: enUS })}
+                    </Text>
+                    {location ? (
+                      <Text style={styles.metaLine} numberOfLines={1}>
+                        <FontAwesome name="map-marker" size={12} color={theme.colors.textMuted} />{' '}
+                        {location}
+                        {item.distance_m != null ? ` · ${formatDistance(item.distance_m)}` : ''}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.metaLine}>
+                      {priceNum > 0 ? `${priceNum} €` : t.common.free}
+                      {isOrganizer ? null : ` · ${displayName(item.profiles)}`}
                     </Text>
                   </View>
 
-                  <Subtitle>{cat}</Subtitle>
-                  <Text style={styles.when}>
-                    {format(new Date(item.starts_at), 'EEE, d MMM · HH:mm', { locale: enUS })}
-                  </Text>
-                  {location ? (
-                    <Text style={styles.metaLine} numberOfLines={1}>
-                      <FontAwesome name="map-marker" size={12} color={theme.colors.textMuted} />{' '}
-                      {location}
-                      {item.distance_m != null ? ` · ${formatDistance(item.distance_m)}` : ''}
-                    </Text>
-                  ) : null}
-                  <Text style={styles.metaLine}>
-                    {priceNum > 0 ? `${priceNum} €` : t.common.free}
-                    {isOrganizer ? null : ` · ${displayName(item.profiles)}`}
-                  </Text>
-                </Pressable>
-
-                <View style={styles.actions}>
-                  {joined ? (
-                    <>
-                      <View style={styles.actionFlex}>
+                  {/* Right: action buttons */}
+                  <View
+                    style={styles.actions}
+                    onStartShouldSetResponder={() => true}
+                  >
+                    {joined ? (
+                      <>
                         <Button
                           label={t.events.chat}
                           variant="secondary"
@@ -218,30 +241,28 @@ export default function EventsScreen() {
                           icon="comments"
                           onPress={() => router.push(`/chat/${item.id}`)}
                         />
-                      </View>
-                      <View style={styles.actionFlex}>
                         <Button
                           label={t.events.leave}
                           variant="dangerOutline"
                           size="sm"
                           icon="sign-out"
                           loading={busy}
-                          onPress={() => onLeave(item)}
+                          onPress={() => void onLeave(item)}
                         />
-                      </View>
-                    </>
-                  ) : (
-                    <Button
-                      label={full ? t.events.full : t.events.join}
-                      disabled={full}
-                      loading={busy}
-                      size="sm"
-                      icon="check"
-                      onPress={() => onJoin(item)}
-                    />
-                  )}
+                      </>
+                    ) : (
+                      <Button
+                        label={full ? t.events.full : t.events.join}
+                        disabled={full}
+                        loading={busy}
+                        size="sm"
+                        icon="check"
+                        onPress={() => void onJoin(item)}
+                      />
+                    )}
+                  </View>
                 </View>
-              </View>
+              </Pressable>
             );
           }}
         />
@@ -268,9 +289,14 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.primaryMuted,
     backgroundColor: '#F3FAF7',
   },
+  cardRow: {
+    flexDirection: 'row',
+    alignItems: 'stretch',
+  },
   cardBody: {
+    flex: 1,
     padding: theme.space.md,
-    paddingBottom: 12,
+    paddingBottom: theme.space.md,
   },
   cardTop: {
     flexDirection: 'row',
@@ -317,14 +343,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   actions: {
-    flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: theme.space.md,
-    paddingBottom: theme.space.md,
-    paddingTop: 4,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: theme.colors.border,
+    flexDirection: 'column',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: theme.space.md,
+    paddingRight: theme.space.md,
+    paddingLeft: 8,
+    borderLeftWidth: StyleSheet.hairlineWidth,
+    borderLeftColor: theme.colors.border,
     backgroundColor: '#FBFCFB',
+    minWidth: 90,
   },
-  actionFlex: { flex: 1 },
 });
