@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button, Chip, Input, Muted } from '@/components/ui';
 import { DateTimeField } from '@/components/DateTimeField';
-import { LocationField } from '@/components/LocationField';
 import { SuggestInput } from '@/components/SuggestInput';
 import { FriendPicker } from '@/components/FriendPicker';
 import {
@@ -25,9 +24,9 @@ import { formatDuration, formatRecurrence, hydrateRules, isoWeekday, normalizeRu
 import { supabase } from '@/lib/supabase';
 import type { Category, Enterprise, FinanceWhoPays, FundingMode, Privacy, Profile } from '@/lib/types';
 import { displayName } from '@/lib/types';
+import { mapsUrl, venueMatchScore } from '@/lib/geo';
 import { categoryDisplayName, resolveActivityCategoryKey, useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
-import { useAuth } from '@/contexts/AuthContext';
 
 type Props = {
   userId: string;
@@ -59,6 +58,25 @@ function formatDay(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function enterpriseFitsCategory(
+  ent: Enterprise,
+  categoryId: string | null,
+  categories: Category[]
+): boolean {
+  if (!categoryId || !ent.category_id) return true;
+  if (ent.category_id === categoryId) return true;
+  const sub = categories.find((c) => c.id === categoryId);
+  const parentId = sub?.parent_id ?? null;
+  if (parentId && ent.category_id === parentId) return true;
+  const entCat = categories.find((c) => c.id === ent.category_id);
+  if (parentId && entCat?.parent_id === parentId) return true;
+  return false;
+}
+
+function enterpriseLabel(ent: Pick<Enterprise, 'name' | 'address'>): string {
+  return ent.address?.trim() ? `${ent.name} · ${ent.address.trim()}` : ent.name;
+}
+
 function defaultDurationFromInitial(initial?: Props['initial']): number {
   if (initial?.duration_minutes && initial.duration_minutes > 0) return initial.duration_minutes;
   const s = parseInitialDate(initial?.starts_at);
@@ -88,7 +106,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const router = useRouter();
   const t = useT();
   const { locale } = useLocale();
-  const { profile } = useAuth();
   const [title, setTitle] = useState(() => {
     const raw = initial?.title ?? '';
     const key = resolveActivityCategoryKey(raw);
@@ -127,6 +144,12 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [venueText, setVenueText] = useState(initial?.venue_text ?? '');
   const [venueLatitude, setVenueLatitude] = useState<number | null>(initial?.venue_latitude ?? null);
   const [venueLongitude, setVenueLongitude] = useState<number | null>(initial?.venue_longitude ?? null);
+  const [geoLocation, setGeoLocation] = useState(
+    Boolean(
+      initial?.enterprise_id ||
+        (initial?.venue_latitude != null && initial?.venue_longitude != null)
+    )
+  );
   const [matchedCategoryId, setMatchedCategoryId] = useState<string | null>(initial?.category_id ?? null);
   const [categories, setCategories] = useState<Category[]>([]);
   const [enterprises, setEnterprises] = useState<Enterprise[]>([]);
@@ -179,32 +202,34 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
   const selectedEnterprise = enterprises.find((e) => e.id === enterpriseId) ?? null;
 
-  const venueAddress =
-    selectedEnterprise != null
-      ? selectedEnterprise.address?.trim()
-        ? `${selectedEnterprise.name} · ${selectedEnterprise.address.trim()}`
-        : selectedEnterprise.name
-      : venueText;
+  const geoMatches = useMemo(() => {
+    if (!geoLocation || enterpriseId) return [];
+    const q = venueText.trim();
+    if (q.length < 1) return [];
+    return enterprises
+      .filter((e) => e.latitude != null && e.longitude != null)
+      .filter((e) => enterpriseFitsCategory(e, matchedCategoryId, categories))
+      .map((e) => ({ e, score: venueMatchScore(q, e.name, e.address) }))
+      .filter((x): x is { e: Enterprise; score: number } => x.score != null)
+      .sort((a, b) => a.score - b.score || a.e.name.localeCompare(b.e.name))
+      .slice(0, 8)
+      .map((x) => x.e);
+  }, [geoLocation, enterpriseId, venueText, enterprises, matchedCategoryId, categories]);
 
-  const venueLat =
-    selectedEnterprise?.latitude != null ? selectedEnterprise.latitude : venueLatitude;
-  const venueLng =
-    selectedEnterprise?.longitude != null ? selectedEnterprise.longitude : venueLongitude;
+  function pickEnterprise(ent: Enterprise) {
+    setEnterpriseId(ent.id);
+    setVenueText(enterpriseLabel(ent));
+    setVenueLatitude(ent.latitude ?? null);
+    setVenueLongitude(ent.longitude ?? null);
+  }
 
-  const profileOrigin =
-    profile?.latitude != null && profile?.longitude != null
-      ? { latitude: profile.latitude, longitude: profile.longitude }
-      : null;
-
-  function onVenueLocationChange(next: {
-    address: string;
-    latitude: number | null;
-    longitude: number | null;
-  }) {
-    setEnterpriseId(null);
-    setVenueText(next.address);
-    setVenueLatitude(next.latitude);
-    setVenueLongitude(next.longitude);
+  function onVenueTextChange(text: string) {
+    setVenueText(text);
+    if (enterpriseId || venueLatitude != null || venueLongitude != null) {
+      setEnterpriseId(null);
+      setVenueLatitude(null);
+      setVenueLongitude(null);
+    }
   }
 
   function clearVenue() {
@@ -504,10 +529,12 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           min_participants: minNum,
           max_participants: maxNum,
           privacy,
-          enterprise_id: category_id ? enterpriseId : null,
-          venue_text: enterpriseId && category_id ? null : venueText.trim() || null,
-          venue_latitude: enterpriseId && category_id ? null : venueLatitude,
-          venue_longitude: enterpriseId && category_id ? null : venueLongitude,
+          enterprise_id: geoLocation && category_id ? enterpriseId : null,
+          venue_text: geoLocation && enterpriseId && category_id ? null : venueText.trim() || null,
+          venue_latitude:
+            !geoLocation || (enterpriseId && category_id) ? null : venueLatitude,
+          venue_longitude:
+            !geoLocation || (enterpriseId && category_id) ? null : venueLongitude,
           group_id: selectedGroupId,
           invite_user_ids: inviteIds,
           editor_user_ids: isCreator ? editorIds : undefined,
@@ -602,20 +629,83 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         </Muted>
       ) : null}
 
-      <LocationField
-        label={req(t.events.venue)}
-        address={venueAddress}
-        latitude={venueLat}
-        longitude={venueLng}
-        relativeTo={profileOrigin}
-        showMyLocation={false}
-        allowManualConfirm
-        onChange={onVenueLocationChange}
-        onClear={
-          (enterpriseId && isCategorized) || venueText.trim() ? clearVenue : undefined
-        }
+      <Text style={styles.section}>{req(t.events.venue)}</Text>
+      <View style={styles.row}>
+        <Chip
+          label={t.form.addGeoLocation}
+          active={geoLocation}
+          onPress={() => {
+            setGeoLocation((on) => {
+              const next = !on;
+              if (!next) {
+                setEnterpriseId(null);
+                setVenueLatitude(null);
+                setVenueLongitude(null);
+              }
+              return next;
+            });
+          }}
+        />
+      </View>
+      <Input
+        label={geoLocation ? t.form.geoSearch : t.form.venueName}
+        value={venueText}
+        onChangeText={onVenueTextChange}
+        placeholder={geoLocation ? t.form.geoSearchPlaceholder : t.form.venuePlaceholder}
       />
-      <Muted>{isCategorized ? t.venue.freeTextHint : t.form.uncategorizedVenueHint}</Muted>
+      {geoLocation && !enterpriseId && venueText.trim().length >= 1 ? (
+        <View style={styles.geoList}>
+          {geoMatches.map((ent) => (
+            <Pressable
+              key={ent.id}
+              style={styles.geoItem}
+              onPressIn={() => pickEnterprise(ent)}
+              {...(Platform.OS === 'web'
+                ? {
+                    onMouseDown: (e: { preventDefault?: () => void }) => {
+                      e.preventDefault?.();
+                      pickEnterprise(ent);
+                    },
+                  }
+                : {})}>
+              <Text style={styles.geoItemText}>{enterpriseLabel(ent)}</Text>
+            </Pressable>
+          ))}
+          {geoMatches.length === 0 ? <Text style={styles.geoHint}>{t.form.noGeoMatches}</Text> : null}
+        </View>
+      ) : null}
+      {geoLocation && selectedEnterprise ? (
+        <View style={styles.geoSelected}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={styles.geoSelectedName} numberOfLines={2}>
+              {enterpriseLabel(selectedEnterprise)}
+            </Text>
+            {selectedEnterprise.latitude != null && selectedEnterprise.longitude != null ? (
+              <Text
+                style={styles.link}
+                onPress={() =>
+                  Linking.openURL(
+                    mapsUrl({
+                      latitude: selectedEnterprise.latitude!,
+                      longitude: selectedEnterprise.longitude!,
+                    })
+                  )
+                }>
+                {t.location.openMaps}
+              </Text>
+            ) : null}
+          </View>
+          <Pressable
+            onPress={clearVenue}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel={t.venue.clear}
+            style={styles.geoClearBtn}>
+            <Text style={styles.geoClearX}>×</Text>
+          </Pressable>
+        </View>
+      ) : null}
+      <Muted>{geoLocation ? t.form.geoHint : t.form.venueManualHint}</Muted>
 
       <Text style={styles.section}>{t.events.capacity}</Text>
       <View style={styles.row}>
@@ -921,6 +1011,54 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', marginBottom: 12, flexWrap: 'wrap' },
   rowWrap: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12, gap: 4 },
   capacityRow: { flexDirection: 'row', gap: 12 },
+  geoList: {
+    marginTop: -8,
+    marginBottom: 8,
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.radius.sm,
+    overflow: 'hidden',
+  },
+  geoItem: {
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  geoItemText: { fontSize: 14, color: theme.colors.text },
+  geoHint: { padding: 12, color: theme.colors.textMuted },
+  geoSelected: {
+    marginBottom: 8,
+    paddingVertical: 10,
+    paddingLeft: 14,
+    paddingRight: 8,
+    borderRadius: theme.radius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.primarySoft,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  geoSelectedName: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: theme.colors.primaryDark,
+  },
+  geoClearBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  geoClearX: {
+    fontSize: 22,
+    lineHeight: 24,
+    fontWeight: '600',
+    color: theme.colors.primaryDark,
+  },
   ruleCard: {
     marginBottom: 10,
     paddingVertical: 10,
