@@ -513,6 +513,7 @@ export type ActivityInput = {
   ends_at?: string | null;
   price?: number | null;
   max_participants?: number | null;
+  min_participants?: number | null;
   privacy: Privacy;
   category_id?: string | null;
   enterprise_id?: string | null;
@@ -717,9 +718,16 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     }
   }
 
+  const minCap = input.min_participants;
+  if (minCap != null && (!Number.isFinite(minCap) || minCap < 1 || !Number.isInteger(minCap))) {
+    throw new Error('Minimum capacity must be a positive whole number.');
+  }
   const capacity = input.max_participants;
-  if (capacity == null || !Number.isFinite(capacity) || capacity < 1 || !Number.isInteger(capacity)) {
-    throw new Error('Capacity must be a positive whole number.');
+  if (capacity != null && (!Number.isFinite(capacity) || capacity < 1 || !Number.isInteger(capacity))) {
+    throw new Error('Maximum capacity must be a positive whole number.');
+  }
+  if (minCap != null && capacity != null && minCap > capacity) {
+    throw new Error('Minimum capacity cannot be greater than maximum.');
   }
 
   const weekdays = rules.map((r) => r.weekday);
@@ -744,7 +752,8 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     description: null,
     starts_at: input.starts_at,
     ends_at: endsAt,
-    price: Number(input.price) || 0,
+    price: input.finance_enabled ? Number(input.price) || 0 : null,
+    min_participants: input.min_participants ?? null,
     max_participants: input.max_participants ?? null,
     privacy: input.privacy,
     category_id: input.category_id || null,

@@ -21,7 +21,7 @@ import { fetchActivityGuests, removeGuestAttendance, type GuestAttendanceWithGue
 import { formatRecurrence, hydrateRules, rulesFromLegacy } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations, Profile } from '@/lib/types';
-import { activityLocationLabel, activityVenuePoint, categoryLabel, displayName } from '@/lib/types';
+import { activityCapacityRange, activityLocationLabel, activityPriceLabel, activityVenuePoint, categoryLabel, displayName } from '@/lib/types';
 import { mapsUrl } from '@/lib/geo';
 import { useT } from '@/i18n';
 import { theme } from '@/constants/theme';
@@ -211,6 +211,7 @@ export default function ActivityDetailScreen() {
 
   const isOwner = user?.id === activity.created_by;
   const participantCount = participants.length + guests.length;
+  const capRange = activityCapacityRange(activity);
   const full =
     activity.max_participants != null && participantCount >= activity.max_participants;
 
@@ -326,12 +327,11 @@ export default function ActivityDetailScreen() {
           );
         })()}
         <Muted>
-          {t.common.price}:{' '}
-          {activity.price && Number(activity.price) > 0 ? `${activity.price} €` : t.common.free}
+          {t.common.price}: {activityPriceLabel(activity, t.common)}
         </Muted>
         <Muted>
           {t.events.participants}: {participantCount}
-          {activity.max_participants ? ` / ${activity.max_participants}` : ''}
+          {capRange ? ` · ${capRange}` : ''}
         </Muted>
 
         <View style={{ marginTop: 20, gap: 10 }}>

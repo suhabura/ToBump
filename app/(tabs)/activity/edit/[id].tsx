@@ -21,6 +21,7 @@ export default function EditActivityScreen() {
     ends_at?: string | null;
     price?: number | null;
     max_participants?: number | null;
+    min_participants?: number | null;
     privacy: Privacy;
     enterprise_id?: string | null;
     venue_text?: string | null;
@@ -105,6 +106,7 @@ export default function EditActivityScreen() {
         ends_at: act.ends_at,
         price,
         max_participants: act.max_participants,
+        min_participants: act.min_participants ?? null,
         privacy: (act.series_privacy as Privacy) ?? act.privacy,
         enterprise_id: act.enterprise_id,
         venue_text:

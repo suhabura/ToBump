@@ -10,7 +10,7 @@ import { fetchActivities, joinActivity, leaveActivity } from '@/lib/api';
 import { formatDistance } from '@/lib/geo';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
-import { activityLocationLabel, categoryLabel, displayName } from '@/lib/types';
+import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName } from '@/lib/types';
 import { useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
@@ -181,7 +181,7 @@ export default function EventsScreen() {
             const full =
               item.max_participants != null && (item.join_count ?? 0) >= item.max_participants;
             const location = activityLocationLabel(item);
-            const priceNum = Number(item.price ?? 0);
+            const capRange = activityCapacityRange(item);
             const cat = categoryLabel(item.categories) ?? `${item.title} (${t.events.uncategorized})`;
             const busy = busyId === item.id;
             return (
@@ -205,7 +205,7 @@ export default function EventsScreen() {
                     <Text style={styles.count}>
                       <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
                       {item.join_count ?? 0}
-                      {item.max_participants ? `/${item.max_participants}` : ''}
+                      {capRange ? ` · ${capRange}` : ''}
                     </Text>
                   </View>
 
@@ -221,7 +221,7 @@ export default function EventsScreen() {
                     </Text>
                   ) : null}
                   <Text style={styles.metaLine}>
-                    {priceNum > 0 ? `${priceNum} €` : t.common.free}
+                    {activityPriceLabel(item, t.common)}
                     {isOrganizer ? null : ` · ${displayName(item.profiles)}`}
                   </Text>
                 </View>

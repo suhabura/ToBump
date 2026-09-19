@@ -2,6 +2,9 @@
 -- When Friday 8:00 starts, that occurrence is completed and next week's
 -- occurrence is created. Run in Supabase SQL Editor. Safe to re-run.
 
+alter table public.activities
+  add column if not exists min_participants int;
+
 drop function if exists public.next_recurring_slot(timestamptz, jsonb, int[], int, date, timestamptz, int);
 drop function if exists public.next_recurring_slot(timestamptz, jsonb, int[], int, date);
 
@@ -219,14 +222,14 @@ begin
   nxt_end := nxt_start + make_interval(mins => nxt_duration);
 
   insert into public.activities (
-    title, description, starts_at, ends_at, price, max_participants,
+    title, description, starts_at, ends_at, price, min_participants, max_participants,
     privacy, category_id, enterprise_id, venue_text, venue_latitude, venue_longitude,
     group_id, created_by, chat_enabled, status, is_recurring, recurrence_weekdays,
     recurrence_rules, duration_minutes, series_id, previous_activity_id,
     series_privacy, series_group_id, series_invite_user_ids,
     recurrence_until, finance_enabled, updated_at
   ) values (
-    cur.title, cur.description, nxt_start, nxt_end, cur.price, cur.max_participants,
+    cur.title, cur.description, nxt_start, nxt_end, cur.price, cur.min_participants, cur.max_participants,
     tpl_privacy, cur.category_id, cur.enterprise_id, cur.venue_text,
     cur.venue_latitude, cur.venue_longitude,
     tpl_group, cur.created_by, cur.chat_enabled, 'active', true,

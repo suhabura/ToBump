@@ -21,9 +21,9 @@ import {
   seriesKey,
   upsertSeriesFinanceSettings,
 } from '@/lib/finance';
-import { formatDuration, formatRecurrence, formatTime, hydrateRules, isoWeekday, normalizeRules, rulesFromLegacy, WEEKDAY_OPTIONS, type RecurrenceRule } from '@/lib/recurrence';
+import { formatDuration, formatRecurrence, hydrateRules, isoWeekday, normalizeRules, rulesFromLegacy, WEEKDAY_OPTIONS, type RecurrenceRule } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
-import type { Category, Enterprise, FundingMode, Privacy, Profile } from '@/lib/types';
+import type { Category, Enterprise, FinanceWhoPays, FundingMode, Privacy, Profile } from '@/lib/types';
 import { displayName } from '@/lib/types';
 import { categoryDisplayName, resolveActivityCategoryKey, useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
@@ -95,8 +95,15 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     return key ? categoryDisplayName(key, locale) : raw;
   });
   const [startsAt, setStartsAt] = useState<Date | null>(parseInitialDate(initial?.starts_at));
-  const [price, setPrice] = useState(String(initial?.price ?? '0'));
-  const [capacity, setCapacity] = useState(initial?.max_participants ? String(initial.max_participants) : '');
+  const [price, setPrice] = useState(
+    initial?.finance_enabled && initial?.price != null ? String(initial.price) : ''
+  );
+  const [minCapacity, setMinCapacity] = useState(
+    initial?.min_participants ? String(initial.min_participants) : ''
+  );
+  const [maxCapacity, setMaxCapacity] = useState(
+    initial?.max_participants ? String(initial.max_participants) : ''
+  );
   const [privacy, setPrivacy] = useState<Privacy>(initial?.privacy ?? 'invite');
   const [enterpriseId, setEnterpriseId] = useState<string | null>(initial?.enterprise_id ?? null);
   const [venueText, setVenueText] = useState(initial?.venue_text ?? '');
@@ -120,10 +127,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     if (raw === 'per_event') return 'per_event';
     return 'per_event';
   });
-  const [payerIds, setPayerIds] = useState<string[]>(initial?.payer_user_ids ?? []);
-  const [payersTouched, setPayersTouched] = useState(
-    Boolean(initial?.payer_user_ids?.length) || initial?.who_pays === 'group'
-  );
   const [rules, setRules] = useState<RecurrenceRule[]>(() => initialRules(initial));
   const [recurrenceUntil, setRecurrenceUntil] = useState<Date | null>(() => {
     const raw = (initial as { recurrence_until?: string | null } | undefined)?.recurrence_until;
@@ -287,79 +290,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     setSelectedGroupId(null);
   }
 
-  /** Expand a friend group into who-pays selections. */
-  async function applyGroupAsPayers(groupId: string) {
-    const { data } = await supabase
-      .from('friend_group_members')
-      .select('user_id')
-      .eq('group_id', groupId);
-    const ids = Array.from(
-      new Set((data ?? []).map((m: { user_id: string }) => m.user_id).concat([userId, ...editorIds]))
-    );
-    const missing = ids.filter((id) => !friends.some((f) => f.id === id));
-    if (missing.length) {
-      const { data: profiles } = await supabase.from('profiles').select('*').in('id', missing);
-      if (profiles?.length) {
-        setFriends((prev) => dedupeProfilesByEmail([...prev, ...(profiles as Profile[])]));
-      }
-    }
-    setPayersTouched(true);
-    setPayerIds((prev) => Array.from(new Set([userId, ...editorIds, ...prev, ...ids])));
-  }
-
-  const defaultPayerCandidateIds = useMemo(() => {
-    let base: string[] = [];
-    if (privacy === 'invite' || privacy === 'friends_of_friends') {
-      base = [...inviteIds];
-    } else if (privacy === 'friends') {
-      base = friends.map((f) => f.id);
-    } else if (privacy === 'group') {
-      base = groupMembers.map((m) => m.id);
-    }
-    return Array.from(new Set([userId, ...editorIds, ...base]));
-  }, [privacy, inviteIds, friends, groupMembers, userId, editorIds]);
-
-  useEffect(() => {
-    if (!financeEnabled || payersTouched) return;
-    setPayerIds(defaultPayerCandidateIds);
-  }, [financeEnabled, payersTouched, defaultPayerCandidateIds]);
-
-  // Keep organizer + editors locked in the payer list once finance is on
-  useEffect(() => {
-    if (!financeEnabled) return;
-    setPayerIds((prev) => Array.from(new Set([userId, ...editorIds, ...prev])));
-  }, [financeEnabled, userId, editorIds]);
-
-  // If edit loaded a payer group, expand once into people
-  useEffect(() => {
-    const gid = initial?.payer_group_id;
-    if (!gid || (initial?.payer_user_ids?.length ?? 0) > 0) return;
-    void (async () => {
-      const { data } = await supabase
-        .from('friend_group_members')
-        .select('user_id')
-        .eq('group_id', gid);
-      const ids = Array.from(
-        new Set(
-          (data ?? [])
-            .map((m: { user_id: string }) => m.user_id)
-            .concat([userId, ...editorIds])
-        )
-      );
-      if (!ids.length) return;
-      const missing = ids.filter((id) => !friends.some((f) => f.id === id));
-      if (missing.length) {
-        const { data: profiles } = await supabase.from('profiles').select('*').in('id', missing);
-        if (profiles?.length) {
-          setFriends((prev) => dedupeProfilesByEmail([...prev, ...(profiles as Profile[])]));
-        }
-      }
-      setPayerIds(ids);
-      setPayersTouched(true);
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [initial?.payer_group_id]);
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -395,47 +325,22 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       }
       const hour = startsAt?.getHours() ?? 19;
       const minute = startsAt ? (Math.round(startsAt.getMinutes() / 15) * 15) % 60 : 0;
-      const duration_minutes =
-        prev[0]?.duration_minutes ?? defaultDurationFromInitial(initial);
-      return normalizeRules([...prev, { weekday: day, hour, minute, duration_minutes }]);
+      return normalizeRules([...prev, { weekday: day, hour, minute, duration_minutes: durationMinutes }]);
     });
   }
 
-  function bumpRuleTime(day: number, part: 'hour' | 'minute', delta: number) {
+  useEffect(() => {
+    if (!isRecurring || !startsAt) return;
+    const hour = startsAt.getHours();
+    const minute = (Math.round(startsAt.getMinutes() / 15) * 15) % 60;
     setRules((prev) =>
-      normalizeRules(
-        prev.map((r) => {
-          if (r.weekday !== day) return r;
-          if (part === 'hour') {
-            return { ...r, hour: (r.hour + delta + 24) % 24 };
-          }
-          const nextMin = r.minute + delta * 15;
-          let hour = r.hour;
-          let minute = nextMin;
-          if (minute >= 60) {
-            minute = 0;
-            hour = (hour + 1) % 24;
-          } else if (minute < 0) {
-            minute = 45;
-            hour = (hour + 23) % 24;
-          }
-          return { ...r, hour, minute };
-        })
-      )
+      prev.length
+        ? normalizeRules(
+            prev.map((r) => ({ ...r, hour, minute, duration_minutes: durationMinutes }))
+          )
+        : prev
     );
-  }
-
-  function bumpRuleDuration(day: number, deltaMinutes: number) {
-    setRules((prev) =>
-      normalizeRules(
-        prev.map((r) =>
-          r.weekday === day
-            ? { ...r, duration_minutes: Math.max(15, r.duration_minutes + deltaMinutes) }
-            : r
-        )
-      )
-    );
-  }
+  }, [startsAt, durationMinutes, isRecurring]);
 
   function setRecurring(on: boolean) {
     setIsRecurring(on);
@@ -445,7 +350,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           weekday: isoWeekday(startsAt),
           hour: startsAt.getHours(),
           minute: (Math.round(startsAt.getMinutes() / 15) * 15) % 60,
-          duration_minutes: defaultDurationFromInitial(initial),
+          duration_minutes: durationMinutes,
         },
       ]);
     }
@@ -466,16 +371,16 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       setFormError(t.form.pastNotAllowed);
       return;
     }
-    const normalized = normalizeRules(rules);
+    const hour = startsAt.getHours();
+    const minute = (Math.round(startsAt.getMinutes() / 15) * 15) % 60;
+    const normalized = normalizeRules(
+      rules.map((r) => ({ ...r, hour, minute, duration_minutes: durationMinutes }))
+    );
     if (isRecurring && normalized.length === 0) {
       setFormError(t.form.needWeekday);
       return;
     }
-    if (isRecurring && normalized.some((r) => r.duration_minutes < 15)) {
-      setFormError(t.form.needDurationPerDay);
-      return;
-    }
-    if (!isRecurring && durationMinutes < 15) {
+    if (durationMinutes < 15) {
       setFormError(t.form.minDuration);
       return;
     }
@@ -518,26 +423,32 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       return;
     }
 
-    const priceTrim = financeEnabled ? price.trim() : '0';
+    const priceTrim = financeEnabled ? price.trim() : '';
     if (financeEnabled) {
       if (priceTrim === '' || Number.isNaN(Number(priceTrim)) || Number(priceTrim) < 0) {
         setFormError(t.form.needPrice);
         return;
       }
-      if (payerIds.length === 0) {
-        setFormError(t.form.needPayers);
-        return;
-      }
     }
-    const priceNum = Number(priceTrim) || 0;
+    const priceNum = financeEnabled ? Number(priceTrim) || 0 : null;
     const modeToSave: FundingMode = isRecurring ? fundingMode : 'per_event';
 
-    const capacityTrim = capacity.trim();
-    if (!/^\d+$/.test(capacityTrim) || Number(capacityTrim) < 1) {
+    function parseOptionalCount(raw: string): number | null | 'invalid' {
+      const v = raw.trim();
+      if (!v) return null;
+      if (!/^\d+$/.test(v) || Number(v) < 1) return 'invalid';
+      return Number(v);
+    }
+    const minNum = parseOptionalCount(minCapacity);
+    const maxNum = parseOptionalCount(maxCapacity);
+    if (minNum === 'invalid' || maxNum === 'invalid') {
       setFormError(t.form.needCapacity);
       return;
     }
-    const capacityNum = Number(capacityTrim);
+    if (minNum != null && maxNum != null && minNum > maxNum) {
+      setFormError(t.form.capacityMinMax);
+      return;
+    }
 
     if (!enterpriseId && !venueText.trim()) {
       setFormError(t.form.needVenue);
@@ -564,9 +475,10 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           category_id,
           starts_at: startToSave.toISOString(),
           ends_at: null,
-          duration_minutes: isRecurring ? null : durationMinutes,
-          price: financeEnabled ? priceNum : 0,
-          max_participants: capacityNum,
+          duration_minutes: durationMinutes,
+          price: priceNum,
+          min_participants: minNum,
+          max_participants: maxNum,
           privacy,
           enterprise_id: category_id ? enterpriseId : null,
           venue_text: enterpriseId && category_id ? null : venueText.trim() || null,
@@ -585,14 +497,13 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
       const sid = seriesKey({ id, series_id: initial?.series_id ?? null });
       if (financeEnabled) {
-        const payersToSave = Array.from(new Set([userId, ...editorIds, ...payerIds]));
         await upsertSeriesFinanceSettings({
           seriesId: sid,
           fundingMode: modeToSave === 'annual' ? 'fixed' : modeToSave,
-          amount: priceNum,
+          amount: priceNum ?? 0,
           whoPays: 'selected',
           payerGroupId: null,
-          payerIds: payersToSave,
+          payerIds: [],
           userId,
         });
         try {
@@ -608,10 +519,10 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             settings: {
               series_id: sid,
               funding_mode: modeToSave === 'annual' ? 'fixed' : modeToSave,
-              amount: priceNum,
+              amount: priceNum ?? 0,
               who_pays: 'selected',
               payer_group_id: null,
-              payer_ids: payersToSave,
+              payer_ids: [],
               currency: 'EUR',
               updated_by: userId,
               updated_at: new Date().toISOString(),
@@ -667,31 +578,146 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         </Muted>
       ) : null}
 
-      <DateTimeField label={req(t.events.starts)} value={startsAt} onChange={setStartsAt} minimumDate={new Date()} />
-      {!isRecurring ? (
-        <View style={{ marginBottom: theme.space.md }}>
-          <Text style={styles.durationLabel}>{req(t.form.duration)}</Text>
-          <View style={styles.durationRow}>
-            <View style={styles.durationBlock}>
-              <Chip label="−1h" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 60))} />
-              <Chip label="−30m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 30))} />
-              <Chip label="−15m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 15))} />
-              <Text style={styles.durationValue}>{formatDuration(durationMinutes)}</Text>
-              <Chip label="+15m" active={false} onPress={() => setDurationMinutes((m) => m + 15)} />
-              <Chip label="+30m" active={false} onPress={() => setDurationMinutes((m) => m + 30)} />
-              <Chip label="+1h" active={false} onPress={() => setDurationMinutes((m) => m + 60)} />
-            </View>
+      <View>
+        <Text style={styles.section}>{req(t.events.venue)}</Text>
+        <Muted>{isCategorized ? t.venue.freeTextHint : t.form.uncategorizedVenueHint}</Muted>
+        <LocationField
+          label={t.events.venue}
+          address={venueAddress}
+          latitude={venueLat}
+          longitude={venueLng}
+          relativeTo={profileOrigin}
+          showMyLocation={false}
+          allowManualConfirm
+          onChange={onVenueLocationChange}
+          onClear={
+            (enterpriseId && isCategorized) || venueText.trim() ? clearVenue : undefined
+          }
+        />
+      </View>
+
+      <Text style={styles.section}>{t.events.capacity}</Text>
+      <View style={styles.capacityRow}>
+        <View style={{ flex: 1 }}>
+          <Input
+            label={t.form.minCapacity}
+            value={minCapacity}
+            onChangeText={(v) => setMinCapacity(v.replace(/[^\d]/g, ''))}
+            keyboardType="number-pad"
+            placeholder="—"
+          />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Input
+            label={t.form.maxCapacity}
+            value={maxCapacity}
+            onChangeText={(v) => setMaxCapacity(v.replace(/[^\d]/g, ''))}
+            keyboardType="number-pad"
+            placeholder="—"
+          />
+        </View>
+      </View>
+      <Muted>{t.form.capacityHint}</Muted>
+
+      <Text style={styles.section}>{req(t.form.recurrence)}</Text>
+      <View style={styles.row}>
+        <Chip label={t.events.once} active={!isRecurring} onPress={() => setRecurring(false)} />
+        <Chip label={t.events.recurring} active={isRecurring} onPress={() => setRecurring(true)} />
+      </View>
+      {isRecurring ? (
+        <View>
+          <Muted>{t.form.recurrenceHint}</Muted>
+          <View style={styles.rowWrap}>
+            {WEEKDAY_OPTIONS.map((d) => (
+              <Chip
+                key={d.value}
+                label={d.short}
+                active={rules.some((r) => r.weekday === d.value)}
+                onPress={() => toggleWeekday(d.value)}
+              />
+            ))}
           </View>
+          {rules.length ? <Muted>{formatRecurrence(rules)}</Muted> : null}
         </View>
       ) : null}
-      <Input
-        label={req(t.events.capacity)}
-        value={capacity}
-        onChangeText={(v) => setCapacity(v.replace(/[^\d]/g, ''))}
-        keyboardType="number-pad"
-        placeholder="e.g. 4"
-      />
-      <Muted>{t.form.capacityHint}</Muted>
+
+      <DateTimeField label={req(t.events.starts)} value={startsAt} onChange={setStartsAt} minimumDate={new Date()} />
+      <View style={{ marginBottom: theme.space.md }}>
+        <Text style={styles.durationLabel}>{req(t.form.duration)}</Text>
+        <View style={styles.durationRow}>
+          <View style={styles.durationBlock}>
+            <Chip label="−1h" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 60))} />
+            <Chip label="−30m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 30))} />
+            <Chip label="−15m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 15))} />
+            <Text style={styles.durationValue}>{formatDuration(durationMinutes)}</Text>
+            <Chip label="+15m" active={false} onPress={() => setDurationMinutes((m) => m + 15)} />
+            <Chip label="+30m" active={false} onPress={() => setDurationMinutes((m) => m + 30)} />
+            <Chip label="+1h" active={false} onPress={() => setDurationMinutes((m) => m + 60)} />
+          </View>
+        </View>
+      </View>
+      {isRecurring ? (
+        <DateTimeField
+          label={req(t.form.seriesEnds)}
+          value={recurrenceUntil}
+          onChange={setRecurrenceUntil}
+          mode="date"
+          minimumDate={startsAt ?? new Date()}
+        />
+      ) : null}
+
+      <Text style={styles.section}>{t.form.finance}</Text>
+      <Muted>{t.form.financeHint}</Muted>
+      <View style={styles.row}>
+        <Chip
+          label={t.form.financeOff}
+          active={!financeEnabled}
+          onPress={() => setFinanceEnabled(false)}
+        />
+        <Chip
+          label={t.form.financeOn}
+          active={financeEnabled}
+          onPress={() => setFinanceEnabled(true)}
+        />
+      </View>
+      {financeEnabled ? (
+        <View style={{ marginTop: 12, gap: 8 }}>
+          <Muted>{t.form.fundingMode}</Muted>
+          <View style={styles.rowWrap}>
+            <Chip
+              label={t.form.payPerEvent}
+              active={fundingMode === 'per_event'}
+              onPress={() => setFundingMode('per_event')}
+            />
+            {isRecurring ? (
+              <Chip
+                label={t.form.payFixed}
+                active={fundingMode === 'fixed' || fundingMode === 'annual'}
+                onPress={() => setFundingMode('fixed')}
+              />
+            ) : null}
+          </View>
+          <Input
+            label={
+              fundingMode === 'fixed' || fundingMode === 'annual'
+                ? t.form.priceFixed
+                : t.form.pricePerEvent
+            }
+            value={price}
+            onChangeText={setPrice}
+            keyboardType="decimal-pad"
+            placeholder="0"
+          />
+          <Muted>
+            {fundingMode === 'fixed' || fundingMode === 'annual'
+              ? t.form.priceFixedHint
+              : t.form.pricePerEventHint}
+          </Muted>
+          <Muted>{t.form.payersAreAttendees}</Muted>
+        </View>
+      ) : (
+        <Muted>{t.form.financeOffHint}</Muted>
+      )}
 
       <Text style={styles.section}>{req(t.form.whoInvite)}</Text>
       {activityId && isRecurring ? <Muted>{t.events.seriesInviteEditHint}</Muted> : null}
@@ -802,161 +828,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         </View>
       ) : null}
 
-      <View>
-        <Text style={styles.section}>{req(t.events.venue)}</Text>
-        <Muted>{isCategorized ? t.venue.freeTextHint : t.form.uncategorizedVenueHint}</Muted>
-        <LocationField
-          label={t.events.venue}
-          address={venueAddress}
-          latitude={venueLat}
-          longitude={venueLng}
-          relativeTo={profileOrigin}
-          showMyLocation={false}
-          allowManualConfirm
-          onChange={onVenueLocationChange}
-          onClear={
-            (enterpriseId && isCategorized) || venueText.trim() ? clearVenue : undefined
-          }
-        />
-      </View>
-
-      <Text style={styles.section}>{req(t.form.recurrence)}</Text>
-      <View style={styles.row}>
-        <Chip label={t.events.once} active={!isRecurring} onPress={() => setRecurring(false)} />
-        <Chip label={t.events.recurring} active={isRecurring} onPress={() => setRecurring(true)} />
-      </View>
-      {isRecurring ? (
-        <View>
-          <Muted>{t.form.recurrenceHint}</Muted>
-          <View style={styles.rowWrap}>
-            {WEEKDAY_OPTIONS.map((d) => (
-              <Chip
-                key={d.value}
-                label={d.short}
-                active={rules.some((r) => r.weekday === d.value)}
-                onPress={() => toggleWeekday(d.value)}
-              />
-            ))}
-          </View>
-          {rules.map((r) => {
-            const day = WEEKDAY_OPTIONS.find((w) => w.value === r.weekday);
-            return (
-              <View key={r.weekday} style={styles.ruleCard}>
-                <Text style={styles.ruleDay}>{day?.label ?? r.weekday}</Text>
-                <Text style={styles.ruleSub}>{t.form.start}</Text>
-                <View style={styles.ruleTime}>
-                  <Chip label="−1h" active={false} onPress={() => bumpRuleTime(r.weekday, 'hour', -1)} />
-                  <Text style={styles.ruleTimeText}>{formatTime(r.hour, r.minute)}</Text>
-                  <Chip label="+1h" active={false} onPress={() => bumpRuleTime(r.weekday, 'hour', 1)} />
-                  <Chip label="−15m" active={false} onPress={() => bumpRuleTime(r.weekday, 'minute', -1)} />
-                  <Chip label="+15m" active={false} onPress={() => bumpRuleTime(r.weekday, 'minute', 1)} />
-                </View>
-                <Text style={styles.ruleSub}>{t.form.duration}</Text>
-                <View style={styles.ruleTime}>
-                  <Chip label="−1h" active={false} onPress={() => bumpRuleDuration(r.weekday, -60)} />
-                  <Chip label="−30m" active={false} onPress={() => bumpRuleDuration(r.weekday, -30)} />
-                  <Chip label="−15m" active={false} onPress={() => bumpRuleDuration(r.weekday, -15)} />
-                  <Text style={styles.ruleTimeText}>{formatDuration(r.duration_minutes)}</Text>
-                  <Chip label="+15m" active={false} onPress={() => bumpRuleDuration(r.weekday, 15)} />
-                  <Chip label="+30m" active={false} onPress={() => bumpRuleDuration(r.weekday, 30)} />
-                  <Chip label="+1h" active={false} onPress={() => bumpRuleDuration(r.weekday, 60)} />
-                </View>
-              </View>
-            );
-          })}
-          {rules.length ? <Muted>{formatRecurrence(rules)}</Muted> : null}
-          <View style={{ height: 8 }} />
-          <DateTimeField
-            label={req(t.form.seriesEnds)}
-            value={recurrenceUntil}
-            onChange={setRecurrenceUntil}
-            mode="date"
-            minimumDate={startsAt ?? new Date()}
-          />
-        </View>
-      ) : null}
-
-      <Text style={styles.section}>{t.form.finance}</Text>
-      <Muted>{t.form.financeHint}</Muted>
-      <View style={styles.row}>
-        <Chip
-          label={t.form.financeOff}
-          active={!financeEnabled}
-          onPress={() => setFinanceEnabled(false)}
-        />
-        <Chip
-          label={t.form.financeOn}
-          active={financeEnabled}
-          onPress={() => setFinanceEnabled(true)}
-        />
-      </View>
-      {financeEnabled ? (
-        <View style={{ marginTop: 12, gap: 8 }}>
-          <Muted>{t.form.fundingMode}</Muted>
-          <View style={styles.rowWrap}>
-            <Chip
-              label={t.form.payPerEvent}
-              active={fundingMode === 'per_event'}
-              onPress={() => setFundingMode('per_event')}
-            />
-            {isRecurring ? (
-              <Chip
-                label={t.form.payFixed}
-                active={fundingMode === 'fixed' || fundingMode === 'annual'}
-                onPress={() => setFundingMode('fixed')}
-              />
-            ) : null}
-          </View>
-          <Muted>{t.form.whoPays}</Muted>
-          <Muted>{t.form.whoPaysHint}</Muted>
-          <FriendPicker
-            friends={friends}
-            selectedIds={payerIds}
-            lockedIds={[userId, ...editorIds]}
-            extraProfiles={profile ? [profile as Profile] : []}
-            onChange={(ids) => {
-              setPayersTouched(true);
-              setPayerIds(Array.from(new Set([userId, ...editorIds, ...ids])));
-            }}
-            label={t.form.whoPaysPeople}
-            placeholder={t.form.searchFriends}
-            emptyHint={t.form.noFriends}
-          />
-          <Text style={styles.section}>{t.form.orSelectGroup}</Text>
-          {groups.length === 0 ? (
-            <Muted>{t.form.noGroups}</Muted>
-          ) : (
-            <View style={styles.rowWrap}>
-              {groups.map((g) => (
-                <Chip
-                  key={g.id}
-                  label={g.name}
-                  active={false}
-                  onPress={() => void applyGroupAsPayers(g.id)}
-                />
-              ))}
-            </View>
-          )}
-          <Muted>{t.form.groupExpandsToPeople}</Muted>
-          <Input
-            label={
-              fundingMode === 'fixed' || fundingMode === 'annual'
-                ? t.form.priceFixed
-                : t.form.pricePerEvent
-            }
-            value={price}
-            onChangeText={setPrice}
-            keyboardType="decimal-pad"
-            placeholder="0"
-          />
-          <Muted>
-            {fundingMode === 'fixed' || fundingMode === 'annual'
-              ? t.form.priceFixedHint
-              : t.form.pricePerEventHint}
-          </Muted>
-        </View>
-      ) : null}
-
       {isCreator ? (
         <View style={{ marginTop: 16 }}>
           {!showEditors ? (
@@ -999,6 +870,7 @@ const styles = StyleSheet.create({
   section: { fontWeight: '700', marginTop: 8, marginBottom: 8, color: theme.colors.text },
   row: { flexDirection: 'row', marginBottom: 12, flexWrap: 'wrap' },
   rowWrap: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12, gap: 4 },
+  capacityRow: { flexDirection: 'row', gap: 12 },
   ruleCard: {
     marginBottom: 10,
     paddingVertical: 10,

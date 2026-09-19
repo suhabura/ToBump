@@ -234,7 +234,11 @@ export const sl = {
       'Izberi naslov s predloga ali vpiši ime in pritisni Enter (brez koordinat).',
     needSubcategory: 'Vnesite znano podkategorijo (npr. Nogomet, Koncert, Pohod).',
     duration: 'Trajanje',
-    capacityHint: 'Kapaciteta omejuje udeležence, ne povabil — povabite lahko neomejeno prijateljev.',
+    capacityHint:
+      'Neobvezno. Najmanjše in največje število udeležencev. Max omejuje prijave; min je ciljna spodnja meja.',
+    minCapacity: 'Min. kapaciteta',
+    maxCapacity: 'Max. kapaciteta',
+    capacityMinMax: 'Minimum ne sme biti večji od maksimuma.',
     whoInvite: 'Koga vabite?',
     selectFriends: 'Izberi prijatelje',
     searchFriends: 'Išči prijatelje…',
@@ -284,6 +288,7 @@ export const sl = {
       'Prispevki gredo v budget dogodka, vpiši dejanske stroške in poravnaj bilance med udeleženci.',
     financeOn: 'Vklopi Finance',
     financeOff: 'Brez Finance',
+    financeOffHint: 'Brez finance ne pomeni, da je dogodek zastonj — cena je nedoločena.',
     fundingMode: 'Kako udeleženci plačajo',
     payPerEvent: 'Plačaj na dogodek',
     payMonthly: 'Plačaj mesečno',
@@ -303,6 +308,7 @@ export const sl = {
       'Organizator in uredniki so vedno vključeni. Privzeto so označeni tudi povabljeni — išči za dodajanje/odstranitev, ali spodaj izberi skupino.',
     needPayers: 'Izberi vsaj eno osebo, ki lahko plača.',
     needPayerGroup: 'Izberi skupino oseb, ki lahko plačajo.',
+    payersAreAttendees: 'Plačajo vsi, ki se na dogodek prijavijo.',
   },
   finance: {
     title: 'Finance',

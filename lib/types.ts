@@ -216,6 +216,7 @@ export type Activity = {
   ends_at: string | null;
   price: number | null;
   max_participants: number | null;
+  min_participants?: number | null;
   privacy: Privacy;
   category_id: string | null;
   enterprise_id: string | null;
@@ -388,6 +389,26 @@ export function activityLocationLabel(a: {
   }
   const text = a.venue_text?.trim();
   return text || null;
+}
+
+export function activityPriceLabel(
+  a: { price?: number | null; finance_enabled?: boolean | null },
+  labels: { free: string; notSet: string }
+): string {
+  if (!a.finance_enabled || a.price == null) return labels.notSet;
+  if (Number(a.price) > 0) return `${a.price} €`;
+  return labels.free;
+}
+
+export function activityCapacityRange(
+  a: { min_participants?: number | null; max_participants?: number | null }
+): string | null {
+  const min = a.min_participants ?? null;
+  const max = a.max_participants ?? null;
+  if (min != null && max != null) return `${min}–${max}`;
+  if (max != null) return `≤${max}`;
+  if (min != null) return `≥${min}`;
+  return null;
 }
 
 export function activityVenuePoint(a: {
