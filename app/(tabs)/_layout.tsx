@@ -2,6 +2,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { theme } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useT } from '@/i18n';
@@ -11,25 +12,38 @@ function TabIcon({ name, color }: { name: React.ComponentProps<typeof FontAwesom
   return <FontAwesome size={22} name={name} color={color} style={{ marginBottom: -2 }} />;
 }
 
-function BrandHeader({ title }: { title: string }) {
+function TabAppHeader({ title, unread }: { title: string; unread: number }) {
   const t = useT();
+  const router = useRouter();
   return (
-    <View style={styles.brandHeader} accessibilityRole="header">
-      <Image
-        source={require('../../assets/brand/logo-horizontal.png')}
-        style={styles.brandLogo}
-        resizeMode="contain"
-        accessibilityLabel={t.appName}
-      />
-      <Text style={styles.brandTab} numberOfLines={1}>
-        {title}
-      </Text>
-    </View>
+    <SafeAreaView edges={['top']} style={styles.headerSafe}>
+      <View style={styles.headerBar} accessibilityRole="header">
+        <Text style={styles.brandTab} numberOfLines={1}>
+          {title}
+        </Text>
+        <Image
+          source={require('../../assets/brand/logo-horizontal.png')}
+          style={styles.brandLogo}
+          resizeMode="contain"
+          accessibilityLabel={t.appName}
+        />
+        <Pressable
+          onPress={() => router.push('/notifications')}
+          style={styles.bellHit}
+          accessibilityRole="button"
+          accessibilityLabel="Notifications">
+          <View>
+            <FontAwesome name={unread > 0 ? 'bell' : 'bell-o'} size={20} color={theme.colors.text} />
+            {unread > 0 ? (
+              <View style={styles.badge}>
+                <Text style={styles.badgeText}>{unread > 99 ? '99+' : String(unread)}</Text>
+              </View>
+            ) : null}
+          </View>
+        </Pressable>
+      </View>
+    </SafeAreaView>
   );
-}
-
-function HeaderSpacer() {
-  return <View style={styles.headerSide} />;
 }
 
 function HeaderActions({ unread }: { unread: number }) {
@@ -38,7 +52,7 @@ function HeaderActions({ unread }: { unread: number }) {
     <View style={styles.headerSide}>
       <Pressable
         onPress={() => router.push('/notifications')}
-        style={styles.bellHit}
+        style={styles.bellHitModal}
         accessibilityRole="button"
         accessibilityLabel="Notifications">
         <View>
@@ -126,15 +140,13 @@ export default function TabLayout() {
         tabBarStyle: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border },
         headerStyle: { backgroundColor: theme.colors.surface },
         headerTintColor: theme.colors.text,
-        headerTitleAlign: 'center',
         headerRight: () => <HeaderActions unread={unread} />,
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: t.tabs.events,
-          headerTitle: () => <BrandHeader title={t.tabs.events} />,
-          headerLeft: () => <HeaderSpacer />,
+          header: () => <TabAppHeader title={t.tabs.events} unread={unread} />,
           tabBarIcon: ({ color }) => <TabIcon name="calendar" color={String(color)} />,
         }}
       />
@@ -142,8 +154,7 @@ export default function TabLayout() {
         name="planner"
         options={{
           title: t.tabs.planner,
-          headerTitle: () => <BrandHeader title={t.tabs.planner} />,
-          headerLeft: () => <HeaderSpacer />,
+          header: () => <TabAppHeader title={t.tabs.planner} unread={unread} />,
           tabBarIcon: ({ color }) => <TabIcon name="list-alt" color={String(color)} />,
         }}
       />
@@ -151,8 +162,7 @@ export default function TabLayout() {
         name="friends"
         options={{
           title: t.tabs.friends,
-          headerTitle: () => <BrandHeader title={t.tabs.friends} />,
-          headerLeft: () => <HeaderSpacer />,
+          header: () => <TabAppHeader title={t.tabs.friends} unread={unread} />,
           tabBarBadge: pendingFriends > 0 ? pendingFriends : undefined,
           tabBarIcon: ({ color }) => <TabIcon name="users" color={String(color)} />,
         }}
@@ -161,8 +171,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: t.tabs.profile,
-          headerTitle: () => <BrandHeader title={t.tabs.profile} />,
-          headerLeft: () => <HeaderSpacer />,
+          header: () => <TabAppHeader title={t.tabs.profile} unread={unread} />,
           tabBarIcon: ({ color }) => <TabIcon name="user" color={String(color)} />,
         }}
       />
@@ -198,19 +207,24 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
-  brandHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  headerSafe: {
+    backgroundColor: theme.colors.surface,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: theme.colors.border,
+  },
+  headerBar: {
+    height: 76,
     justifyContent: 'center',
-    gap: 10,
-    height: 40,
+    alignItems: 'center',
   },
   brandLogo: {
-    height: 34,
-    width: 112,
+    height: 68,
+    width: 224,
   },
   brandTab: {
-    flexShrink: 1,
+    position: 'absolute',
+    left: 16,
+    maxWidth: '28%',
     fontSize: 16,
     fontWeight: '700',
     color: theme.colors.text,
@@ -223,6 +237,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bellHit: {
+    position: 'absolute',
+    right: 8,
+    padding: 8,
+  },
+  bellHitModal: {
     padding: 8,
   },
   badge: {
