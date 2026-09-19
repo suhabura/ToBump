@@ -100,16 +100,11 @@ export function LocationField({
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
     const q = query.trim();
-    if (!focused || q.length < 2) {
+    if (q.length < 2) {
       setResults([]);
       return;
     }
     if (latitude != null && longitude != null && q === address.trim()) {
-      setResults([]);
-      return;
-    }
-    // Manual selection without coords: don't keep searching the confirmed label
-    if (allowManualConfirm && address.trim() && q === address.trim() && latitude == null) {
       setResults([]);
       return;
     }
@@ -119,17 +114,18 @@ export function LocationField({
       try {
         const places = await searchPlaces(q, { bias });
         setResults(places);
+        if (!places.length) setError(null);
       } catch {
         setError(t.location.searchFailed);
         setResults([]);
       } finally {
         setSearching(false);
       }
-    }, 320);
+    }, 280);
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [query, focused, address, latitude, longitude, bias, allowManualConfirm, t.location.searchFailed]);
+  }, [query, address, latitude, longitude, bias, t.location.searchFailed]);
 
   function pick(place: GeoPlace) {
     picking.current = true;
@@ -221,13 +217,12 @@ export function LocationField({
         }}
         style={styles.field}
       />
-      {focused && query.trim().length >= 2 ? (
+      {query.trim().length >= 2 &&
+      !(latitude != null && longitude != null && query.trim() === address.trim()) ? (
         <View style={styles.list}>
           {searching ? <Text style={styles.hint}>{t.location.searching}</Text> : null}
           {!searching && results.length === 0 ? (
-            <Text style={styles.hint}>
-              {allowManualConfirm ? t.location.noResultsManual : t.location.noResults}
-            </Text>
+            <Text style={styles.hint}>{t.location.noResults}</Text>
           ) : null}
           {results.map((r) => (
             <Pressable
@@ -328,6 +323,8 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.sm,
     overflow: 'hidden',
     maxHeight: 280,
+    zIndex: 40,
+    elevation: 8,
   },
   item: {
     paddingHorizontal: 14,

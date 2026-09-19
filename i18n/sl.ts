@@ -523,7 +523,7 @@ export const sl = {
     selected: 'Izbrana lokacija',
     manualNoCoords: 'Ročni vpis — koordinate niso nastavljene.',
     searching: 'Iščem…',
-    noResults: 'Ni zadetkov — poskusi ime kraja (npr. Stražišče) ali uporabi Moja lokacija.',
+    noResults: 'Ni zadetkov v zemljevidih — poskusi ulico, prizorišče ali kraj.',
     searchFailed: 'Iskanje lokacije ni uspelo.',
     allowAccess: 'Dovoli dostop do lokacije.',
     gpsFailed: 'Lokacije ni bilo mogoče pridobiti.',

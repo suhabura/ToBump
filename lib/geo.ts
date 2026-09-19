@@ -148,11 +148,64 @@ function rankPlaces(places: GeoPlace[], query: string, bias?: GeoPoint | null): 
   });
 }
 
+/** Places API (New) — works from the browser with HTTP-referrer API keys. */
+async function searchGooglePlacesNew(query: string, bias?: GeoPoint | null): Promise<GeoPlace[]> {
+  const key = googleKey();
+  if (!key) return [];
+  const center = bias ?? SI_CENTER;
+  try {
+    const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location',
+      },
+      body: JSON.stringify({
+        textQuery: query,
+        languageCode: 'sl',
+        regionCode: 'SI',
+        maxResultCount: 8,
+        locationBias: {
+          circle: {
+            center: { latitude: center.latitude, longitude: center.longitude },
+            radius: 80_000,
+          },
+        },
+      }),
+    });
+    if (!res.ok) return [];
+    const json = (await res.json()) as {
+      places?: {
+        displayName?: { text?: string };
+        formattedAddress?: string;
+        location?: { latitude: number; longitude: number };
+      }[];
+    };
+    return (json.places ?? [])
+      .filter((p) => p.location?.latitude != null && p.location?.longitude != null)
+      .map((p) => {
+        const name = p.displayName?.text?.trim() ?? '';
+        const addr = p.formattedAddress?.trim() ?? '';
+        return {
+          label: addr && name && addr.toLowerCase().includes(name.toLowerCase())
+            ? addr
+            : [name, addr].filter(Boolean).join(', '),
+          latitude: p.location!.latitude,
+          longitude: p.location!.longitude,
+          source: 'google' as const,
+        };
+      });
+  } catch {
+    return [];
+  }
+}
+
 async function searchGooglePlaces(query: string, bias?: GeoPoint | null): Promise<GeoPlace[]> {
   const key = googleKey();
   if (!key) return [];
 
-  // Places Text Search finds businesses/POIs (closer to Google Maps UX than Geocoding).
+  // Legacy Text Search — works in native; browsers usually block it (CORS).
   try {
     let url =
       `https://maps.googleapis.com/maps/api/place/textsearch/json` +
@@ -209,14 +262,15 @@ async function searchGooglePlaces(query: string, bias?: GeoPoint | null): Promis
   return [];
 }
 
-async function searchPhoton(query: string, bias?: GeoPoint | null): Promise<GeoPlace[]> {
+async function searchPhoton(query: string, bias?: GeoPoint | null, useBbox = true): Promise<GeoPlace[]> {
   const center = bias && inSlovenia(bias) ? bias : SI_CENTER;
   const bbox = `${SI_BBOX.minLon},${SI_BBOX.minLat},${SI_BBOX.maxLon},${SI_BBOX.maxLat}`;
   const url =
     `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}` +
-    `&lang=en&limit=10&lat=${center.latitude}&lon=${center.longitude}&bbox=${bbox}`;
+    `&lang=sl&limit=10&lat=${center.latitude}&lon=${center.longitude}` +
+    (useBbox ? `&bbox=${bbox}` : '');
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': UA } });
+    const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
     if (!res.ok) return [];
     const json = (await res.json()) as {
       features?: {
@@ -224,11 +278,41 @@ async function searchPhoton(query: string, bias?: GeoPoint | null): Promise<GeoP
         properties: Record<string, unknown>;
       }[];
     };
-    return (json.features ?? []).map((f) => ({
+    const places = (json.features ?? []).map((f) => ({
       label: formatPhotonLabel(f.properties),
       latitude: f.geometry.coordinates[1],
       longitude: f.geometry.coordinates[0],
       source: 'photon' as const,
+    }));
+    if (places.length || !useBbox) return places;
+    return searchPhoton(query, bias, false);
+  } catch {
+    return useBbox ? searchPhoton(query, bias, false) : [];
+  }
+}
+
+/** CORS-friendly geocoder (cities, towns, named places). */
+async function searchOpenMeteo(query: string): Promise<GeoPlace[]> {
+  try {
+    const url =
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}` +
+      `&count=8&language=sl&format=json`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+    const json = (await res.json()) as {
+      results?: {
+        name: string;
+        latitude: number;
+        longitude: number;
+        country?: string;
+        admin1?: string;
+      }[];
+    };
+    return (json.results ?? []).map((r) => ({
+      label: [r.name, r.admin1, r.country].filter(Boolean).join(', '),
+      latitude: r.latitude,
+      longitude: r.longitude,
+      source: 'nominatim' as const,
     }));
   } catch {
     return [];
@@ -331,8 +415,8 @@ export type SearchPlacesOptions = {
 
 /**
  * Place / address search biased to Slovenia.
- * Uses Google Places (POIs) when EXPO_PUBLIC_GOOGLE_MAPS_API_KEY is set,
- * otherwise Photon + Nominatim with multi-token expansion.
+ * Queries Google Places (New) and map geocoders in parallel so web clients
+ * still get Maps-like suggestions when the legacy Places JSON API is blocked.
  */
 export async function searchPlaces(
   query: string,
@@ -342,30 +426,24 @@ export async function searchPlaces(
   if (q.length < 2) return [];
   const bias = options?.bias ?? SI_CENTER;
 
-  const google = await searchGooglePlaces(q, bias);
-  if (google.length) {
-    return rankPlaces(dedupePlaces(google), q, bias).slice(0, 10);
-  }
-
-  const [photon, nominatim] = await Promise.all([
+  const [googleNew, googleLegacy, photon, openMeteo] = await Promise.all([
+    searchGooglePlacesNew(q, bias),
+    searchGooglePlaces(q, bias),
     searchPhoton(q, bias),
-    searchNominatim(q, { bias }),
+    searchOpenMeteo(q),
   ]);
 
-  const qTokens = normalizeSearchText(q).split(' ').filter(Boolean);
-  const placeToken = qTokens.length > 1 ? qTokens[qTokens.length - 1]! : '';
+  const merged = dedupePlaces([...googleNew, ...googleLegacy, ...photon, ...openMeteo]);
+  if (merged.length) {
+    return rankPlaces(merged, q, bias).slice(0, 10);
+  }
 
-  const phraseHits = dedupePlaces([...photon, ...nominatim]).filter((p) => {
-    const label = normalizeSearchText(p.label);
-    if (qTokens.length <= 1) return true;
-    // Keep only hits that mention the place (or the full phrase), not random clubs elsewhere
-    return (placeToken && label.includes(placeToken)) || qTokens.every((t) => label.includes(t));
-  });
-
-  const expanded = qTokens.length > 1 ? await expandMultiToken(q, bias) : [];
-  const merged = dedupePlaces([...expanded, ...phraseHits]);
-
-  return rankPlaces(merged, q, bias).slice(0, 10);
+  const nominatim = await searchNominatim(q, { bias });
+  const expanded =
+    normalizeSearchText(q).split(' ').filter(Boolean).length > 1
+      ? await expandMultiToken(q, bias)
+      : [];
+  return rankPlaces(dedupePlaces([...nominatim, ...expanded]), q, bias).slice(0, 10);
 }
 
 export async function reverseGeocode(point: GeoPoint): Promise<string> {

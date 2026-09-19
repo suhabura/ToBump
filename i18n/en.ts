@@ -523,7 +523,7 @@ export const en = {
     selected: 'Selected location',
     manualNoCoords: 'Manual entry — coordinates not set.',
     searching: 'Searching…',
-    noResults: 'No matches yet — try a town name (e.g. Stražišče) or use My location.',
+    noResults: 'No map matches — try a street, venue or town name.',
     searchFailed: 'Location search failed.',
     allowAccess: 'Allow location access.',
     gpsFailed: "Couldn't get your location.",

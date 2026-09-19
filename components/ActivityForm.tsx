@@ -616,7 +616,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       </View>
       {geoLocation ? (
         <LocationField
-          label=""
+          label={t.form.geoSearch}
           address={venueText}
           latitude={venueLatitude}
           longitude={venueLongitude}
