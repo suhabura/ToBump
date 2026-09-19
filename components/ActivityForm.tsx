@@ -330,6 +330,26 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     };
   }, [title, enterprises, categories]);
 
+  function setVenueMode(maps: boolean) {
+    setGeoLocation(maps);
+    if (!maps) {
+      setEnterpriseId(null);
+      setVenueLatitude(null);
+      setVenueLongitude(null);
+    }
+  }
+
+  function setCapacityMode(range: boolean) {
+    setCapacityRange(range);
+    if (range) {
+      if (!maxCapacity.trim() && desiredCapacity.trim()) {
+        setMaxCapacity(desiredCapacity);
+      }
+    } else if (!desiredCapacity.trim()) {
+      setDesiredCapacity(maxCapacity || minCapacity);
+    }
+  }
+
   function toggleWeekday(day: number) {
     setRules((prev) => {
       if (prev.some((r) => r.weekday === day)) {
@@ -598,21 +618,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
       <Text style={styles.section}>{req(t.events.venue)}</Text>
       <View style={styles.row}>
-        <Chip
-          label={t.form.venueManual}
-          active={!geoLocation}
-          onPress={() => {
-            setGeoLocation(false);
-            setEnterpriseId(null);
-            setVenueLatitude(null);
-            setVenueLongitude(null);
-          }}
-        />
-        <Chip
-          label={t.form.addGeoLocation}
-          active={geoLocation}
-          onPress={() => setGeoLocation(true)}
-        />
+        <Chip label={t.form.venueManual} active={!geoLocation} onPress={() => setVenueMode(false)} />
+        <Chip label={t.form.addGeoLocation} active={geoLocation} onPress={() => setVenueMode(true)} />
       </View>
       {geoLocation ? (
         <LocationField
@@ -636,26 +643,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
       <Text style={styles.section}>{t.events.capacity}</Text>
       <View style={styles.row}>
-        <Chip
-          label={t.form.capacityExact}
-          active={!capacityRange}
-          onPress={() => {
-            setCapacityRange(false);
-            if (!desiredCapacity.trim()) {
-              setDesiredCapacity(maxCapacity || minCapacity);
-            }
-          }}
-        />
-        <Chip
-          label={t.form.capacityRangeToggle}
-          active={capacityRange}
-          onPress={() => {
-            setCapacityRange(true);
-            if (!maxCapacity.trim() && desiredCapacity.trim()) {
-              setMaxCapacity(desiredCapacity);
-            }
-          }}
-        />
+        <Chip label={t.form.capacityExact} active={!capacityRange} onPress={() => setCapacityMode(false)} />
+        <Chip label={t.form.capacityRangeToggle} active={capacityRange} onPress={() => setCapacityMode(true)} />
       </View>
       {capacityRange ? (
         <View style={styles.capacityRow}>
@@ -936,9 +925,22 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 }
 
 const styles = StyleSheet.create({
-  wrap: { padding: theme.space.md, paddingBottom: 48, backgroundColor: theme.colors.background },
-  section: { fontWeight: '700', marginTop: 8, marginBottom: 8, color: theme.colors.text },
-  row: { flexDirection: 'row', marginBottom: 12, flexWrap: 'wrap' },
+  wrap: {
+    padding: theme.space.md,
+    paddingBottom: 48,
+    backgroundColor: theme.colors.background,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+  },
+  section: {
+    fontWeight: '700',
+    marginTop: 8,
+    marginBottom: 8,
+    color: theme.colors.text,
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  row: { flexDirection: 'row', marginBottom: 12, flexWrap: 'wrap', alignItems: 'center', width: '100%' },
   rowWrap: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 12, gap: 4 },
   capacityRow: { flexDirection: 'row', gap: 12 },
   ruleCard: {

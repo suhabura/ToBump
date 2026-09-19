@@ -96,7 +96,7 @@ export function Button({
 export function Input(props: TextInputProps & { label?: string; error?: string; containerStyle?: ViewStyle }) {
   const { label, error, style, containerStyle, ...rest } = props;
   return (
-    <View style={[{ marginBottom: theme.space.md }, containerStyle]}>
+    <View style={[{ marginBottom: theme.space.md, width: '100%', alignSelf: 'stretch' }, containerStyle]}>
       {label ? <Text style={styles.label}>{label}</Text> : null}
       <TextInput
         placeholderTextColor={theme.colors.textMuted}
@@ -127,8 +127,16 @@ export function Chip({
   onPress?: () => void;
 }) {
   return (
-    <Pressable onPress={onPress} style={[styles.chip, active && styles.chipActive]}>
-      <Text style={[styles.chipText, active && styles.chipTextActive]}>{label}</Text>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: Boolean(active) }}
+      style={({ pressed }) => [
+        styles.chip,
+        active ? styles.chipActive : null,
+        pressed ? { opacity: 0.88 } : null,
+      ]}>
+      <Text style={[styles.chipText, active ? styles.chipTextActive : null]}>{label}</Text>
     </Pressable>
   );
 }
@@ -189,6 +197,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14,
     paddingVertical: 12,
     minHeight: 48,
+    width: '100%',
     fontSize: 16,
     color: theme.colors.text,
   },
@@ -264,6 +273,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     marginRight: 8,
+    alignSelf: 'flex-start',
+    justifyContent: 'center',
+    flexShrink: 0,
   },
   chipActive: {
     backgroundColor: theme.colors.primary,
