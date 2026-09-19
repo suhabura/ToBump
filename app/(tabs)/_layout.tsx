@@ -11,16 +11,19 @@ function TabIcon({ name, color }: { name: React.ComponentProps<typeof FontAwesom
   return <FontAwesome size={22} name={name} color={color} style={{ marginBottom: -2 }} />;
 }
 
-function BrandHeader() {
+function BrandHeader({ title }: { title: string }) {
   const t = useT();
   return (
-    <View style={styles.brandHeader}>
+    <View style={styles.brandHeader} accessibilityRole="header">
       <Image
         source={require('../../assets/brand/logo-horizontal.png')}
         style={styles.brandLogo}
         resizeMode="contain"
         accessibilityLabel={t.appName}
       />
+      <Text style={styles.brandTab} numberOfLines={1}>
+        {title}
+      </Text>
     </View>
   );
 }
@@ -119,14 +122,15 @@ export default function TabLayout() {
         tabBarStyle: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border },
         headerStyle: { backgroundColor: theme.colors.surface },
         headerTintColor: theme.colors.text,
-        headerTitle: () => <BrandHeader />,
         headerTitleAlign: 'left',
+        headerTitleContainerStyle: { maxWidth: '78%' },
         headerRight: () => <HeaderActions unread={unread} />,
       }}>
       <Tabs.Screen
         name="index"
         options={{
           title: t.tabs.events,
+          headerTitle: () => <BrandHeader title={t.tabs.events} />,
           tabBarIcon: ({ color }) => <TabIcon name="calendar" color={String(color)} />,
         }}
       />
@@ -134,6 +138,7 @@ export default function TabLayout() {
         name="planner"
         options={{
           title: t.tabs.planner,
+          headerTitle: () => <BrandHeader title={t.tabs.planner} />,
           tabBarIcon: ({ color }) => <TabIcon name="list-alt" color={String(color)} />,
         }}
       />
@@ -141,6 +146,7 @@ export default function TabLayout() {
         name="friends"
         options={{
           title: t.tabs.friends,
+          headerTitle: () => <BrandHeader title={t.tabs.friends} />,
           tabBarBadge: pendingFriends > 0 ? pendingFriends : undefined,
           tabBarIcon: ({ color }) => <TabIcon name="users" color={String(color)} />,
         }}
@@ -149,6 +155,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: t.tabs.profile,
+          headerTitle: () => <BrandHeader title={t.tabs.profile} />,
           tabBarIcon: ({ color }) => <TabIcon name="user" color={String(color)} />,
         }}
       />
@@ -187,11 +194,20 @@ const styles = StyleSheet.create({
   brandHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    height: 40,
+    gap: 10,
+    height: 36,
+    maxWidth: '100%',
   },
   brandLogo: {
-    height: 32,
-    width: 168,
+    height: 24,
+    width: 76,
+  },
+  brandTab: {
+    flexShrink: 1,
+    fontSize: 17,
+    fontWeight: '700',
+    color: theme.colors.text,
+    letterSpacing: -0.2,
   },
   badge: {
     position: 'absolute',
