@@ -35,6 +35,8 @@ type Props = {
   onDraftChange?: (text: string) => void;
   /** Clear selection (shows × on the selected cloud). */
   onClear?: () => void;
+  /** When false, do not repeat the typed/selected address under the input. */
+  showSelectionCard?: boolean;
 };
 
 export function LocationField({
@@ -49,6 +51,7 @@ export function LocationField({
   allowManualConfirm = false,
   onDraftChange,
   onClear,
+  showSelectionCard = true,
 }: Props) {
   const t = useT();
   const [query, setQuery] = useState(address);
@@ -257,7 +260,7 @@ export function LocationField({
 
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
-      {allowManualConfirm ? (
+      {showSelectionCard && allowManualConfirm ? (
         hasSelection ? (
           <View style={styles.selectedCloud}>
             <View style={styles.selectedCloudBody}>
@@ -306,9 +309,9 @@ export function LocationField({
             {t.location.openMaps}
           </Text>
         </Muted>
-      ) : (
+      ) : showSelectionCard ? (
         <Muted>{t.location.pickHint}</Muted>
-      )}
+      ) : null}
     </View>
   );
 }
