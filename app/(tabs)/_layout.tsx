@@ -1,7 +1,7 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import { theme } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useT } from '@/i18n';
@@ -9,6 +9,20 @@ import { supabase } from '@/lib/supabase';
 
 function TabIcon({ name, color }: { name: React.ComponentProps<typeof FontAwesome>['name']; color: string }) {
   return <FontAwesome size={22} name={name} color={color} style={{ marginBottom: -2 }} />;
+}
+
+function BrandHeader() {
+  const t = useT();
+  return (
+    <View style={styles.brandHeader}>
+      <Image
+        source={require('../../assets/brand/logo-horizontal.png')}
+        style={styles.brandLogo}
+        resizeMode="contain"
+        accessibilityLabel={t.appName}
+      />
+    </View>
+  );
 }
 
 function HeaderActions({ unread }: { unread: number }) {
@@ -105,6 +119,8 @@ export default function TabLayout() {
         tabBarStyle: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border },
         headerStyle: { backgroundColor: theme.colors.surface },
         headerTintColor: theme.colors.text,
+        headerTitle: () => <BrandHeader />,
+        headerTitleAlign: 'left',
         headerRight: () => <HeaderActions unread={unread} />,
       }}>
       <Tabs.Screen
@@ -141,20 +157,42 @@ export default function TabLayout() {
       <Tabs.Screen name="chat" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="enterprise" options={{ href: null, headerShown: false }} />
       <Tabs.Screen name="shop" options={{ href: null, headerShown: false }} />
-      <Tabs.Screen name="groups" options={{ href: null, title: 'Groups', presentation: 'modal' }} />
+      <Tabs.Screen
+        name="groups"
+        options={{ href: null, title: 'Groups', headerTitle: 'Groups', presentation: 'modal' }}
+      />
       <Tabs.Screen
         name="payments"
-        options={{ href: null, title: t.finance.myPayments, presentation: 'modal' }}
+        options={{
+          href: null,
+          title: t.finance.myPayments,
+          headerTitle: t.finance.myPayments,
+          presentation: 'modal',
+        }}
       />
       <Tabs.Screen
         name="notifications"
-        options={{ href: null, title: t.notifications.title, presentation: 'modal' }}
+        options={{
+          href: null,
+          title: t.notifications.title,
+          headerTitle: t.notifications.title,
+          presentation: 'modal',
+        }}
       />
     </Tabs>
   );
 }
 
 const styles = StyleSheet.create({
+  brandHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 40,
+  },
+  brandLogo: {
+    height: 32,
+    width: 168,
+  },
   badge: {
     position: 'absolute',
     top: -4,
