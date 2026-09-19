@@ -274,7 +274,7 @@ async function searchPhoton(query: string, bias?: GeoPoint | null, useBbox = fal
   const bbox = `${SI_BBOX.minLon},${SI_BBOX.minLat},${SI_BBOX.maxLon},${SI_BBOX.maxLat}`;
   const url =
     `https://photon.komoot.io/api/?q=${encodeURIComponent(query)}` +
-    `&lang=sl&limit=10&lat=${center.latitude}&lon=${center.longitude}` +
+    `&lang=default&limit=10&lat=${center.latitude}&lon=${center.longitude}` +
     (useBbox ? `&bbox=${bbox}` : '');
   try {
     const res = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
