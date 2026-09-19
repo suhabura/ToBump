@@ -618,6 +618,25 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       <Muted>{isCategorized ? t.venue.freeTextHint : t.form.uncategorizedVenueHint}</Muted>
 
       <Text style={styles.section}>{t.events.capacity}</Text>
+      <View style={styles.row}>
+        <Chip
+          label={t.form.capacityRangeToggle}
+          active={capacityRange}
+          onPress={() => {
+            setCapacityRange((on) => {
+              const next = !on;
+              if (next) {
+                if (!maxCapacity.trim() && desiredCapacity.trim()) {
+                  setMaxCapacity(desiredCapacity);
+                }
+              } else if (!desiredCapacity.trim()) {
+                setDesiredCapacity(maxCapacity || minCapacity);
+              }
+              return next;
+            });
+          }}
+        />
+      </View>
       {capacityRange ? (
         <View style={styles.capacityRow}>
           <View style={{ flex: 1 }}>
@@ -648,25 +667,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           placeholder="—"
         />
       )}
-      <View style={styles.row}>
-        <Chip
-          label={t.form.capacityRangeToggle}
-          active={capacityRange}
-          onPress={() => {
-            setCapacityRange((on) => {
-              const next = !on;
-              if (next) {
-                if (!maxCapacity.trim() && desiredCapacity.trim()) {
-                  setMaxCapacity(desiredCapacity);
-                }
-              } else if (!desiredCapacity.trim()) {
-                setDesiredCapacity(maxCapacity || minCapacity);
-              }
-              return next;
-            });
-          }}
-        />
-      </View>
       <Muted>{t.form.capacityHint}</Muted>
 
       <Text style={styles.section}>{req(t.form.recurrence)}</Text>
