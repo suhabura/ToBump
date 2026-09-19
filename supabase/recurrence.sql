@@ -229,9 +229,11 @@ declare
   opened uuid;
   deleted int := 0;
 begin
-  -- Enkratni, ki so se že začeli
+  -- Enkratni: izginejo iz seznamov v trenutku začetka (status completed)
   with gone as (
-    delete from public.activities a
+    update public.activities a
+    set status = 'completed',
+        updated_at = now()
     where a.status = 'active'
       and coalesce(a.is_recurring, false) = false
       and a.starts_at <= now()

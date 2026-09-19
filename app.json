@@ -11,13 +11,13 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.tobump.mobile",
       "infoPlist": {
-        "NSPhotoLibraryUsageDescription": "Used to upload your profile photo.",
+        "ITSAppUsesNonExemptEncryption": false,
         "NSLocationWhenInUseUsageDescription": "Used to set your profile location and find nearby venues."
       }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#0B6E4F",
+        "backgroundColor": "#2BB8E8",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
@@ -43,19 +43,13 @@
         {
           "image": "./assets/images/splash-icon.png",
           "resizeMode": "contain",
-          "backgroundColor": "#0B6E4F"
+          "backgroundColor": "#2BB8E8"
         }
       ],
       [
         "expo-notifications",
         {
-          "color": "#0B6E4F"
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Used to upload your profile photo."
+          "color": "#2BB8E8"
         }
       ],
       [

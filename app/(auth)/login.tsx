@@ -1,6 +1,6 @@
 import { Link } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Input, Muted, Title } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { useT } from '@/i18n';
@@ -42,7 +42,12 @@ export default function LoginScreen() {
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={styles.wrap} keyboardShouldPersistTaps="handled">
         <View style={styles.hero}>
-          <Text style={styles.brand}>{t.appName}</Text>
+          <Image
+            source={require('../../assets/brand/logo-horizontal.png')}
+            style={styles.logo}
+            resizeMode="contain"
+            accessibilityLabel={t.appName}
+          />
           <Muted>{t.tagline}</Muted>
         </View>
 
@@ -92,12 +97,12 @@ const styles = StyleSheet.create({
   },
   hero: {
     marginBottom: theme.space.xl,
+    alignItems: 'flex-start',
+    gap: theme.space.sm,
   },
-  brand: {
-    fontSize: 40,
-    fontWeight: '800',
-    color: theme.colors.primary,
-    letterSpacing: -0.5,
+  logo: {
+    width: 280,
+    height: 88,
   },
   link: {
     marginTop: theme.space.md,

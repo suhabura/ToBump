@@ -114,13 +114,12 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [showEditors, setShowEditors] = useState(Boolean(initial?.editor_user_ids?.length));
   const [isRecurring, setIsRecurring] = useState(Boolean(initial?.is_recurring));
   const [financeEnabled, setFinanceEnabled] = useState(Boolean(initial?.finance_enabled));
-  const [fundingMode, setFundingMode] = useState<FundingMode>(
-    initial?.funding_mode && ['per_event', 'monthly', 'fixed', 'annual'].includes(initial.funding_mode)
-      ? initial.funding_mode === 'annual'
-        ? 'fixed'
-        : (initial.funding_mode as FundingMode)
-      : 'per_event'
-  );
+  const [fundingMode, setFundingMode] = useState<FundingMode>(() => {
+    const raw = initial?.funding_mode;
+    if (raw === 'annual' || raw === 'fixed') return 'fixed';
+    if (raw === 'per_event') return 'per_event';
+    return 'per_event';
+  });
   const [payerIds, setPayerIds] = useState<string[]>(initial?.payer_user_ids ?? []);
   const [payersTouched, setPayersTouched] = useState(
     Boolean(initial?.payer_user_ids?.length) || initial?.who_pays === 'group'
@@ -695,6 +694,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       <Muted>{t.form.capacityHint}</Muted>
 
       <Text style={styles.section}>{req(t.form.whoInvite)}</Text>
+      {activityId && isRecurring ? <Muted>{t.events.seriesInviteEditHint}</Muted> : null}
       <View style={styles.row}>
         {(
           [
@@ -900,18 +900,11 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
               onPress={() => setFundingMode('per_event')}
             />
             {isRecurring ? (
-              <>
-                <Chip
-                  label={t.form.payMonthly}
-                  active={fundingMode === 'monthly'}
-                  onPress={() => setFundingMode('monthly')}
-                />
-                <Chip
-                  label={t.form.payFixed}
-                  active={fundingMode === 'fixed' || fundingMode === 'annual'}
-                  onPress={() => setFundingMode('fixed')}
-                />
-              </>
+              <Chip
+                label={t.form.payFixed}
+                active={fundingMode === 'fixed' || fundingMode === 'annual'}
+                onPress={() => setFundingMode('fixed')}
+              />
             ) : null}
           </View>
           <Muted>{t.form.whoPays}</Muted>
@@ -947,11 +940,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           <Muted>{t.form.groupExpandsToPeople}</Muted>
           <Input
             label={
-              fundingMode === 'monthly'
-                ? t.form.priceMonthly
-                : fundingMode === 'fixed' || fundingMode === 'annual'
-                  ? t.form.priceFixed
-                  : t.form.pricePerEvent
+              fundingMode === 'fixed' || fundingMode === 'annual'
+                ? t.form.priceFixed
+                : t.form.pricePerEvent
             }
             value={price}
             onChangeText={setPrice}
@@ -959,11 +950,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             placeholder="0"
           />
           <Muted>
-            {fundingMode === 'monthly'
-              ? t.form.priceMonthlyHint
-              : fundingMode === 'fixed' || fundingMode === 'annual'
-                ? t.form.priceFixedHint
-                : t.form.pricePerEventHint}
+            {fundingMode === 'fixed' || fundingMode === 'annual'
+              ? t.form.priceFixedHint
+              : t.form.pricePerEventHint}
           </Muted>
         </View>
       ) : null}

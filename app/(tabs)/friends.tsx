@@ -1,6 +1,6 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Platform, StyleSheet, Text, View } from 'react-native';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { createNotification } from '@/lib/api';
@@ -200,6 +200,38 @@ export default function FriendsScreen() {
     load();
   }
 
+  async function removeFriend(row: FriendRow) {
+    if (!user || !row.other?.id) return;
+    const otherId = row.other.id;
+    const name = displayName(row.other);
+
+    const run = async () => {
+      const { error } = await supabase
+        .from('friendships')
+        .delete()
+        .or(
+          `and(from_user_id.eq.${user.id},to_user_id.eq.${otherId}),and(from_user_id.eq.${otherId},to_user_id.eq.${user.id})`
+        );
+      if (error) {
+        Alert.alert(t.common.error, t.friends.removeFailed);
+        return;
+      }
+      await load();
+    };
+
+    if (Platform.OS === 'web') {
+      if (typeof window !== 'undefined' && window.confirm(t.friends.removeConfirm(name))) {
+        await run();
+      }
+      return;
+    }
+
+    Alert.alert(t.friends.removeConfirmTitle, t.friends.removeConfirm(name), [
+      { text: t.common.cancel, style: 'cancel' },
+      { text: t.friends.remove, style: 'destructive', onPress: () => void run() },
+    ]);
+  }
+
   if (loading) return <Loading />;
 
   return (
@@ -251,10 +283,17 @@ export default function FriendsScreen() {
           ListEmptyComponent={<EmptyState title={t.friends.empty} />}
           renderItem={({ item }) => (
             <View style={styles.row}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.name}>{displayName(item.other)}</Text>
                 <Muted>{item.other?.email}</Muted>
               </View>
+              <Button
+                label={t.friends.remove}
+                variant="dangerOutline"
+                size="sm"
+                icon="user-times"
+                onPress={() => void removeFriend(item)}
+              />
             </View>
           )}
         />

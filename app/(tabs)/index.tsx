@@ -72,6 +72,7 @@ export default function EventsScreen() {
     if (nextStart == null) return;
     const delay = Math.min(Math.max(nextStart - now + 100, 100), 2_147_483_647);
     const timer = setTimeout(() => {
+      setItems((prev) => prev.filter((a) => new Date(a.starts_at).getTime() > Date.now()));
       void load({ silent: true });
     }, delay);
     return () => clearTimeout(timer);

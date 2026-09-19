@@ -686,7 +686,11 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
                               <Pressable
                                 onPress={() => {
                                   setEditing(true);
-                                  setEditMode(detailRow.mode === 'annual' ? 'fixed' : detailRow.mode);
+                                  setEditMode(
+                                    detailRow.mode === 'annual' || detailRow.mode === 'fixed'
+                                      ? 'fixed'
+                                      : 'per_event'
+                                  );
                                   setEditAmount(String(detailRow.amount));
                                 }}>
                                 <Text style={styles.link}>{t.finance.editPerson}</Text>
@@ -707,18 +711,11 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
                                   onPress={() => setEditMode('per_event')}
                                 />
                                 {activity.is_recurring ? (
-                                  <>
-                                    <Chip
-                                      label={t.form.payMonthly}
-                                      active={editMode === 'monthly'}
-                                      onPress={() => setEditMode('monthly')}
-                                    />
-                                    <Chip
-                                      label={t.form.payFixed}
-                                      active={editMode === 'fixed'}
-                                      onPress={() => setEditMode('fixed')}
-                                    />
-                                  </>
+                                  <Chip
+                                    label={t.form.payFixed}
+                                    active={editMode === 'fixed'}
+                                    onPress={() => setEditMode('fixed')}
+                                  />
                                 ) : null}
                               </View>
                               <Input

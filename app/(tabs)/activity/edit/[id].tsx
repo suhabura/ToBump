@@ -95,13 +95,17 @@ export default function EditActivityScreen() {
         /* settings table may be missing */
       }
 
+      const seriesInviteIds = Array.isArray(act.series_invite_user_ids)
+        ? act.series_invite_user_ids
+        : [];
+      const occurrenceInviteIds = (invites ?? []).map((i: { user_id: string }) => i.user_id);
       setInitial({
         title: act.title,
         starts_at: act.starts_at,
         ends_at: act.ends_at,
         price,
         max_participants: act.max_participants,
-        privacy: act.privacy,
+        privacy: (act.series_privacy as Privacy) ?? act.privacy,
         enterprise_id: act.enterprise_id,
         venue_text:
           act.venue_text ??
@@ -109,8 +113,8 @@ export default function EditActivityScreen() {
         venue_latitude: act.venue_latitude ?? null,
         venue_longitude: act.venue_longitude ?? null,
         category_id: act.category_id,
-        group_id: act.group_id,
-        invite_user_ids: (invites ?? []).map((i: { user_id: string }) => i.user_id),
+        group_id: act.series_group_id ?? act.group_id,
+        invite_user_ids: seriesInviteIds.length ? seriesInviteIds : occurrenceInviteIds,
         editor_user_ids: (editors ?? []).map((e: { user_id: string }) => e.user_id),
         is_recurring: act.is_recurring,
         finance_enabled: Boolean(act.finance_enabled),

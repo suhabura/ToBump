@@ -81,7 +81,11 @@ begin
   end if;
 
   if rules is null or jsonb_array_length(rules) = 0 then
-    delete from public.activities where id = cur.id;
+    -- Keep past occurrence for Planner history (do not delete joins)
+  update public.activities
+  set status = 'completed',
+      updated_at = now()
+  where id = cur.id;
     return null;
   end if;
 
@@ -90,7 +94,11 @@ begin
   where previous_activity_id = cur.id
   limit 1;
   if existing is not null then
-    delete from public.activities where id = cur.id;
+    -- Keep past occurrence for Planner history (do not delete joins)
+  update public.activities
+  set status = 'completed',
+      updated_at = now()
+  where id = cur.id;
     return existing;
   end if;
 
@@ -133,13 +141,21 @@ begin
   end loop;
 
   if nxt_start is null then
-    delete from public.activities where id = cur.id;
+    -- Keep past occurrence for Planner history (do not delete joins)
+  update public.activities
+  set status = 'completed',
+      updated_at = now()
+  where id = cur.id;
     return null;
   end if;
 
   nxt_day := (nxt_start at time zone 'Europe/Ljubljana')::date;
   if until_day is not null and nxt_day > until_day then
-    delete from public.activities where id = cur.id;
+    -- Keep past occurrence for Planner history (do not delete joins)
+  update public.activities
+  set status = 'completed',
+      updated_at = now()
+  where id = cur.id;
     return null;
   end if;
 
@@ -189,7 +205,11 @@ begin
   set activity_id = new_id
   where activity_id = cur.id;
 
-  delete from public.activities where id = cur.id;
+  -- Keep past occurrence for Planner history (do not delete joins)
+  update public.activities
+  set status = 'completed',
+      updated_at = now()
+  where id = cur.id;
 
   return new_id;
 end;
@@ -236,7 +256,11 @@ begin
   end if;
 
   if not cur.is_recurring then
-    delete from public.activities where id = cur.id;
+    -- Keep past occurrence for Planner history (do not delete joins)
+  update public.activities
+  set status = 'completed',
+      updated_at = now()
+  where id = cur.id;
     return null;
   end if;
 
@@ -245,7 +269,11 @@ begin
   where previous_activity_id = cur.id
   limit 1;
   if existing is not null then
-    delete from public.activities where id = cur.id;
+    -- Keep past occurrence for Planner history (do not delete joins)
+  update public.activities
+  set status = 'completed',
+      updated_at = now()
+  where id = cur.id;
     return existing;
   end if;
 
@@ -284,7 +312,11 @@ begin
   end if;
 
   if rules is null or jsonb_array_length(rules) = 0 then
-    delete from public.activities where id = cur.id;
+    -- Keep past occurrence for Planner history (do not delete joins)
+  update public.activities
+  set status = 'completed',
+      updated_at = now()
+  where id = cur.id;
     return null;
   end if;
 
@@ -327,13 +359,21 @@ begin
   end loop;
 
   if nxt_start is null then
-    delete from public.activities where id = cur.id;
+    -- Keep past occurrence for Planner history (do not delete joins)
+  update public.activities
+  set status = 'completed',
+      updated_at = now()
+  where id = cur.id;
     return null;
   end if;
 
   nxt_day := (nxt_start at time zone 'Europe/Ljubljana')::date;
   if until_day is not null and nxt_day > until_day then
-    delete from public.activities where id = cur.id;
+    -- Keep past occurrence for Planner history (do not delete joins)
+  update public.activities
+  set status = 'completed',
+      updated_at = now()
+  where id = cur.id;
     return null;
   end if;
 
@@ -379,7 +419,11 @@ begin
   set activity_id = new_id
   where activity_id = cur.id;
 
-  delete from public.activities where id = cur.id;
+  -- Keep past occurrence for Planner history (do not delete joins)
+  update public.activities
+  set status = 'completed',
+      updated_at = now()
+  where id = cur.id;
 
   return new_id;
 end;

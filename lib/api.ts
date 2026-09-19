@@ -132,6 +132,9 @@ export async function fetchActivities(opts: {
   if (error) throw error;
 
   let activities = (data ?? []) as ActivityWithRelations[];
+  // Past events never appear on Events (one-time or recurring occurrence that already started)
+  const nowMs = Date.now();
+  activities = activities.filter((a) => new Date(a.starts_at).getTime() > nowMs);
   activities = await hydrateCategoryParents(activities);
 
   const [{ data: joins }, { data: invites }, { data: friendships }] = await Promise.all([
@@ -550,7 +553,26 @@ export async function userCanEditActivity(activityId: string, userId: string) {
 }
 
 export async function processDueRecurringActivities() {
-  await supabase.rpc('process_due_recurring_activities');
+  const now = new Date().toISOString();
+  const { error } = await supabase.rpc('process_due_recurring_activities');
+
+  if (error) {
+    const { data: dueRecurring } = await supabase
+      .from('activities')
+      .select('id')
+      .eq('status', 'active')
+      .eq('is_recurring', true)
+      .lte('starts_at', now);
+    for (const row of dueRecurring ?? []) {
+      await supabase.rpc('open_next_recurring_activity', { p_activity_id: row.id });
+    }
+    await supabase
+      .from('activities')
+      .update({ status: 'completed', updated_at: now })
+      .eq('status', 'active')
+      .eq('is_recurring', false)
+      .lte('starts_at', now);
+  }
 }
 
 /** Delete one occurrence (series continues) or the whole series / single event. */
@@ -750,7 +772,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     }
     const { data: existing, error: loadError } = await supabase
       .from('activities')
-      .select('created_by')
+      .select('created_by, series_id, is_recurring, starts_at')
       .eq('id', activityId)
       .maybeSingle();
     if (loadError) throw loadError;
@@ -759,9 +781,57 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     // created_by must stay the original creator
     delete payload.created_by;
 
+    const seriesGroupId = input.privacy === 'group' ? input.group_id || null : null;
+    if (existing.is_recurring || input.is_recurring) {
+      payload.series_privacy = input.privacy;
+      payload.series_group_id = seriesGroupId;
+      payload.series_invite_user_ids = inviteIds;
+    }
+
     const { error } = await supabase.from('activities').update(payload).eq('id', activityId);
     if (error) throw error;
     await supabase.from('activity_invites').delete().eq('activity_id', activityId);
+
+    // Invite/privacy template applies to this + all upcoming occurrences in the series
+    if (existing.is_recurring) {
+      const sid = existing.series_id ?? activityId;
+      const fromStarts = existing.starts_at as string;
+      await supabase
+        .from('activities')
+        .update({
+          series_privacy: input.privacy,
+          series_group_id: seriesGroupId,
+          series_invite_user_ids: inviteIds,
+          privacy: input.privacy,
+          group_id: seriesGroupId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('series_id', sid)
+        .eq('status', 'active')
+        .gte('starts_at', fromStarts);
+
+      const { data: futureActs } = await supabase
+        .from('activities')
+        .select('id')
+        .eq('series_id', sid)
+        .eq('status', 'active')
+        .gte('starts_at', fromStarts);
+      const futureIds = (futureActs ?? [])
+        .map((a: { id: string }) => a.id)
+        .filter((fid: string) => fid !== activityId);
+
+      for (const fid of futureIds) {
+        await supabase.from('activity_invites').delete().eq('activity_id', fid);
+        if (inviteIds.length) {
+          const rows = Array.from(new Set(inviteIds)).map((uid) => ({
+            activity_id: fid,
+            user_id: uid,
+            invited_by: userId,
+          }));
+          await supabase.from('activity_invites').upsert(rows, { onConflict: 'activity_id,user_id' });
+        }
+      }
+    }
 
     if (access.isCreator) {
       await syncActivityEditors(activityId, userId, input.editor_user_ids ?? [], input.title);

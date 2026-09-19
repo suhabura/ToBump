@@ -5,6 +5,7 @@ import { useCallback, useRef, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Button, Chip, EmptyState, Loading, Muted, Screen, Subtitle, Title } from '@/components/ui';
+import { ActivityExtraInvitePanel } from '@/components/ActivityExtraInvitePanel';
 import { ActivityFinancePanel } from '@/components/ActivityFinancePanel';
 import { ActivityGuestsPanel } from '@/components/ActivityGuestsPanel';
 import { useAuth } from '@/contexts/AuthContext';
@@ -414,6 +415,14 @@ export default function ActivityDetailScreen() {
           guestsOnEvent={guests}
           onChanged={load}
         />
+
+        {canEdit && user ? (
+          <ActivityExtraInvitePanel
+            activity={activity}
+            userId={user.id}
+            onChanged={() => void load({ silent: true })}
+          />
+        ) : null}
           </>
         )}
       </ScrollView>
