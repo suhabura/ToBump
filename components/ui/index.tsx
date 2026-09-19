@@ -228,7 +228,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   btnPrimary: {
-    backgroundColor: theme.colors.primary,
+    backgroundColor: theme.colors.accent,
   },
   btnSecondary: {
     backgroundColor: theme.colors.primarySoft,

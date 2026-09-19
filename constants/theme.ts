@@ -1,25 +1,25 @@
 export const theme = {
   colors: {
-    // ToBump CGP v2 — sand + deep teal
-    primary: '#1F6B73',
-    primaryDark: '#154F55',
-    primarySoft: '#D3E0DE',
-    primaryMuted: '#B7CBC9',
-    accent: '#C96A4A',
-    background: '#E4DCCE',
-    surface: '#EFE8DB',
-    surfaceElevated: '#F6F0E4',
+    // ToBump CGP v3 — Igrišče: organizacija (trava) + gibanje (terakota)
+    primary: '#4A7A52',
+    primaryDark: '#355A3C',
+    primarySoft: '#DCE6DC',
+    primaryMuted: '#B7C9B8',
+    accent: '#C45C38',
+    background: '#E5E8E1',
+    surface: '#F3F5F0',
+    surfaceElevated: '#F7F8F5',
     text: '#1A1F1E',
-    textMuted: '#6B6560',
-    border: '#D4CBBA',
-    borderStrong: '#C4B8A4',
+    textMuted: '#5F6861',
+    border: '#D0D6CC',
+    borderStrong: '#B8C2B6',
     danger: '#C0392B',
     dangerSoft: '#F3E4DE',
     success: '#3E8A68',
     warning: '#C47A1A',
     warningSoft: '#F0E4C8',
-    infoSoft: '#D3E0DE',
-    info: '#154F55',
+    infoSoft: '#DCE6DC',
+    info: '#355A3C',
   },
   radius: {
     sm: 10,
@@ -35,7 +35,7 @@ export const theme = {
   },
   shadow: {
     card: {
-      shadowColor: '#154F55',
+      shadowColor: '#355A3C',
       shadowOpacity: 0.08,
       shadowRadius: 12,
       shadowOffset: { width: 0, height: 4 },
