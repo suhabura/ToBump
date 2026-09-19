@@ -678,106 +678,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       )}
       <Muted>{t.form.capacityHint}</Muted>
 
-      <Text style={styles.section}>{req(t.form.recurrence)}</Text>
-      <View style={styles.row}>
-        <Chip label={t.events.once} active={!isRecurring} onPress={() => setRecurring(false)} />
-        <Chip label={t.events.recurring} active={isRecurring} onPress={() => setRecurring(true)} />
-      </View>
-      {isRecurring ? (
-        <View>
-          <Muted>{t.form.recurrenceHint}</Muted>
-          <View style={styles.rowWrap}>
-            {WEEKDAY_OPTIONS.map((d) => (
-              <Chip
-                key={d.value}
-                label={d.short}
-                active={rules.some((r) => r.weekday === d.value)}
-                onPress={() => toggleWeekday(d.value)}
-              />
-            ))}
-          </View>
-          {rules.length ? <Muted>{formatRecurrence(rules)}</Muted> : null}
-        </View>
-      ) : null}
-
-      <DateTimeField label={req(t.events.starts)} value={startsAt} onChange={setStartsAt} minimumDate={new Date()} />
-      <View style={{ marginBottom: theme.space.md }}>
-        <Text style={styles.durationLabel}>{req(t.form.duration)}</Text>
-        <View style={styles.durationRow}>
-          <View style={styles.durationBlock}>
-            <Chip label="−1h" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 60))} />
-            <Chip label="−30m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 30))} />
-            <Chip label="−15m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 15))} />
-            <Text style={styles.durationValue}>{formatDuration(durationMinutes)}</Text>
-            <Chip label="+15m" active={false} onPress={() => setDurationMinutes((m) => m + 15)} />
-            <Chip label="+30m" active={false} onPress={() => setDurationMinutes((m) => m + 30)} />
-            <Chip label="+1h" active={false} onPress={() => setDurationMinutes((m) => m + 60)} />
-          </View>
-        </View>
-      </View>
-      {isRecurring ? (
-        <DateTimeField
-          label={req(t.form.seriesEnds)}
-          value={recurrenceUntil}
-          onChange={setRecurrenceUntil}
-          mode="date"
-          minimumDate={startsAt ?? new Date()}
-        />
-      ) : null}
-
-      <Text style={styles.section}>{t.form.finance}</Text>
-      <Muted>{t.form.financeHint}</Muted>
-      <View style={styles.row}>
-        <Chip
-          label={t.form.financeOff}
-          active={!financeEnabled}
-          onPress={() => setFinanceEnabled(false)}
-        />
-        <Chip
-          label={t.form.financeOn}
-          active={financeEnabled}
-          onPress={() => setFinanceEnabled(true)}
-        />
-      </View>
-      {financeEnabled ? (
-        <View style={{ marginTop: 12, gap: 8 }}>
-          <Muted>{t.form.fundingMode}</Muted>
-          <View style={styles.rowWrap}>
-            <Chip
-              label={t.form.payPerEvent}
-              active={fundingMode === 'per_event'}
-              onPress={() => setFundingMode('per_event')}
-            />
-            {isRecurring ? (
-              <Chip
-                label={t.form.payFixed}
-                active={fundingMode === 'fixed' || fundingMode === 'annual'}
-                onPress={() => setFundingMode('fixed')}
-              />
-            ) : null}
-          </View>
-          <Input
-            label={
-              fundingMode === 'fixed' || fundingMode === 'annual'
-                ? t.form.priceFixed
-                : t.form.pricePerEvent
-            }
-            value={price}
-            onChangeText={setPrice}
-            keyboardType="decimal-pad"
-            placeholder="0"
-          />
-          <Muted>
-            {fundingMode === 'fixed' || fundingMode === 'annual'
-              ? t.form.priceFixedHint
-              : t.form.pricePerEventHint}
-          </Muted>
-          <Muted>{t.form.payersAreAttendees}</Muted>
-        </View>
-      ) : (
-        <Muted>{t.form.financeOffHint}</Muted>
-      )}
-
       <Text style={styles.section}>{req(t.form.whoInvite)}</Text>
       {activityId && isRecurring ? <Muted>{t.events.seriesInviteEditHint}</Muted> : null}
       <View style={styles.row}>
@@ -886,6 +786,106 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           ) : null}
         </View>
       ) : null}
+
+      <Text style={styles.section}>{req(t.form.recurrence)}</Text>
+      <View style={styles.row}>
+        <Chip label={t.events.once} active={!isRecurring} onPress={() => setRecurring(false)} />
+        <Chip label={t.events.recurring} active={isRecurring} onPress={() => setRecurring(true)} />
+      </View>
+      {isRecurring ? (
+        <View>
+          <Muted>{t.form.recurrenceHint}</Muted>
+          <View style={styles.rowWrap}>
+            {WEEKDAY_OPTIONS.map((d) => (
+              <Chip
+                key={d.value}
+                label={d.short}
+                active={rules.some((r) => r.weekday === d.value)}
+                onPress={() => toggleWeekday(d.value)}
+              />
+            ))}
+          </View>
+          {rules.length ? <Muted>{formatRecurrence(rules)}</Muted> : null}
+        </View>
+      ) : null}
+
+      <DateTimeField label={req(t.events.starts)} value={startsAt} onChange={setStartsAt} minimumDate={new Date()} />
+      <View style={{ marginBottom: theme.space.md }}>
+        <Text style={styles.durationLabel}>{req(t.form.duration)}</Text>
+        <View style={styles.durationRow}>
+          <View style={styles.durationBlock}>
+            <Chip label="−1h" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 60))} />
+            <Chip label="−30m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 30))} />
+            <Chip label="−15m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 15))} />
+            <Text style={styles.durationValue}>{formatDuration(durationMinutes)}</Text>
+            <Chip label="+15m" active={false} onPress={() => setDurationMinutes((m) => m + 15)} />
+            <Chip label="+30m" active={false} onPress={() => setDurationMinutes((m) => m + 30)} />
+            <Chip label="+1h" active={false} onPress={() => setDurationMinutes((m) => m + 60)} />
+          </View>
+        </View>
+      </View>
+      {isRecurring ? (
+        <DateTimeField
+          label={req(t.form.seriesEnds)}
+          value={recurrenceUntil}
+          onChange={setRecurrenceUntil}
+          mode="date"
+          minimumDate={startsAt ?? new Date()}
+        />
+      ) : null}
+
+      <Text style={styles.section}>{t.form.finance}</Text>
+      <Muted>{t.form.financeHint}</Muted>
+      <View style={styles.row}>
+        <Chip
+          label={t.form.financeOff}
+          active={!financeEnabled}
+          onPress={() => setFinanceEnabled(false)}
+        />
+        <Chip
+          label={t.form.financeOn}
+          active={financeEnabled}
+          onPress={() => setFinanceEnabled(true)}
+        />
+      </View>
+      {financeEnabled ? (
+        <View style={{ marginTop: 12, gap: 8 }}>
+          <Muted>{t.form.fundingMode}</Muted>
+          <View style={styles.rowWrap}>
+            <Chip
+              label={t.form.payPerEvent}
+              active={fundingMode === 'per_event'}
+              onPress={() => setFundingMode('per_event')}
+            />
+            {isRecurring ? (
+              <Chip
+                label={t.form.payFixed}
+                active={fundingMode === 'fixed' || fundingMode === 'annual'}
+                onPress={() => setFundingMode('fixed')}
+              />
+            ) : null}
+          </View>
+          <Input
+            label={
+              fundingMode === 'fixed' || fundingMode === 'annual'
+                ? t.form.priceFixed
+                : t.form.pricePerEvent
+            }
+            value={price}
+            onChangeText={setPrice}
+            keyboardType="decimal-pad"
+            placeholder="0"
+          />
+          <Muted>
+            {fundingMode === 'fixed' || fundingMode === 'annual'
+              ? t.form.priceFixedHint
+              : t.form.pricePerEventHint}
+          </Muted>
+          <Muted>{t.form.payersAreAttendees}</Muted>
+        </View>
+      ) : (
+        <Muted>{t.form.financeOffHint}</Muted>
+      )}
 
       {isCreator ? (
         <View style={{ marginTop: 16 }}>
