@@ -21,7 +21,21 @@ import {
   seriesKey,
   upsertSeriesFinanceSettings,
 } from '@/lib/finance';
-import { formatDuration, formatRecurrence, hydrateRules, isoWeekday, normalizeRules, rulesFromLegacy, WEEKDAY_OPTIONS, type RecurrenceRule } from '@/lib/recurrence';
+import {
+  firstOccurrence,
+  formatDuration,
+  formatFirstOccurrence,
+  formatRecurrence,
+  hydrateRules,
+  isoWeekday,
+  normalizeRules,
+  ruleTimeAsDate,
+  rulesFromLegacy,
+  weekdayLong,
+  weekdayShort,
+  WEEKDAY_OPTIONS,
+  type RecurrenceRule,
+} from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
 import type { Category, Enterprise, FinanceWhoPays, FundingMode, Privacy, Profile } from '@/lib/types';
 import { displayName } from '@/lib/types';
@@ -150,6 +164,12 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     return 'per_event';
   });
   const [rules, setRules] = useState<RecurrenceRule[]>(() => initialRules(initial));
+  const [seriesFromDate, setSeriesFromDate] = useState<Date>(() => {
+    const s = parseInitialDate(initial?.starts_at);
+    const d = s ? new Date(s) : new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  });
   const [recurrenceUntil, setRecurrenceUntil] = useState<Date | null>(() => {
     const raw = (initial as { recurrence_until?: string | null } | undefined)?.recurrence_until;
     if (!raw) return null;
@@ -171,6 +191,11 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     }
     return Array.from(englishKeys).map((key) => categoryDisplayName(key, locale));
   }, [categories, locale]);
+
+  const computedFirst = useMemo(() => {
+    if (!isRecurring) return null;
+    return firstOccurrence(seriesFromDate, rules, { now: new Date(), until: recurrenceUntil });
+  }, [isRecurring, seriesFromDate, rules, recurrenceUntil]);
 
   useEffect(() => {
     const key = resolveActivityCategoryKey(title, locale);
@@ -355,37 +380,22 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       if (prev.some((r) => r.weekday === day)) {
         return prev.filter((r) => r.weekday !== day);
       }
-      const hour = startsAt?.getHours() ?? 19;
-      const minute = startsAt ? (Math.round(startsAt.getMinutes() / 15) * 15) % 60 : 0;
-      return normalizeRules([...prev, { weekday: day, hour, minute, duration_minutes: durationMinutes }]);
+      const template = prev[0];
+      const hour = template?.hour ?? startsAt?.getHours() ?? 18;
+      const minute = template?.minute ?? (startsAt ? (Math.round(startsAt.getMinutes() / 15) * 15) % 60 : 0);
+      const duration = template?.duration_minutes ?? durationMinutes;
+      return normalizeRules([...prev, { weekday: day, hour, minute, duration_minutes: duration }]);
     });
   }
 
-  useEffect(() => {
-    if (!isRecurring || !startsAt) return;
-    const hour = startsAt.getHours();
-    const minute = (Math.round(startsAt.getMinutes() / 15) * 15) % 60;
+  function patchRule(weekday: number, patch: Partial<RecurrenceRule>) {
     setRules((prev) =>
-      prev.length
-        ? normalizeRules(
-            prev.map((r) => ({ ...r, hour, minute, duration_minutes: durationMinutes }))
-          )
-        : prev
+      normalizeRules(prev.map((r) => (r.weekday === weekday ? { ...r, ...patch } : r)))
     );
-  }, [startsAt, durationMinutes, isRecurring]);
+  }
 
   function setRecurring(on: boolean) {
     setIsRecurring(on);
-    if (on && rules.length === 0 && startsAt) {
-      setRules([
-        {
-          weekday: isoWeekday(startsAt),
-          hour: startsAt.getHours(),
-          minute: (Math.round(startsAt.getMinutes() / 15) * 15) % 60,
-          duration_minutes: durationMinutes,
-        },
-      ]);
-    }
     if (!on) {
       setRules([]);
       setRecurrenceUntil(null);
@@ -395,47 +405,52 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
   async function onSave() {
     setFormError(null);
-    if (!title.trim() || !startsAt) {
+    if (!title.trim()) {
       setFormError(t.form.needActivityStart);
       return;
     }
-    if (startsAt.getTime() < Date.now() - 30_000) {
-      setFormError(t.form.pastNotAllowed);
-      return;
-    }
-    const hour = startsAt.getHours();
-    const minute = (Math.round(startsAt.getMinutes() / 15) * 15) % 60;
-    const normalized = normalizeRules(
-      rules.map((r) => ({ ...r, hour, minute, duration_minutes: durationMinutes }))
-    );
+    const normalized = isRecurring ? normalizeRules(rules) : [];
     if (isRecurring && normalized.length === 0) {
       setFormError(t.form.needWeekday);
       return;
     }
-    if (durationMinutes < 15) {
+    if (isRecurring && normalized.some((r) => !r.duration_minutes || r.duration_minutes < 15)) {
+      setFormError(t.form.needDurationPerDay);
+      return;
+    }
+    if (!isRecurring && durationMinutes < 15) {
       setFormError(t.form.minDuration);
       return;
     }
+
     let startToSave = startsAt;
     if (isRecurring) {
-      const startDay = isoWeekday(startsAt);
-      if (!normalized.some((r) => r.weekday === startDay)) {
-        setFormError(t.form.startMustMatchWeekday);
-        return;
-      }
-      const rule = normalized.find((r) => r.weekday === startDay)!;
-      startToSave = new Date(startsAt);
-      startToSave.setHours(rule.hour, rule.minute, 0, 0);
       if (!recurrenceUntil) {
         setFormError(t.form.needSeriesEnd);
         return;
       }
+      const first = firstOccurrence(seriesFromDate, normalized, {
+        now: new Date(),
+        until: recurrenceUntil,
+      });
+      if (!first) {
+        setFormError(t.form.needFirstOccurrence);
+        return;
+      }
+      startToSave = first;
       const untilDay = formatDay(recurrenceUntil);
-      const startDayStr = formatDay(startToSave);
-      if (untilDay < startDayStr) {
+      if (untilDay < formatDay(startToSave)) {
         setFormError(t.form.seriesEndBeforeStart);
         return;
       }
+    } else if (!startToSave) {
+      setFormError(t.form.needActivityStart);
+      return;
+    }
+
+    if (startToSave.getTime() < Date.now() - 30_000) {
+      setFormError(t.form.pastNotAllowed);
+      return;
     }
 
     if (privacy === 'group' && !selectedGroupId) {
@@ -513,7 +528,10 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           category_id,
           starts_at: startToSave.toISOString(),
           ends_at: null,
-          duration_minutes: durationMinutes,
+          duration_minutes: isRecurring
+            ? normalized.find((r) => r.weekday === isoWeekday(startToSave))?.duration_minutes ??
+              durationMinutes
+            : durationMinutes,
           price: priceNum,
           min_participants: minNum,
           max_participants: maxNum,
@@ -795,44 +813,132 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       {isRecurring ? (
         <View>
           <Muted>{t.form.recurrenceHint}</Muted>
+          <Text style={styles.section}>{t.form.daysAndSlots}</Text>
           <View style={styles.rowWrap}>
             {WEEKDAY_OPTIONS.map((d) => (
               <Chip
                 key={d.value}
-                label={d.short}
+                label={weekdayShort(d.value, locale)}
                 active={rules.some((r) => r.weekday === d.value)}
                 onPress={() => toggleWeekday(d.value)}
               />
             ))}
           </View>
-          {rules.length ? <Muted>{formatRecurrence(rules)}</Muted> : null}
-        </View>
-      ) : null}
+          {rules.map((r) => (
+            <View key={r.weekday} style={styles.slotCard}>
+              <Text style={styles.ruleDay}>{weekdayLong(r.weekday, locale)}</Text>
+              <View style={styles.slotRow}>
+                <View style={styles.slotTime}>
+                  <DateTimeField
+                    label={t.form.start}
+                    value={ruleTimeAsDate(r)}
+                    mode="time"
+                    onChange={(d) => {
+                      if (!d) return;
+                      patchRule(r.weekday, {
+                        hour: d.getHours(),
+                        minute: (Math.round(d.getMinutes() / 15) * 15) % 60,
+                      });
+                    }}
+                    containerStyle={{ marginBottom: 0 }}
+                  />
+                </View>
+                <View style={styles.slotDuration}>
+                  <Text style={styles.durationLabel}>{t.form.duration}</Text>
+                  <View style={styles.durationBlock}>
+                    <Chip
+                      label="−1h"
+                      active={false}
+                      onPress={() => patchRule(r.weekday, { duration_minutes: Math.max(15, r.duration_minutes - 60) })}
+                    />
+                    <Chip
+                      label="−30m"
+                      active={false}
+                      onPress={() => patchRule(r.weekday, { duration_minutes: Math.max(15, r.duration_minutes - 30) })}
+                    />
+                    <Chip
+                      label="−15m"
+                      active={false}
+                      onPress={() => patchRule(r.weekday, { duration_minutes: Math.max(15, r.duration_minutes - 15) })}
+                    />
+                    <Text style={styles.durationValue}>{formatDuration(r.duration_minutes)}</Text>
+                    <Chip
+                      label="+15m"
+                      active={false}
+                      onPress={() => patchRule(r.weekday, { duration_minutes: r.duration_minutes + 15 })}
+                    />
+                    <Chip
+                      label="+30m"
+                      active={false}
+                      onPress={() => patchRule(r.weekday, { duration_minutes: r.duration_minutes + 30 })}
+                    />
+                    <Chip
+                      label="+1h"
+                      active={false}
+                      onPress={() => patchRule(r.weekday, { duration_minutes: r.duration_minutes + 60 })}
+                    />
+                  </View>
+                </View>
+              </View>
+            </View>
+          ))}
+          {rules.length ? <Muted>{formatRecurrence(rules, locale)}</Muted> : null}
 
-      <DateTimeField label={req(t.events.starts)} value={startsAt} onChange={setStartsAt} minimumDate={new Date()} />
-      <View style={{ marginBottom: theme.space.md }}>
-        <Text style={styles.durationLabel}>{req(t.form.duration)}</Text>
-        <View style={styles.durationRow}>
-          <View style={styles.durationBlock}>
-            <Chip label="−1h" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 60))} />
-            <Chip label="−30m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 30))} />
-            <Chip label="−15m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 15))} />
-            <Text style={styles.durationValue}>{formatDuration(durationMinutes)}</Text>
-            <Chip label="+15m" active={false} onPress={() => setDurationMinutes((m) => m + 15)} />
-            <Chip label="+30m" active={false} onPress={() => setDurationMinutes((m) => m + 30)} />
-            <Chip label="+1h" active={false} onPress={() => setDurationMinutes((m) => m + 60)} />
+          <DateTimeField
+            label={req(t.form.firstOccurrence)}
+            value={seriesFromDate}
+            mode="date"
+            onChange={(d) => {
+              if (!d) return;
+              const next = new Date(d);
+              next.setHours(0, 0, 0, 0);
+              setSeriesFromDate(next);
+            }}
+            minimumDate={new Date()}
+          />
+          {computedFirst ? (
+            <Muted>
+              {t.form.firstOccurrenceComputed(formatFirstOccurrence(computedFirst, locale))}
+              {` · ${formatDuration(
+                rules.find((r) => r.weekday === isoWeekday(computedFirst))?.duration_minutes ?? durationMinutes
+              )}`}
+            </Muted>
+          ) : rules.length ? (
+            <Muted>{t.form.needFirstOccurrence}</Muted>
+          ) : null}
+
+          <DateTimeField
+            label={req(t.form.seriesEnds)}
+            value={recurrenceUntil}
+            onChange={setRecurrenceUntil}
+            mode="date"
+            minimumDate={computedFirst ?? seriesFromDate}
+          />
+        </View>
+      ) : (
+        <View>
+          <DateTimeField
+            label={req(t.events.starts)}
+            value={startsAt}
+            onChange={setStartsAt}
+            minimumDate={new Date()}
+          />
+          <View style={{ marginBottom: theme.space.md }}>
+            <Text style={styles.durationLabel}>{req(t.form.duration)}</Text>
+            <View style={styles.durationRow}>
+              <View style={styles.durationBlock}>
+                <Chip label="−1h" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 60))} />
+                <Chip label="−30m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 30))} />
+                <Chip label="−15m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 15))} />
+                <Text style={styles.durationValue}>{formatDuration(durationMinutes)}</Text>
+                <Chip label="+15m" active={false} onPress={() => setDurationMinutes((m) => m + 15)} />
+                <Chip label="+30m" active={false} onPress={() => setDurationMinutes((m) => m + 30)} />
+                <Chip label="+1h" active={false} onPress={() => setDurationMinutes((m) => m + 60)} />
+              </View>
+            </View>
           </View>
         </View>
-      </View>
-      {isRecurring ? (
-        <DateTimeField
-          label={req(t.form.seriesEnds)}
-          value={recurrenceUntil}
-          onChange={setRecurrenceUntil}
-          mode="date"
-          minimumDate={startsAt ?? new Date()}
-        />
-      ) : null}
+      )}
 
       <Text style={styles.section}>{t.form.finance}</Text>
       <Muted>{t.form.financeHint}</Muted>
@@ -953,6 +1059,19 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     gap: 6,
   },
+  slotCard: {
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    gap: 8,
+  },
+  slotRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 12 },
+  slotTime: { minWidth: 140, flexGrow: 1, flexBasis: 140 },
+  slotDuration: { minWidth: 220, flexGrow: 2, flexBasis: 220 },
   ruleDay: { fontWeight: '700', color: theme.colors.text, fontSize: 15 },
   ruleSub: { fontSize: 12, fontWeight: '600', color: theme.colors.textMuted, marginTop: 4 },
   ruleTime: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 4 },

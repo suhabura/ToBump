@@ -23,11 +23,12 @@ import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations, Profile } from '@/lib/types';
 import { activityCapacityRange, activityLocationLabel, activityPriceLabel, activityVenuePoint, categoryLabel, displayName } from '@/lib/types';
 import { mapsUrl } from '@/lib/geo';
-import { useT } from '@/i18n';
+import { useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
 export default function ActivityDetailScreen() {
   const t = useT();
+  const { locale } = useLocale();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const router = useRouter();
@@ -275,7 +276,8 @@ export default function ActivityDetailScreen() {
                       activity.duration_minutes ?? 90
                     ),
                 activity.duration_minutes ?? 90
-              )
+              ),
+              locale
             )}
             {activity.recurrence_until
               ? ` · ${t.form.seriesEnds} ${format(new Date(`${activity.recurrence_until}T12:00:00`), 'd MMM yyyy', { locale: enUS })}`

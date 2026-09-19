@@ -273,7 +273,11 @@ export const en = {
     groupEmpty: 'This group has no members yet.',
     recurrence: 'Recurrence',
     recurrenceHint:
-      "Set start and duration for each day. When an occurrence starts, it's removed and the next opens; chat carries over.",
+      'Pick weekdays. Each day has its own start time and duration. When an occurrence starts, it closes and the next opens; chat carries over.',
+    daysAndSlots: 'Days and times',
+    firstOccurrence: 'First occurrence',
+    firstOccurrenceComputed: (when: string) => `First actual occurrence: ${when}`,
+    needFirstOccurrence: 'No upcoming occurrence fits the selected days before the series ends.',
     start: 'Start',
     venuePlaceholder: 'e.g. Central Park, sports court…',
     needActivityStart: 'Activity and start time are required.',

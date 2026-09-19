@@ -23,7 +23,7 @@ import {
 } from 'date-fns';
 import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useMemo, useState } from 'react';
-import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
 import { theme } from '@/constants/theme';
 import { useLocale, useT } from '@/i18n';
 
@@ -39,8 +39,9 @@ type Props = {
   optional?: boolean;
   /** Disallow picking a datetime before this (default: now). */
   minimumDate?: Date;
-  /** date = day only (no time); datetime = day + time (default) */
-  mode?: 'datetime' | 'date';
+  /** date = day only; time = clock only; datetime = day + time (default) */
+  mode?: 'datetime' | 'date' | 'time';
+  containerStyle?: ViewStyle;
 };
 
 export function DateTimeField({
@@ -50,6 +51,7 @@ export function DateTimeField({
   optional,
   minimumDate,
   mode = 'datetime',
+  containerStyle,
 }: Props) {
   const t = useT();
   const { locale } = useLocale();
@@ -63,14 +65,24 @@ export function DateTimeField({
   const display = value
     ? mode === 'date'
       ? format(value, 'EEE, d MMM yyyy', { locale: dfLocale })
-      : format(value, 'EEE, d MMM yyyy · HH:mm', { locale: dfLocale })
+      : mode === 'time'
+        ? format(value, 'HH:mm')
+        : format(value, 'EEE, d MMM yyyy · HH:mm', { locale: dfLocale })
     : optional
       ? t.common.notSet
       : mode === 'date'
         ? 'Pick date'
-        : 'Pick date and time';
+        : mode === 'time'
+          ? 'Pick time'
+          : 'Pick date and time';
 
   function openPicker() {
+    if (mode === 'time') {
+      const base = value ?? setMinutes(setHours(new Date(), 18), 0);
+      setDraft(snapMinutes(base));
+      setOpen(true);
+      return;
+    }
     const base = value && !isBefore(value, startOfDay(min)) ? value : mode === 'date' ? startOfDay(min) : nextSlot(min);
     setDraft(base);
     setMonth(base);
@@ -106,18 +118,24 @@ export function DateTimeField({
   }
 
   function bumpHour(delta: number) {
-    setDraft((prev) => clampToMin(addHoursSafe(prev, delta), min));
+    setDraft((prev) => {
+      const next = addHoursSafe(prev, delta);
+      return mode === 'time' ? next : clampToMin(next, min);
+    });
   }
 
   function bumpMinute(delta: number) {
-    setDraft((prev) => clampToMin(addMinutesSafe(prev, delta * MINUTE_STEP), min));
+    setDraft((prev) => {
+      const next = addMinutesSafe(prev, delta * MINUTE_STEP);
+      return mode === 'time' ? next : clampToMin(next, min);
+    });
   }
 
   function setTime(h: number, m: number) {
     setDraft((prev) => {
       let next = setMinutes(setHours(prev, h), m);
       next = snapMinutes(next);
-      return clampToMin(next, min);
+      return mode === 'time' ? next : clampToMin(next, min);
     });
   }
 
@@ -126,6 +144,11 @@ export function DateTimeField({
       const day = startOfDay(draft);
       if (isPastDay(day, min) && !isSameDay(day, min)) return;
       onChange(day);
+      setOpen(false);
+      return;
+    }
+    if (mode === 'time') {
+      onChange(snapMinutes(draft));
       setOpen(false);
       return;
     }
@@ -191,7 +214,21 @@ export function DateTimeField({
         : `${decadeStart} – ${decadeStart + 9}`;
 
   const headerClickable = calView !== 'years';
-  const quickTimes = useMemo(() => buildQuickTimes(draft, min), [draft, min]);
+  const quickTimes = useMemo(() => {
+    if (mode === 'time') {
+      return [
+        { h: 9, m: 0 },
+        { h: 12, m: 0 },
+        { h: 15, m: 0 },
+        { h: 17, m: 0 },
+        { h: 18, m: 0 },
+        { h: 19, m: 0 },
+        { h: 20, m: 0 },
+        { h: 21, m: 0 },
+      ];
+    }
+    return buildQuickTimes(draft, min);
+  }, [draft, min, mode]);
   const hour = draft.getHours();
   const minute = draft.getMinutes();
   const yearCells = useMemo(() => {
@@ -200,7 +237,7 @@ export function DateTimeField({
   }, [decadeStart]);
 
   return (
-    <View style={styles.wrap}>
+    <View style={[styles.wrap, containerStyle]}>
       <Text style={styles.label}>{label}</Text>
       <Pressable style={styles.field} onPress={openPicker}>
         <Text style={[styles.fieldText, !value && styles.placeholder]}>{display}</Text>
@@ -212,6 +249,7 @@ export function DateTimeField({
           <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.sheetTitle}>{label}</Text>
 
+            {mode !== 'time' ? (
             <View style={styles.monthRow}>
               <Pressable
                 onPress={goPrev}
@@ -233,8 +271,9 @@ export function DateTimeField({
                 <Text style={styles.monthBtnText}>›</Text>
               </Pressable>
             </View>
+            ) : null}
 
-            {calView === 'days' ? (
+            {mode !== 'time' && calView === 'days' ? (
               <>
                 <View style={styles.weekHeader}>
                   {['M', 'T', 'W', 'T', 'F', 'S', 'S'].map((d, i) => (
@@ -271,7 +310,7 @@ export function DateTimeField({
               </>
             ) : null}
 
-            {calView === 'months' ? (
+            {mode !== 'time' && calView === 'months' ? (
               <View style={styles.pickerGrid}>
                 {MONTH_SHORT.map((mIndex) => {
                   const cell = startOfMonth(setMonthOfYear(month, mIndex));
@@ -303,7 +342,7 @@ export function DateTimeField({
               </View>
             ) : null}
 
-            {calView === 'years' ? (
+            {mode !== 'time' && calView === 'years' ? (
               <View style={styles.pickerGrid}>
                 {yearCells.map((year) => {
                   const cell = startOfMonth(setYear(setMonthOfYear(month, 0), year));
@@ -337,9 +376,9 @@ export function DateTimeField({
               </View>
             ) : null}
 
-            {mode === 'datetime' && calView === 'days' ? (
+            {(mode === 'datetime' && calView === 'days') || mode === 'time' ? (
               <>
-                <Text style={styles.timeLabel}>Time</Text>
+                {mode === 'datetime' ? <Text style={styles.timeLabel}>Time</Text> : null}
                 <View style={styles.steppers}>
                   <View style={styles.stepper}>
                     <Pressable style={styles.stepBtn} onPress={() => bumpHour(1)}>

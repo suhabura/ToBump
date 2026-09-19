@@ -273,7 +273,11 @@ export const sl = {
     groupEmpty: 'Ta skupina še nima članov.',
     recurrence: 'Ponavljanje',
     recurrenceHint:
-      'Nastavite začetek in trajanje za vsak dan. Ko se termin začne, se zapre in odpre naslednji; klepet se prenese.',
+      'Izberi dneve. Vsak dan ima svojo uro začetka in trajanje. Ko se termin začne, se zapre in odpre naslednji; klepet se prenese.',
+    daysAndSlots: 'Dnevi in termini',
+    firstOccurrence: 'Prvi termin',
+    firstOccurrenceComputed: (when: string) => `Prvi dejanski termin: ${when}`,
+    needFirstOccurrence: 'Za izbrane dneve ni prihodnjega termina pred koncem serije.',
     start: 'Začetek',
     venuePlaceholder: 'npr. Centralni park, športno igrišče…',
     needActivityStart: 'Aktivnost in začetek sta obvezna.',

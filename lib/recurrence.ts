@@ -1,3 +1,6 @@
+import { format } from 'date-fns';
+import { enUS, sl as slLocale } from 'date-fns/locale';
+
 /** ISO weekdays: 1=Monday … 7=Sunday */
 export type RecurrenceRule = {
   weekday: number;
@@ -6,6 +9,8 @@ export type RecurrenceRule = {
   /** Duration for this weekday in minutes */
   duration_minutes: number;
 };
+
+export type RecurrenceLocale = 'en' | 'sl';
 
 export const WEEKDAY_OPTIONS = [
   { value: 1, short: 'Mo', label: 'Monday' },
@@ -16,6 +21,25 @@ export const WEEKDAY_OPTIONS = [
   { value: 6, short: 'Sa', label: 'Saturday' },
   { value: 7, short: 'Su', label: 'Sunday' },
 ] as const;
+
+const WEEKDAY_I18N: Record<RecurrenceLocale, { short: string[]; long: string[] }> = {
+  en: {
+    short: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+    long: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'],
+  },
+  sl: {
+    short: ['Pon', 'Tor', 'Sre', 'Čet', 'Pet', 'Sob', 'Ned'],
+    long: ['ponedeljek', 'torek', 'sreda', 'četrtek', 'petek', 'sobota', 'nedelja'],
+  },
+};
+
+export function weekdayShort(weekday: number, locale: RecurrenceLocale = 'en'): string {
+  return WEEKDAY_I18N[locale].short[weekday - 1] ?? `D${weekday}`;
+}
+
+export function weekdayLong(weekday: number, locale: RecurrenceLocale = 'en'): string {
+  return WEEKDAY_I18N[locale].long[weekday - 1] ?? `Day ${weekday}`;
+}
 
 export function isoWeekday(d: Date): number {
   const js = d.getDay(); // 0=Sun
@@ -34,16 +58,26 @@ export function formatDuration(minutes: number): string {
   return `${m} min`;
 }
 
-export function formatRecurrence(rules: RecurrenceRule[]): string {
+export function formatRecurrence(rules: RecurrenceRule[], locale: RecurrenceLocale = 'en'): string {
   if (!rules?.length) return '';
-  const parts = [...rules]
-    .sort((a, b) => a.weekday - b.weekday)
-    .map((r) => {
-      const day = WEEKDAY_OPTIONS.find((w) => w.value === r.weekday)?.label ?? `Day ${r.weekday}`;
-      return `${day} ${formatTime(r.hour, r.minute)} (${formatDuration(r.duration_minutes)})`;
-    });
-  if (parts.length === 1) return `Every ${parts[0]}`;
-  return `Every ${parts.join(' · ')}`;
+  const sorted = [...rules].sort((a, b) => a.weekday - b.weekday);
+  if (sorted.length === 1) {
+    const r = sorted[0];
+    const time = formatTime(r.hour, r.minute);
+    const dur = formatDuration(r.duration_minutes);
+    return locale === 'sl'
+      ? `Vsak ${weekdayLong(r.weekday, 'sl')} ob ${time} · ${dur}`
+      : `Every ${weekdayLong(r.weekday, 'en')} at ${time} · ${dur}`;
+  }
+  return sorted
+    .map((r) => `${weekdayShort(r.weekday, locale)} ${formatTime(r.hour, r.minute)} (${formatDuration(r.duration_minutes)})`)
+    .join(' · ');
+}
+
+export function formatFirstOccurrence(d: Date, locale: RecurrenceLocale = 'en'): string {
+  const loc = locale === 'sl' ? slLocale : enUS;
+  const pattern = locale === 'sl' ? "EEEE, d. MMMM yyyy 'ob' HH:mm" : "EEEE, d MMMM yyyy 'at' HH:mm";
+  return format(d, pattern, { locale: loc });
 }
 
 export function normalizeRules(rules: RecurrenceRule[]): RecurrenceRule[] {
@@ -92,4 +126,46 @@ export function hydrateRules(
       duration_minutes: Number(r.duration_minutes) || fallbackDuration,
     }))
   );
+}
+
+function startOfLocalDay(d: Date): Date {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x;
+}
+
+/**
+ * First matching slot on or after `from` (local timezone), using each day's own time.
+ * Skips slots more than 30s in the past. Respects optional series end date.
+ */
+export function firstOccurrence(
+  from: Date,
+  rules: RecurrenceRule[],
+  opts?: { now?: Date; until?: Date | null }
+): Date | null {
+  const normalized = normalizeRules(rules);
+  if (!normalized.length) return null;
+  const byDay = new Map(normalized.map((r) => [r.weekday, r]));
+  const now = opts?.now ?? new Date();
+  const untilDay = opts?.until ? startOfLocalDay(opts.until) : null;
+  const startDay = startOfLocalDay(from);
+
+  for (let i = 0; i < 400; i++) {
+    const day = new Date(startDay);
+    day.setDate(startDay.getDate() + i);
+    if (untilDay && day.getTime() > untilDay.getTime()) return null;
+    const rule = byDay.get(isoWeekday(day));
+    if (!rule) continue;
+    const slot = new Date(day);
+    slot.setHours(rule.hour, rule.minute, 0, 0);
+    if (untilDay && startOfLocalDay(slot).getTime() > untilDay.getTime()) return null;
+    if (slot.getTime() >= now.getTime() - 30_000) return slot;
+  }
+  return null;
+}
+
+export function ruleTimeAsDate(rule: RecurrenceRule): Date {
+  const d = new Date();
+  d.setHours(rule.hour, rule.minute, 0, 0);
+  return d;
 }

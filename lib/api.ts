@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { distanceMeters } from '@/lib/geo';
-import { normalizeRules, type RecurrenceRule } from '@/lib/recurrence';
+import { firstOccurrence, isoWeekday, normalizeRules, type RecurrenceRule } from '@/lib/recurrence';
 import type { ActivityWithRelations, Category, Privacy } from '@/lib/types';
 import {
   DEFAULT_SUBCATEGORIES,
@@ -732,25 +732,29 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
 
   const weekdays = rules.map((r) => r.weekday);
 
+  let startsAt = input.starts_at;
   let endsAt = input.ends_at || null;
   let durationMinutes: number | null = null;
 
-  if (input.is_recurring && input.starts_at) {
-    const start = new Date(input.starts_at);
-    const js = start.getDay();
-    const iso = js === 0 ? 7 : js;
+  if (input.is_recurring && startsAt) {
+    const from = new Date(startsAt);
+    const until = input.recurrence_until ? new Date(`${input.recurrence_until}T23:59:59`) : null;
+    const first = firstOccurrence(from, rules, { now: from, until });
+    if (first) startsAt = first.toISOString();
+    const start = new Date(startsAt);
+    const iso = isoWeekday(start);
     const rule = rules.find((r) => r.weekday === iso) ?? rules[0];
     durationMinutes = rule.duration_minutes;
     endsAt = new Date(start.getTime() + durationMinutes * 60_000).toISOString();
-  } else if (input.duration_minutes && input.duration_minutes >= 15 && input.starts_at) {
+  } else if (input.duration_minutes && input.duration_minutes >= 15 && startsAt) {
     durationMinutes = Math.max(15, Math.round(input.duration_minutes));
-    endsAt = new Date(new Date(input.starts_at).getTime() + durationMinutes * 60_000).toISOString();
+    endsAt = new Date(new Date(startsAt).getTime() + durationMinutes * 60_000).toISOString();
   }
 
   const payload: Record<string, unknown> = {
     title: input.title.trim(),
     description: null,
-    starts_at: input.starts_at,
+    starts_at: startsAt,
     ends_at: endsAt,
     price: input.finance_enabled ? Number(input.price) || 0 : null,
     min_participants: input.min_participants ?? null,
