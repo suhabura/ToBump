@@ -237,10 +237,12 @@ export const sl = {
     capacityHint:
       'Neobvezno. Vpiši, koliko udeležencev želiš. Od–do nastavi razpon; zgornja meja omejuje prijave.',
     desiredCapacity: 'Udeleženci',
+    capacityExact: 'Točno število',
     capacityRangeToggle: 'Od–do',
     minCapacity: 'Od',
     maxCapacity: 'Do',
     capacityMinMax: 'Minimum ne sme biti večji od maksimuma.',
+    venueManual: 'Ročni vnos',
     addGeoLocation: 'Google Maps',
     venueName: 'Ime',
     geoSearch: 'Iskanje v Google Maps',

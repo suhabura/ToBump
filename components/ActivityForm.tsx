@@ -599,19 +599,19 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       <Text style={styles.section}>{req(t.events.venue)}</Text>
       <View style={styles.row}>
         <Chip
+          label={t.form.venueManual}
+          active={!geoLocation}
+          onPress={() => {
+            setGeoLocation(false);
+            setEnterpriseId(null);
+            setVenueLatitude(null);
+            setVenueLongitude(null);
+          }}
+        />
+        <Chip
           label={t.form.addGeoLocation}
           active={geoLocation}
-          onPress={() => {
-            setGeoLocation((on) => {
-              const next = !on;
-              if (!next) {
-                setEnterpriseId(null);
-                setVenueLatitude(null);
-                setVenueLongitude(null);
-              }
-              return next;
-            });
-          }}
+          onPress={() => setGeoLocation(true)}
         />
       </View>
       {geoLocation ? (
@@ -637,20 +637,23 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       <Text style={styles.section}>{t.events.capacity}</Text>
       <View style={styles.row}>
         <Chip
+          label={t.form.capacityExact}
+          active={!capacityRange}
+          onPress={() => {
+            setCapacityRange(false);
+            if (!desiredCapacity.trim()) {
+              setDesiredCapacity(maxCapacity || minCapacity);
+            }
+          }}
+        />
+        <Chip
           label={t.form.capacityRangeToggle}
           active={capacityRange}
           onPress={() => {
-            setCapacityRange((on) => {
-              const next = !on;
-              if (next) {
-                if (!maxCapacity.trim() && desiredCapacity.trim()) {
-                  setMaxCapacity(desiredCapacity);
-                }
-              } else if (!desiredCapacity.trim()) {
-                setDesiredCapacity(maxCapacity || minCapacity);
-              }
-              return next;
-            });
+            setCapacityRange(true);
+            if (!maxCapacity.trim() && desiredCapacity.trim()) {
+              setMaxCapacity(desiredCapacity);
+            }
           }}
         />
       </View>
