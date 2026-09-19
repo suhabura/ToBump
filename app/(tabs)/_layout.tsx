@@ -28,13 +28,17 @@ function BrandHeader({ title }: { title: string }) {
   );
 }
 
+function HeaderSpacer() {
+  return <View style={styles.headerSide} />;
+}
+
 function HeaderActions({ unread }: { unread: number }) {
   const router = useRouter();
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', marginRight: 12, gap: 4 }}>
+    <View style={styles.headerSide}>
       <Pressable
         onPress={() => router.push('/notifications')}
-        style={{ paddingHorizontal: 10, paddingVertical: 6 }}
+        style={styles.bellHit}
         accessibilityRole="button"
         accessibilityLabel="Notifications">
         <View>
@@ -122,8 +126,7 @@ export default function TabLayout() {
         tabBarStyle: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border },
         headerStyle: { backgroundColor: theme.colors.surface },
         headerTintColor: theme.colors.text,
-        headerTitleAlign: 'left',
-        headerTitleContainerStyle: { maxWidth: '78%' },
+        headerTitleAlign: 'center',
         headerRight: () => <HeaderActions unread={unread} />,
       }}>
       <Tabs.Screen
@@ -131,6 +134,7 @@ export default function TabLayout() {
         options={{
           title: t.tabs.events,
           headerTitle: () => <BrandHeader title={t.tabs.events} />,
+          headerLeft: () => <HeaderSpacer />,
           tabBarIcon: ({ color }) => <TabIcon name="calendar" color={String(color)} />,
         }}
       />
@@ -139,6 +143,7 @@ export default function TabLayout() {
         options={{
           title: t.tabs.planner,
           headerTitle: () => <BrandHeader title={t.tabs.planner} />,
+          headerLeft: () => <HeaderSpacer />,
           tabBarIcon: ({ color }) => <TabIcon name="list-alt" color={String(color)} />,
         }}
       />
@@ -147,6 +152,7 @@ export default function TabLayout() {
         options={{
           title: t.tabs.friends,
           headerTitle: () => <BrandHeader title={t.tabs.friends} />,
+          headerLeft: () => <HeaderSpacer />,
           tabBarBadge: pendingFriends > 0 ? pendingFriends : undefined,
           tabBarIcon: ({ color }) => <TabIcon name="users" color={String(color)} />,
         }}
@@ -156,6 +162,7 @@ export default function TabLayout() {
         options={{
           title: t.tabs.profile,
           headerTitle: () => <BrandHeader title={t.tabs.profile} />,
+          headerLeft: () => <HeaderSpacer />,
           tabBarIcon: ({ color }) => <TabIcon name="user" color={String(color)} />,
         }}
       />
@@ -194,20 +201,29 @@ const styles = StyleSheet.create({
   brandHeader: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: 10,
-    height: 36,
-    maxWidth: '100%',
+    height: 40,
   },
   brandLogo: {
-    height: 24,
-    width: 76,
+    height: 34,
+    width: 112,
   },
   brandTab: {
     flexShrink: 1,
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: theme.colors.text,
     letterSpacing: -0.2,
+  },
+  headerSide: {
+    width: 48,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bellHit: {
+    padding: 8,
   },
   badge: {
     position: 'absolute',
