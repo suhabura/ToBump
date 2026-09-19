@@ -115,7 +115,7 @@ export default function ChatScreen() {
             <View style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
               {!mine ? <Text style={styles.author}>{displayName(item.profiles)}</Text> : null}
               <Text style={[styles.msg, mine && { color: '#fff' }]}>{item.message}</Text>
-              <Text style={[styles.time, mine && { color: '#D1FAE5' }]}>
+              <Text style={[styles.time, mine && { color: theme.colors.primaryMuted }]}>
                 {format(new Date(item.created_at), 'HH:mm')}
               </Text>
             </View>

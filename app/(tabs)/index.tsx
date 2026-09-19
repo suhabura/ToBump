@@ -285,7 +285,7 @@ const styles = StyleSheet.create({
   },
   cardMine: {
     borderColor: theme.colors.primaryMuted,
-    backgroundColor: '#F3FAF7',
+    backgroundColor: theme.colors.primarySoft,
   },
   cardBody: {
     flex: 1,
@@ -349,6 +349,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderLeftColor: theme.colors.border,
-    backgroundColor: '#FBFCFB',
+    backgroundColor: theme.colors.surfaceElevated,
   },
 });

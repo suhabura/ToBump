@@ -230,6 +230,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderLeftColor: theme.colors.border,
-    backgroundColor: '#FBFCFB',
+    backgroundColor: theme.colors.surfaceElevated,
   },
 });
