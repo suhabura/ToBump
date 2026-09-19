@@ -406,7 +406,7 @@ export function activityCapacityRange(
   const min = a.min_participants ?? null;
   const max = a.max_participants ?? null;
   if (min != null && max != null) return `${min}–${max}`;
-  if (max != null) return `≤${max}`;
+  if (max != null) return String(max);
   if (min != null) return `≥${min}`;
   return null;
 }

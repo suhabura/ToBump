@@ -188,6 +188,7 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.sm,
     paddingHorizontal: 14,
     paddingVertical: 12,
+    minHeight: 48,
     fontSize: 16,
     color: theme.colors.text,
   },

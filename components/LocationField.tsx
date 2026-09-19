@@ -64,8 +64,8 @@ export function LocationField({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    setQuery(address);
-  }, [address]);
+    if (!focused) setQuery(address);
+  }, [address, focused]);
 
   useEffect(() => {
     if (latitude != null && longitude != null) {
@@ -189,13 +189,12 @@ export function LocationField({
         onChangeText={(text) => {
           setQuery(text);
           onDraftChange?.(text);
-          if (allowManualConfirm) {
-            if (address.trim() && text.trim() !== address.trim()) {
-              onChange({ address: '', latitude: null, longitude: null });
-            }
-          } else if (text.trim() !== address.trim()) {
-            onChange({ address: text, latitude: null, longitude: null });
-          }
+          const same = text.trim() === address.trim();
+          onChange({
+            address: text,
+            latitude: same ? latitude : null,
+            longitude: same ? longitude : null,
+          });
         }}
         placeholder={
           allowManualConfirm ? t.location.venuePlaceholder : t.location.placeholder
@@ -204,23 +203,20 @@ export function LocationField({
         onSubmitEditing={() => {
           if (allowManualConfirm) confirmManual();
         }}
-        onKeyPress={(e) => {
-          if (allowManualConfirm && e.nativeEvent.key === 'Enter') {
-            e.preventDefault?.();
-            confirmManual();
-          }
-        }}
-        blurOnSubmit={allowManualConfirm}
         onFocus={() => {
           picking.current = false;
           setFocused(true);
         }}
         onBlur={() => {
           setTimeout(() => {
-            if (!picking.current) setFocused(false);
+            if (!picking.current) {
+              if (allowManualConfirm) confirmManual();
+              setFocused(false);
+            }
             picking.current = false;
           }, Platform.OS === 'web' ? 250 : 150);
         }}
+        style={styles.field}
       />
       {focused && query.trim().length >= 2 ? (
         <View style={styles.list}>
@@ -318,7 +314,8 @@ export function LocationField({
 }
 
 const styles = StyleSheet.create({
-  wrap: { zIndex: 20, marginBottom: theme.space.md },
+  wrap: { zIndex: 20, marginBottom: theme.space.md, overflow: 'visible' },
+  field: { minHeight: 48 },
   list: {
     marginTop: -8,
     marginBottom: 8,

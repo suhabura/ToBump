@@ -98,12 +98,30 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [price, setPrice] = useState(
     initial?.finance_enabled && initial?.price != null ? String(initial.price) : ''
   );
+  const [capacityRange, setCapacityRange] = useState(() => {
+    const min = initial?.min_participants ?? null;
+    const max = initial?.max_participants ?? null;
+    if (min != null && max != null) return min !== max;
+    return min != null;
+  });
+  const [desiredCapacity, setDesiredCapacity] = useState(() => {
+    const min = initial?.min_participants ?? null;
+    const max = initial?.max_participants ?? null;
+    if (min != null && max != null && min === max) return String(min);
+    if (max != null && min == null) return String(max);
+    return '';
+  });
   const [minCapacity, setMinCapacity] = useState(
-    initial?.min_participants ? String(initial.min_participants) : ''
+    initial?.min_participants && initial.min_participants !== initial.max_participants
+      ? String(initial.min_participants)
+      : ''
   );
-  const [maxCapacity, setMaxCapacity] = useState(
-    initial?.max_participants ? String(initial.max_participants) : ''
-  );
+  const [maxCapacity, setMaxCapacity] = useState(() => {
+    const min = initial?.min_participants ?? null;
+    const max = initial?.max_participants ?? null;
+    if (min != null && max != null && min !== max) return String(max);
+    return '';
+  });
   const [privacy, setPrivacy] = useState<Privacy>(initial?.privacy ?? 'invite');
   const [enterpriseId, setEnterpriseId] = useState<string | null>(initial?.enterprise_id ?? null);
   const [venueText, setVenueText] = useState(initial?.venue_text ?? '');
@@ -439,8 +457,14 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       if (!/^\d+$/.test(v) || Number(v) < 1) return 'invalid';
       return Number(v);
     }
-    const minNum = parseOptionalCount(minCapacity);
-    const maxNum = parseOptionalCount(maxCapacity);
+    let minNum: number | null | 'invalid' = null;
+    let maxNum: number | null | 'invalid' = null;
+    if (capacityRange) {
+      minNum = parseOptionalCount(minCapacity);
+      maxNum = parseOptionalCount(maxCapacity);
+    } else {
+      maxNum = parseOptionalCount(desiredCapacity);
+    }
     if (minNum === 'invalid' || maxNum === 'invalid') {
       setFormError(t.form.needCapacity);
       return;
@@ -578,44 +602,70 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         </Muted>
       ) : null}
 
-      <View>
-        <Text style={styles.section}>{req(t.events.venue)}</Text>
-        <Muted>{isCategorized ? t.venue.freeTextHint : t.form.uncategorizedVenueHint}</Muted>
-        <LocationField
-          label={t.events.venue}
-          address={venueAddress}
-          latitude={venueLat}
-          longitude={venueLng}
-          relativeTo={profileOrigin}
-          showMyLocation={false}
-          allowManualConfirm
-          onChange={onVenueLocationChange}
-          onClear={
-            (enterpriseId && isCategorized) || venueText.trim() ? clearVenue : undefined
-          }
-        />
-      </View>
+      <LocationField
+        label={req(t.events.venue)}
+        address={venueAddress}
+        latitude={venueLat}
+        longitude={venueLng}
+        relativeTo={profileOrigin}
+        showMyLocation={false}
+        allowManualConfirm
+        onChange={onVenueLocationChange}
+        onClear={
+          (enterpriseId && isCategorized) || venueText.trim() ? clearVenue : undefined
+        }
+      />
+      <Muted>{isCategorized ? t.venue.freeTextHint : t.form.uncategorizedVenueHint}</Muted>
 
       <Text style={styles.section}>{t.events.capacity}</Text>
-      <View style={styles.capacityRow}>
-        <View style={{ flex: 1 }}>
-          <Input
-            label={t.form.minCapacity}
-            value={minCapacity}
-            onChangeText={(v) => setMinCapacity(v.replace(/[^\d]/g, ''))}
-            keyboardType="number-pad"
-            placeholder="—"
-          />
+      {capacityRange ? (
+        <View style={styles.capacityRow}>
+          <View style={{ flex: 1 }}>
+            <Input
+              label={t.form.minCapacity}
+              value={minCapacity}
+              onChangeText={(v) => setMinCapacity(v.replace(/[^\d]/g, ''))}
+              keyboardType="number-pad"
+              placeholder="—"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Input
+              label={t.form.maxCapacity}
+              value={maxCapacity}
+              onChangeText={(v) => setMaxCapacity(v.replace(/[^\d]/g, ''))}
+              keyboardType="number-pad"
+              placeholder="—"
+            />
+          </View>
         </View>
-        <View style={{ flex: 1 }}>
-          <Input
-            label={t.form.maxCapacity}
-            value={maxCapacity}
-            onChangeText={(v) => setMaxCapacity(v.replace(/[^\d]/g, ''))}
-            keyboardType="number-pad"
-            placeholder="—"
-          />
-        </View>
+      ) : (
+        <Input
+          label={t.form.desiredCapacity}
+          value={desiredCapacity}
+          onChangeText={(v) => setDesiredCapacity(v.replace(/[^\d]/g, ''))}
+          keyboardType="number-pad"
+          placeholder="—"
+        />
+      )}
+      <View style={styles.row}>
+        <Chip
+          label={t.form.capacityRangeToggle}
+          active={capacityRange}
+          onPress={() => {
+            setCapacityRange((on) => {
+              const next = !on;
+              if (next) {
+                if (!maxCapacity.trim() && desiredCapacity.trim()) {
+                  setMaxCapacity(desiredCapacity);
+                }
+              } else if (!desiredCapacity.trim()) {
+                setDesiredCapacity(maxCapacity || minCapacity);
+              }
+              return next;
+            });
+          }}
+        />
       </View>
       <Muted>{t.form.capacityHint}</Muted>
 
