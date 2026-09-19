@@ -148,7 +148,77 @@ function rankPlaces(places: GeoPlace[], query: string, bias?: GeoPoint | null): 
   });
 }
 
-/** Places API (New) — works from the browser with HTTP-referrer API keys. */
+function googlePlaceLabel(name: string, addr: string): string {
+  if (addr && name && addr.toLowerCase().includes(name.toLowerCase())) return addr;
+  return [name, addr].filter(Boolean).join(', ');
+}
+
+async function googlePlaceDetails(placeId: string, key: string): Promise<GeoPlace | null> {
+  const id = placeId.replace(/^places\//, '');
+  try {
+    const res = await fetch(`https://places.googleapis.com/v1/places/${encodeURIComponent(id)}?languageCode=sl`, {
+      headers: {
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'displayName,formattedAddress,location',
+      },
+    });
+    if (!res.ok) return null;
+    const p = (await res.json()) as {
+      displayName?: { text?: string };
+      formattedAddress?: string;
+      location?: { latitude: number; longitude: number };
+    };
+    if (p.location?.latitude == null || p.location?.longitude == null) return null;
+    return {
+      label: googlePlaceLabel(p.displayName?.text?.trim() ?? '', p.formattedAddress?.trim() ?? ''),
+      latitude: p.location.latitude,
+      longitude: p.location.longitude,
+      source: 'google',
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Maps-style as-you-type suggestions (Places API New Autocomplete). */
+async function searchGoogleAutocomplete(query: string, bias?: GeoPoint | null): Promise<GeoPlace[]> {
+  const key = googleKey();
+  if (!key) return [];
+  const center = bias ?? SI_CENTER;
+  try {
+    const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask':
+          'suggestions.placePrediction.placeId,suggestions.placePrediction.text',
+      },
+      body: JSON.stringify({
+        input: query,
+        languageCode: 'sl',
+        locationBias: {
+          circle: {
+            center: { latitude: center.latitude, longitude: center.longitude },
+            radius: 80_000,
+          },
+        },
+      }),
+    });
+    if (!res.ok) return [];
+    const json = (await res.json()) as {
+      suggestions?: { placePrediction?: { placeId?: string; text?: { text?: string } } }[];
+    };
+    const ids = (json.suggestions ?? [])
+      .map((s) => s.placePrediction?.placeId)
+      .filter((id): id is string => Boolean(id))
+      .slice(0, 6);
+    const details = await Promise.all(ids.map((id) => googlePlaceDetails(id, key)));
+    return details.filter((p): p is GeoPlace => p != null);
+  } catch {
+    return [];
+  }
+}
 async function searchGooglePlacesNew(query: string, bias?: GeoPoint | null): Promise<GeoPlace[]> {
   const key = googleKey();
   if (!key) return [];
@@ -188,9 +258,7 @@ async function searchGooglePlacesNew(query: string, bias?: GeoPoint | null): Pro
         const name = p.displayName?.text?.trim() ?? '';
         const addr = p.formattedAddress?.trim() ?? '';
         return {
-          label: addr && name && addr.toLowerCase().includes(name.toLowerCase())
-            ? addr
-            : [name, addr].filter(Boolean).join(', '),
+          label: googlePlaceLabel(name, addr),
           latitude: p.location!.latitude,
           longitude: p.location!.longitude,
           source: 'google' as const,
@@ -201,68 +269,7 @@ async function searchGooglePlacesNew(query: string, bias?: GeoPoint | null): Pro
   }
 }
 
-async function searchGooglePlaces(query: string, bias?: GeoPoint | null): Promise<GeoPlace[]> {
-  const key = googleKey();
-  if (!key) return [];
-
-  // Legacy Text Search — works in native; browsers usually block it (CORS).
-  try {
-    let url =
-      `https://maps.googleapis.com/maps/api/place/textsearch/json` +
-      `?query=${encodeURIComponent(query)}` +
-      `&region=si&language=sl&key=${key}`;
-    if (bias) {
-      url += `&location=${bias.latitude},${bias.longitude}&radius=80000`;
-    } else {
-      url += `&location=${SI_CENTER.latitude},${SI_CENTER.longitude}&radius=120000`;
-    }
-    const res = await fetch(url);
-    const json = (await res.json()) as {
-      status: string;
-      results?: {
-        name: string;
-        formatted_address: string;
-        geometry: { location: { lat: number; lng: number } };
-      }[];
-    };
-    if ((json.status === 'OK' || json.status === 'ZERO_RESULTS') && json.results) {
-      return json.results.slice(0, 8).map((r) => ({
-        label: r.formatted_address?.includes(r.name)
-          ? r.formatted_address
-          : `${r.name}, ${r.formatted_address}`,
-        latitude: r.geometry.location.lat,
-        longitude: r.geometry.location.lng,
-        source: 'google' as const,
-      }));
-    }
-  } catch {
-    /* try geocoding */
-  }
-
-  try {
-    const url =
-      `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}` +
-      `&language=sl&region=si&key=${key}`;
-    const res = await fetch(url);
-    const json = (await res.json()) as {
-      status: string;
-      results?: { formatted_address: string; geometry: { location: { lat: number; lng: number } } }[];
-    };
-    if (json.status === 'OK' && json.results?.length) {
-      return json.results.slice(0, 8).map((r) => ({
-        label: r.formatted_address,
-        latitude: r.geometry.location.lat,
-        longitude: r.geometry.location.lng,
-        source: 'google' as const,
-      }));
-    }
-  } catch {
-    /* fall through */
-  }
-  return [];
-}
-
-async function searchPhoton(query: string, bias?: GeoPoint | null, useBbox = true): Promise<GeoPlace[]> {
+async function searchPhoton(query: string, bias?: GeoPoint | null, useBbox = false): Promise<GeoPlace[]> {
   const center = bias && inSlovenia(bias) ? bias : SI_CENTER;
   const bbox = `${SI_BBOX.minLon},${SI_BBOX.minLat},${SI_BBOX.maxLon},${SI_BBOX.maxLat}`;
   const url =
@@ -288,34 +295,6 @@ async function searchPhoton(query: string, bias?: GeoPoint | null, useBbox = tru
     return searchPhoton(query, bias, false);
   } catch {
     return useBbox ? searchPhoton(query, bias, false) : [];
-  }
-}
-
-/** CORS-friendly geocoder (cities, towns, named places). */
-async function searchOpenMeteo(query: string): Promise<GeoPlace[]> {
-  try {
-    const url =
-      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}` +
-      `&count=8&language=sl&format=json`;
-    const res = await fetch(url);
-    if (!res.ok) return [];
-    const json = (await res.json()) as {
-      results?: {
-        name: string;
-        latitude: number;
-        longitude: number;
-        country?: string;
-        admin1?: string;
-      }[];
-    };
-    return (json.results ?? []).map((r) => ({
-      label: [r.name, r.admin1, r.country].filter(Boolean).join(', '),
-      latitude: r.latitude,
-      longitude: r.longitude,
-      source: 'nominatim' as const,
-    }));
-  } catch {
-    return [];
   }
 }
 
@@ -414,9 +393,8 @@ export type SearchPlacesOptions = {
 };
 
 /**
- * Place / address search biased to Slovenia.
- * Queries Google Places (New) and map geocoders in parallel so web clients
- * still get Maps-like suggestions when the legacy Places JSON API is blocked.
+ * Address search like Google Maps: Places Autocomplete/Text Search,
+ * then OpenStreetMap (Photon) if Google is unavailable.
  */
 export async function searchPlaces(
   query: string,
@@ -426,24 +404,24 @@ export async function searchPlaces(
   if (q.length < 2) return [];
   const bias = options?.bias ?? SI_CENTER;
 
-  const [googleNew, googleLegacy, photon, openMeteo] = await Promise.all([
+  const [autocomplete, textSearch, photon] = await Promise.all([
+    searchGoogleAutocomplete(q, bias),
     searchGooglePlacesNew(q, bias),
-    searchGooglePlaces(q, bias),
-    searchPhoton(q, bias),
-    searchOpenMeteo(q),
+    searchPhoton(q, bias, false),
   ]);
 
-  const merged = dedupePlaces([...googleNew, ...googleLegacy, ...photon, ...openMeteo]);
-  if (merged.length) {
-    return rankPlaces(merged, q, bias).slice(0, 10);
+  const google = dedupePlaces([...autocomplete, ...textSearch]);
+  if (google.length) {
+    return rankPlaces(google, q, bias).slice(0, 10);
+  }
+
+  const maps = dedupePlaces(photon);
+  if (maps.length) {
+    return rankPlaces(maps, q, bias).slice(0, 10);
   }
 
   const nominatim = await searchNominatim(q, { bias });
-  const expanded =
-    normalizeSearchText(q).split(' ').filter(Boolean).length > 1
-      ? await expandMultiToken(q, bias)
-      : [];
-  return rankPlaces(dedupePlaces([...nominatim, ...expanded]), q, bias).slice(0, 10);
+  return rankPlaces(dedupePlaces(nominatim), q, bias).slice(0, 10);
 }
 
 export async function reverseGeocode(point: GeoPoint): Promise<string> {
