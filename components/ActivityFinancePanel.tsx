@@ -55,6 +55,7 @@ type Props = {
 };
 
 type Tab = 'overview' | 'transactions' | 'expense';
+type PersonFilter = 'all' | 'unpaid' | 'partial' | 'paid';
 
 type PersonRow = {
   userId: string;
@@ -97,6 +98,27 @@ function formatDate(iso?: string | null): string {
   return d.toLocaleDateString();
 }
 
+function formatEuro(n: number): string {
+  return `${n.toFixed(2)} €`;
+}
+
+function personChargeLines(row: PersonRow, t: ReturnType<typeof useT>): string[] {
+  const lines = [t.finance.visitsCount(row.visits)];
+  if (row.mode === 'per_event') {
+    lines.push(`${t.finance.pricePerVisit}: ${formatEuro(row.amount)}`);
+    lines.push(`${t.finance.dueTogether}: ${formatEuro(row.due)}`);
+  } else if (row.mode === 'fixed' || row.mode === 'annual') {
+    lines.push(`${t.finance.oneTimeFee}: ${formatEuro(row.amount)}`);
+    if (Math.abs(row.due - row.amount) > 0.01) {
+      lines.push(`${t.finance.dueTogether}: ${formatEuro(row.due)}`);
+    }
+  } else {
+    lines.push(`${modeLabel(row.mode, t)} · ${formatEuro(row.amount)}`);
+    if (row.due > 0.001) lines.push(`${t.finance.dueTogether}: ${formatEuro(row.due)}`);
+  }
+  return lines;
+}
+
 function errorMessage(e: unknown, fallback: string): string {
   if (e instanceof Error && e.message) return e.message;
   if (e && typeof e === 'object' && 'message' in e) {
@@ -111,6 +133,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const t = useT();
   const sid = seriesKey(activity);
   const [tab, setTab] = useState<Tab>('overview');
+  const [personFilter, setPersonFilter] = useState<PersonFilter>('all');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -122,7 +145,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const [ledger, setLedger] = useState<SeriesFinanceLedgerEntry[]>([]);
   const [joins, setJoins] = useState<SeriesJoinRow[]>([]);
   const [members, setMembers] = useState<Profile[]>([]);
-  const [eligibleIds, setEligibleIds] = useState<string[]>([]);
+  const [, setEligibleIds] = useState<string[]>([]);
   const [guestDebts, setGuestDebts] = useState<GuestDebtRow[]>([]);
 
   const [detailUserId, setDetailUserId] = useState<string | null>(null);
@@ -166,11 +189,8 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   const personRows = useMemo((): PersonRow[] => {
     if (!financeSettings) return [];
     const ids = new Set<string>();
-    for (const id of eligibleIds) ids.add(id);
-    for (const id of activity.series_invite_user_ids ?? []) ids.add(id);
     for (const id of visitsByUser.keys()) ids.add(id);
     for (const o of obligations) ids.add(o.user_id);
-    if (activity.created_by) ids.add(activity.created_by);
 
     const feeExpenseIds = new Set(
       expenses.filter((e) => isFundingExpense(e)).map((e) => e.id)
@@ -187,7 +207,8 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       const paid = personObls.reduce((s, o) => s + (Number(o.amount_paid) || 0), 0);
       const open = Math.max(0, due - paid);
       const visits = visitsByUser.get(uid) ?? 0;
-      let status: PersonRow['status'] = 'waiting';
+      if (visits <= 0 && due <= 0.001) continue;
+      let status: PersonRow['status'] = 'unpaid';
       if (due > 0.001) {
         if (open <= 0.001) status = 'paid';
         else if (paid > 0.001) status = 'partial';
@@ -216,15 +237,42 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
     return rows;
   }, [
     financeSettings,
-    eligibleIds,
-    activity.created_by,
-    activity.series_invite_user_ids,
     visitsByUser,
     obligations,
     expenses,
     overrideMap,
     profilesById,
   ]);
+
+  const filterCounts = useMemo(
+    () => ({
+      all: personRows.length,
+      unpaid: personRows.filter((r) => r.status === 'unpaid').length,
+      partial: personRows.filter((r) => r.status === 'partial').length,
+      paid: personRows.filter((r) => r.status === 'paid').length,
+    }),
+    [personRows]
+  );
+
+  const visiblePersonRows = useMemo(() => {
+    if (personFilter === 'all') return personRows;
+    return personRows.filter((r) => r.status === personFilter);
+  }, [personRows, personFilter]);
+
+  const summary = useMemo(() => {
+    const toCollect =
+      obligations.reduce(
+        (s, o) => s + (o.status === 'waived' ? 0 : Number(o.amount_due) || 0),
+        0
+      ) + guestDebts.reduce((s, g) => s + (Number(g.amount) || 0), 0);
+    return {
+      toCollect: Math.round(toCollect * 100) / 100,
+      collected: budget.received,
+      open: unpaidTotal,
+      costs: budget.spent,
+      balance: budget.available,
+    };
+  }, [obligations, guestDebts, budget, unpaidTotal]);
 
   const hasAnyActivity =
     joins.length > 0 || obligations.length > 0 || ledger.length > 0 || guestDebts.length > 0;
@@ -342,6 +390,10 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         new Set([
           ...mems.map((m) => m.id),
           ...attendees.map((a) => a.id),
+          ...jns.map((j) => j.user_id),
+          ...obls.map((o) => o.user_id),
+          ...exps.map((e) => e.created_by).filter(Boolean),
+          ...led.flatMap((l) => [l.user_id, l.created_by].filter(Boolean) as string[]),
           ...inviteIds,
           ...(settings?.payer_ids ?? []),
           ...(activity.series_invite_user_ids ?? []),
@@ -420,6 +472,11 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       Alert.alert(t.common.error, t.finance.needAmount);
       return;
     }
+    const open = personRows.find((r) => r.userId === detailUserId)?.open ?? 0;
+    if (n > open + 0.01) {
+      Alert.alert(t.common.error, t.finance.paymentExceedsOpen);
+      return;
+    }
     setBusy(true);
     try {
       await recordPersonPayment({
@@ -433,7 +490,11 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       setPayNote('');
       await load();
     } catch (e) {
-      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+      const msg = e instanceof Error ? e.message : '';
+      Alert.alert(
+        t.common.error,
+        /exceeds open debt/i.test(msg) ? t.finance.paymentExceedsOpen : msg || t.common.error
+      );
     } finally {
       setBusy(false);
     }
@@ -540,7 +601,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
       {error ? <Text style={styles.error}>{error}</Text> : null}
       <View style={styles.tabRow}>
         <Chip
-          label={t.finance.budgetTab}
+          label={t.finance.overviewTab}
           active={tab === 'overview'}
           onPress={() => setTab('overview')}
         />
@@ -562,30 +623,41 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
 
       {tab === 'overview' ? (
         <View style={{ gap: 12 }}>
-          <View style={styles.summaryRow}>
-            <SummaryCard
-              label={t.finance.ledgerAvailable}
-              value={`${budget.available.toFixed(2)} €`}
-              emphasize
-            />
-          </View>
-          <View style={styles.summaryRow}>
-            <SummaryCard label={t.finance.ledgerReceived} value={`${budget.received.toFixed(2)} €`} />
-            <SummaryCard label={t.finance.ledgerSpent} value={`${budget.spent.toFixed(2)} €`} />
-            <SummaryCard label={t.finance.ledgerUnpaid} value={`${unpaidTotal.toFixed(2)} €`} />
-          </View>
-
           {financeSettings ? (
-            <Muted>
-              {t.finance.seriesDefault(
-                modeLabel(
-                  financeSettings.funding_mode === 'annual' ? 'fixed' : financeSettings.funding_mode,
-                  t
-                ),
-                Number(financeSettings.amount)
-              )}
-            </Muted>
+            <View style={styles.card}>
+              <Muted>{t.finance.paymentMethod}</Muted>
+              <Text style={styles.infoTitle}>
+                {financeSettings.funding_mode === 'fixed' || financeSettings.funding_mode === 'annual'
+                  ? t.finance.payFixedTitle
+                  : financeSettings.funding_mode === 'monthly'
+                    ? t.form.payMonthly
+                    : t.finance.payPerEventTitle}
+              </Text>
+              <Text style={styles.amountLine}>
+                {financeSettings.funding_mode === 'fixed' || financeSettings.funding_mode === 'annual'
+                  ? `${formatEuro(Number(financeSettings.amount) || 0)} / ${t.finance.perPersonUnit}`
+                  : financeSettings.funding_mode === 'monthly'
+                    ? formatEuro(Number(financeSettings.amount) || 0)
+                    : `${formatEuro(Number(financeSettings.amount) || 0)} / ${t.finance.perEventUnit}`}
+              </Text>
+              {activity.is_recurring &&
+              (financeSettings.funding_mode === 'fixed' || financeSettings.funding_mode === 'annual') ? (
+                <Muted>{t.finance.forWholeSeries}</Muted>
+              ) : null}
+            </View>
           ) : null}
+
+          <View style={styles.summaryRow}>
+            <SummaryCard label={t.finance.toCollect} value={formatEuro(summary.toCollect)} />
+            <SummaryCard label={t.finance.collected} value={formatEuro(summary.collected)} />
+          </View>
+          <View style={styles.summaryRow}>
+            <SummaryCard label={t.finance.openBalance} value={formatEuro(summary.open)} />
+            <SummaryCard label={t.finance.costs} value={formatEuro(summary.costs)} />
+          </View>
+          <View style={styles.summaryRow}>
+            <SummaryCard label={t.finance.balance} value={formatEuro(summary.balance)} emphasize />
+          </View>
 
           {!hasAnyActivity ? (
             <View style={styles.infoCard}>
@@ -600,7 +672,32 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
               {!hasAnyActivity ? t.finance.participantsHintBefore : t.finance.participantsHint}
             </Muted>
             {!personRows.length && !guestDebts.length ? (
-              <Muted>{t.finance.noParticipantsYet}</Muted>
+              <Muted>{t.finance.noJoinersYet}</Muted>
+            ) : null}
+
+            {personRows.length >= 4 ? (
+              <View style={styles.rowWrap}>
+                <Chip
+                  label={`${t.finance.filterAll} (${filterCounts.all})`}
+                  active={personFilter === 'all'}
+                  onPress={() => setPersonFilter('all')}
+                />
+                <Chip
+                  label={`${t.finance.filterUnpaid} (${filterCounts.unpaid})`}
+                  active={personFilter === 'unpaid'}
+                  onPress={() => setPersonFilter('unpaid')}
+                />
+                <Chip
+                  label={`${t.finance.filterPartial} (${filterCounts.partial})`}
+                  active={personFilter === 'partial'}
+                  onPress={() => setPersonFilter('partial')}
+                />
+                <Chip
+                  label={`${t.finance.filterPaid} (${filterCounts.paid})`}
+                  active={personFilter === 'paid'}
+                  onPress={() => setPersonFilter('paid')}
+                />
+              </View>
             ) : null}
 
             {guestDebts.map((g) => {
@@ -615,8 +712,10 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
                       </Text>
                       <Muted>{t.finance.guestFeeHint}</Muted>
                       <Text style={styles.amountLine}>
-                        {t.finance.paidTotal}: {g.amountPaid.toFixed(2)} € · {t.finance.openDebt}:{' '}
-                        {g.open.toFixed(2)} €
+                        {t.finance.paidLabel}: {formatEuro(g.amountPaid)}
+                      </Text>
+                      <Text style={styles.amountLine}>
+                        {t.finance.openBalance}: {formatEuro(g.open)}
                       </Text>
                     </View>
                     <StatusBadge status={status} t={t} />
@@ -638,7 +737,11 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
               );
             })}
 
-            {personRows.map((row) => {
+            {personFilter !== 'all' && !visiblePersonRows.length ? (
+              <Muted>{t.finance.noParticipantsYet}</Muted>
+            ) : null}
+
+            {visiblePersonRows.map((row) => {
               const open = detailUserId === row.userId;
               return (
                 <View key={row.userId} style={styles.personBlock}>
@@ -655,13 +758,14 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
                       <Text style={styles.name}>
                         {displayName(profilesById.get(row.userId) ?? null)}
                       </Text>
-                      <Muted>
-                        {modeLabel(row.mode, t)} · {row.amount.toFixed(2)} € · {t.finance.visits}:{' '}
-                        {row.visits}
-                      </Muted>
+                      {personChargeLines(row, t).map((line) => (
+                        <Muted key={line}>{line}</Muted>
+                      ))}
                       <Text style={styles.amountLine}>
-                        {t.finance.paidTotal}: {row.paid.toFixed(2)} € · {t.finance.openDebt}:{' '}
-                        {row.open.toFixed(2)} €
+                        {t.finance.paidLabel}: {formatEuro(row.paid)}
+                      </Text>
+                      <Text style={styles.amountLine}>
+                        {t.finance.openBalance}: {formatEuro(row.open)}
                       </Text>
                     </View>
                     <StatusBadge status={row.status} t={t} />
@@ -670,13 +774,13 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
                   {open && detailRow ? (
                     <View style={styles.detail}>
                       <Muted>
-                        {t.finance.expectedTotal}: {detailRow.due.toFixed(2)} €
+                        {t.finance.dueTogether}: {formatEuro(detailRow.due)}
                       </Muted>
                       <Muted>
-                        {t.finance.paidTotal}: {detailRow.paid.toFixed(2)} €
+                        {t.finance.paidLabel}: {formatEuro(detailRow.paid)}
                       </Muted>
                       <Muted>
-                        {t.finance.openDebt}: {detailRow.open.toFixed(2)} €
+                        {t.finance.openBalance}: {formatEuro(detailRow.open)}
                       </Muted>
 
                       {canManage ? (
@@ -739,7 +843,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
 
                           {detailRow.open > 0 ? (
                             <View style={{ gap: 8, marginTop: 8 }}>
-                              <Subtitle>{t.finance.recordPayment}</Subtitle>
+                              <Subtitle>{t.finance.addPayment}</Subtitle>
                               <Input
                                 label={t.finance.paymentAmount}
                                 value={payAmount}
@@ -752,7 +856,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
                                 onChangeText={setPayNote}
                               />
                               <Button
-                                label={t.finance.recordPayment}
+                                label={t.finance.addPayment}
                                 loading={busy}
                                 onPress={() => void onRecordPayment()}
                               />
@@ -834,6 +938,9 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
                   <Muted>
                     {categoryLabel(e.category, t)} · {formatDate(e.created_at)}
                     {e.paid_from_budget ? ` · ${t.finance.paidFromBudget}` : ''}
+                    {e.created_by
+                      ? ` · ${t.finance.addedBy(displayName(profilesById.get(e.created_by) ?? null))}`
+                      : ''}
                   </Muted>
                 </View>
               ))}
