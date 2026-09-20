@@ -114,9 +114,11 @@ export const sl = {
     inDays: (n: number) => `čez ${n} dni`,
     followSeries: 'Nameravam redno hoditi',
     unfollowSeries: 'Ne hodim več redno',
+    followShort: 'Redno',
     skipped: 'Odpade',
     skipOccurrence: 'Termin odpade',
     unskipOccurrence: 'Termin velja',
+    skipShort: 'Odpade',
     upcomingSlot: 'Prihodnji termin',
   },
   friends: {

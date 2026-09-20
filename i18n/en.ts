@@ -114,9 +114,11 @@ export const en = {
     inDays: (n: number) => `in ${n} days`,
     followSeries: 'I plan to go regularly',
     unfollowSeries: 'Stop going regularly',
+    followShort: 'Regularly',
     skipped: 'Cancelled',
     skipOccurrence: 'Cancel this date',
     unskipOccurrence: 'Reinstate this date',
+    skipShort: 'Skip',
     upcomingSlot: 'Upcoming date',
   },
   friends: {

@@ -15,7 +15,7 @@ import {
 import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Button, EmptyState, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { leaveActivity, processDueRecurringActivities } from '@/lib/api';
@@ -403,25 +403,35 @@ export default function PlannerScreen() {
     return (
       <View style={[styles.card, item.skipped && { opacity: 0.7 }]}>
         <Pressable style={styles.cardBody} onPress={() => onOpenSlot(item)}>
+          {isMine ? <Text style={styles.tag}>{t.events.organizing}</Text> : null}
           <View style={styles.cardTop}>
-            <Subtitle>{categoryLabel(item.categories) ?? item.title}</Subtitle>
-            {item.skipped ? (
-              <Text style={styles.tag}>{t.planner.skipped}</Text>
-            ) : isMine ? (
-              <Text style={styles.tag}>{t.events.organizing}</Text>
-            ) : series ? (
-              <Pressable
-                onPress={(e) => {
-                  e?.stopPropagation?.();
-                  onFollow(item, !following);
-                }}
-                style={[styles.followChip, following && styles.followChipOn]}>
-                <Text style={[styles.followChipText, following && styles.followChipTextOn]}>
-                  {following ? t.planner.unfollowSeries : t.planner.followSeries}
-                </Text>
-              </Pressable>
+            <View style={styles.cardTitle}>
+              <Subtitle>{categoryLabel(item.categories) ?? item.title}</Subtitle>
+            </View>
+            {isMine && series && future ? (
+              <View style={styles.cornerControl} onStartShouldSetResponder={() => true}>
+                <Text style={styles.cornerLabel}>{t.planner.skipShort}</Text>
+                <Switch
+                  value={item.skipped}
+                  onValueChange={(v) => onSkip(item, v)}
+                  trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                  thumbColor="#fff"
+                  style={styles.cornerSwitch}
+                />
+              </View>
+            ) : series && !isMine ? (
+              <View style={styles.cornerControl} onStartShouldSetResponder={() => true}>
+                <Text style={styles.cornerLabel}>{t.planner.followShort}</Text>
+                <Switch
+                  value={following}
+                  onValueChange={(v) => onFollow(item, v)}
+                  trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                  thumbColor="#fff"
+                  style={styles.cornerSwitch}
+                />
+              </View>
             ) : item.virtual ? (
-              <Text style={styles.tag}>{t.planner.upcomingSlot}</Text>
+              <Text style={styles.tagMuted}>{t.planner.upcomingSlot}</Text>
             ) : null}
           </View>
           <Muted>
@@ -461,14 +471,6 @@ export default function PlannerScreen() {
                 size="sm"
                 icon="sign-out"
                 onPress={() => onLeave(item.id)}
-              />
-            ) : null}
-            {isMine && series ? (
-              <Button
-                label={item.skipped ? t.planner.unskipOccurrence : t.planner.skipOccurrence}
-                variant={item.skipped ? 'secondary' : 'dangerOutline'}
-                size="sm"
-                onPress={() => onSkip(item, !item.skipped)}
               />
             ) : null}
           </View>
@@ -678,12 +680,14 @@ const styles = StyleSheet.create({
   },
   cardTop: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
     marginBottom: 4,
   },
+  cardTitle: { flex: 1, flexShrink: 1, minWidth: 0 },
   tag: {
+    alignSelf: 'flex-start',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
@@ -692,28 +696,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     backgroundColor: theme.colors.primarySoft,
     color: theme.colors.primaryDark,
+    marginBottom: 6,
   },
-  followChip: {
-    alignSelf: 'flex-start',
+  tagMuted: {
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.surface,
+    overflow: 'hidden',
+    fontSize: 11,
+    fontWeight: '700',
+    backgroundColor: theme.colors.surfaceElevated,
+    color: theme.colors.textMuted,
     flexShrink: 0,
   },
-  followChipOn: {
-    backgroundColor: theme.colors.primarySoft,
-    borderColor: theme.colors.primaryMuted,
+  cornerControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flexShrink: 0,
   },
-  followChipText: {
+  cornerLabel: {
     fontSize: 11,
     fontWeight: '700',
     color: theme.colors.textMuted,
   },
-  followChipTextOn: {
-    color: theme.colors.primaryDark,
+  cornerSwitch: {
+    transform: [{ scale: 0.82 }],
   },
   actions: {
     flexGrow: 0,
