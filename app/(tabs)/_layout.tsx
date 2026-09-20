@@ -2,7 +2,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useT } from '@/i18n';
@@ -71,6 +71,7 @@ function HeaderActions({ unread }: { unread: number }) {
 export default function TabLayout() {
   const t = useT();
   const { user } = useAuth();
+  const insets = useSafeAreaInsets();
   const [unread, setUnread] = useState(0);
   const [pendingFriends, setPendingFriends] = useState(0);
 
@@ -134,10 +135,18 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      safeAreaInsets={{ top: 0, bottom: 0 }}
       screenOptions={{
+        headerStatusBarHeight: 0,
         tabBarActiveTintColor: theme.colors.primary,
         tabBarInactiveTintColor: theme.colors.textMuted,
-        tabBarStyle: { backgroundColor: theme.colors.surface, borderTopColor: theme.colors.border },
+        tabBarStyle: {
+          backgroundColor: theme.colors.surface,
+          borderTopColor: theme.colors.border,
+          height: 52 + insets.bottom,
+          paddingTop: 4,
+          paddingBottom: insets.bottom,
+        },
         headerStyle: { backgroundColor: theme.colors.surface },
         headerTintColor: theme.colors.text,
         headerRight: () => <HeaderActions unread={unread} />,
