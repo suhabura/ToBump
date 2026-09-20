@@ -12,9 +12,6 @@ function TabIcon({ name, color }: { name: React.ComponentProps<typeof FontAwesom
   return <FontAwesome size={22} name={name} color={color} style={{ marginBottom: -2 }} />;
 }
 
-const webPad = (edge: 'top' | 'bottom') =>
-  `env(safe-area-inset-${edge}, 0px)` as unknown as number;
-
 function TabAppHeader({ title, unread }: { title: string; unread: number }) {
   const t = useT();
   const router = useRouter();
@@ -23,7 +20,7 @@ function TabAppHeader({ title, unread }: { title: string; unread: number }) {
     <View
       style={[
         styles.headerSafe,
-        { paddingTop: Platform.OS === 'web' ? webPad('top') : insets.top },
+        { paddingTop: Platform.OS === 'web' ? 0 : insets.top },
       ]}>
       <View style={styles.headerBar} accessibilityRole="header">
         <Text style={styles.brandTab} numberOfLines={1}>
@@ -153,14 +150,8 @@ export default function TabLayout() {
           borderTopColor: theme.colors.border,
           paddingTop: 4,
           ...(Platform.OS === 'web'
-            ? {
-                height: 'calc(52px + env(safe-area-inset-bottom, 0px))' as unknown as number,
-                paddingBottom: webPad('bottom'),
-              }
-            : {
-                height: 52 + insets.bottom,
-                paddingBottom: insets.bottom,
-              }),
+            ? { height: 52, paddingBottom: 0 }
+            : { height: 52 + insets.bottom, paddingBottom: insets.bottom }),
         },
         headerStyle: { backgroundColor: theme.colors.surface },
         headerTintColor: theme.colors.text,

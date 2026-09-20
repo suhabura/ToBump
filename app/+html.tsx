@@ -11,7 +11,7 @@ export default function Root({ children }: { children: ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
-        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
         <meta name="theme-color" content="#F3F5F0" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="mobile-web-app-capable" content="yes" />
@@ -23,7 +23,7 @@ export default function Root({ children }: { children: ReactNode }) {
         */}
         <ScrollViewStyleReset />
 
-        {/* Match header/tab bar so leftover phone chrome is not sage or black. */}
+        {/* Keep page chrome the same color as the header/tab bar. */}
         <style dangerouslySetInnerHTML={{ __html: responsiveBackground }} />
         {/* Add any additional <head> elements that you want globally available on web... */}
       </head>
@@ -33,22 +33,11 @@ export default function Root({ children }: { children: ReactNode }) {
 }
 
 const responsiveBackground = `
-html {
+html, body, #root {
   height: 100%;
-  height: 100svh;
-  height: -webkit-fill-available;
-  background-color: #F3F5F0;
-}
-body, #root {
-  display: flex;
-  flex-direction: column;
   margin: 0;
-  min-height: 100%;
-  min-height: 100svh;
-  min-height: -webkit-fill-available;
   background-color: #F3F5F0;
 }
 #root {
-  flex: 1;
-  width: 100%;
+  display: flex;
 }`;
