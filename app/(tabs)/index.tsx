@@ -186,15 +186,21 @@ export default function EventsScreen() {
             const capRange = activityCapacityRange(item);
             const cat = categoryLabel(item.categories) ?? item.title;
             const busy = busyId === item.id;
+            const host = isOrganizer ? '' : displayName(item.profiles);
             const role = isOrganizer
               ? { label: t.events.organizing, style: styles.roleOrganizing }
               : item.is_invited
-                ? { label: t.events.invitedBadge, style: styles.roleInvited }
+                ? { label: host ? t.events.invitedBy(host) : t.events.invitedBadge, style: styles.roleInvited }
                 : item.is_open_to_you
-                  ? { label: t.events.openToYou, style: styles.roleQuiet }
+                  ? {
+                      label: host ? `${t.events.openToYou} · ${host}` : t.events.openToYou,
+                      style: styles.roleQuiet,
+                    }
                   : item.is_from_friend
-                    ? { label: t.events.friend, style: styles.roleQuiet }
-                    : null;
+                    ? { label: host ? `${t.events.friend} · ${host}` : t.events.friend, style: styles.roleQuiet }
+                    : host
+                      ? { label: host, style: styles.roleQuiet }
+                      : null;
             return (
               <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
                 <View style={styles.cardMain}>
@@ -218,10 +224,7 @@ export default function EventsScreen() {
                         {item.distance_m != null ? ` · ${formatDistance(item.distance_m)}` : ''}
                       </Text>
                     ) : null}
-                    <Text style={styles.metaLine}>
-                      {activityPriceLabel(item, t.common)}
-                      {isOrganizer ? null : ` · ${displayName(item.profiles)}`}
-                    </Text>
+                    <Text style={styles.metaLine}>{activityPriceLabel(item, t.common)}</Text>
                     <Text style={styles.metaLine}>
                       <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
                       {t.events.joinedCount}: {item.join_count ?? 0}

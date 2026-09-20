@@ -39,6 +39,7 @@ export const sl = {
     invited: 'Zate',
     organizing: 'Organiziraš',
     invitedBadge: 'Povabljen',
+    invitedBy: (name: string) => `Povabil ${name}`,
     openToYou: 'Odprto zate',
     commercial: 'Komercialni',
     commercialRadius: 'Razdalja',

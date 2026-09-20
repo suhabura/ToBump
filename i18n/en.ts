@@ -39,6 +39,7 @@ export const en = {
     invited: 'For you',
     organizing: 'Organizing',
     invitedBadge: 'Invited',
+    invitedBy: (name: string) => `Invited by ${name}`,
     openToYou: 'Open to you',
     commercial: 'Commercial',
     commercialRadius: 'Distance',
