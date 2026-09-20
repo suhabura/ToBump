@@ -112,6 +112,12 @@ export const sl = {
     tomorrow: 'jutri',
     dayAfterTomorrow: 'pojutrišnjem',
     inDays: (n: number) => `čez ${n} dni`,
+    followSeries: 'Nameravam redno hoditi',
+    unfollowSeries: 'Ne hodim več redno',
+    skipped: 'Odpade',
+    skipOccurrence: 'Termin odpade',
+    unskipOccurrence: 'Termin velja',
+    upcomingSlot: 'Prihodnji termin',
   },
   friends: {
     title: 'Prijatelji',

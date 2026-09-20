@@ -184,3 +184,100 @@ export function ruleTimeAsDate(rule: RecurrenceRule): Date {
   d.setHours(rule.hour, rule.minute, 0, 0);
   return d;
 }
+
+export function localDayKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export type SeriesSlot = {
+  seriesId: string;
+  day: string;
+  startsAt: Date;
+  durationMinutes: number;
+};
+
+type ExpandableActivity = {
+  id: string;
+  series_id?: string | null;
+  is_recurring?: boolean;
+  starts_at: string;
+  ends_at?: string | null;
+  duration_minutes?: number | null;
+  recurrence_rules?: Partial<RecurrenceRule>[] | null;
+  recurrence_weekdays?: number[];
+  recurrence_until?: string | null;
+  recurrence_dates?: string[];
+};
+
+export function isDateSeries(activity: Pick<ExpandableActivity, 'recurrence_dates'>): boolean {
+  return (activity.recurrence_dates?.length ?? 0) >= 2;
+}
+
+export function isSeriesActivity(activity: ExpandableActivity): boolean {
+  if (isDateSeries(activity)) return true;
+  if (!activity.is_recurring) return false;
+  const rules = hydrateRules(activity.recurrence_rules, activity.duration_minutes ?? 90);
+  return rules.length > 0 || (activity.recurrence_weekdays?.length ?? 0) > 0;
+}
+
+/** Future slots in [rangeStart, rangeEnd] (local), excluding skipped YYYY-MM-DD days. */
+export function expandSeriesSlots(
+  activity: ExpandableActivity,
+  rangeStart: Date,
+  rangeEnd: Date,
+  skipped: Set<string> = new Set()
+): SeriesSlot[] {
+  const seriesId = activity.series_id ?? activity.id;
+  const seed = new Date(activity.starts_at);
+  if (Number.isNaN(seed.getTime())) return [];
+  const fallbackDuration =
+    activity.duration_minutes && activity.duration_minutes > 0
+      ? activity.duration_minutes
+      : activity.ends_at
+        ? Math.max(15, Math.round((new Date(activity.ends_at).getTime() - seed.getTime()) / 60_000))
+        : 90;
+  const from = startOfLocalDay(rangeStart);
+  const to = startOfLocalDay(rangeEnd);
+  const now = Date.now() - 30_000;
+  const out: SeriesSlot[] = [];
+
+  if (isDateSeries(activity)) {
+    for (const day of activity.recurrence_dates ?? []) {
+      if (skipped.has(day)) continue;
+      const start = combineDayAndTime(day, seed.getHours(), seed.getMinutes());
+      if (start.getTime() < now) continue;
+      const key = localDayKey(start);
+      if (startOfLocalDay(start) < from || startOfLocalDay(start) > to) continue;
+      out.push({ seriesId, day: key, startsAt: start, durationMinutes: fallbackDuration });
+    }
+    return out.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
+  }
+
+  if (!activity.is_recurring) return out;
+  const rules = hydrateRules(
+    activity.recurrence_rules?.length
+      ? activity.recurrence_rules
+      : rulesFromLegacy(activity.recurrence_weekdays ?? [], seed.getHours(), seed.getMinutes(), fallbackDuration),
+    fallbackDuration
+  );
+  if (!rules.length) return out;
+  const byDay = new Map(rules.map((r) => [r.weekday, r]));
+  const untilDay = activity.recurrence_until ? startOfLocalDay(new Date(`${activity.recurrence_until}T12:00:00`)) : null;
+
+  for (let cursor = new Date(from); cursor.getTime() <= to.getTime(); cursor.setDate(cursor.getDate() + 1)) {
+    const day = startOfLocalDay(cursor);
+    if (untilDay && day.getTime() > untilDay.getTime()) break;
+    const key = localDayKey(day);
+    if (skipped.has(key)) continue;
+    const rule = byDay.get(isoWeekday(day));
+    if (!rule) continue;
+    const start = new Date(day);
+    start.setHours(rule.hour, rule.minute, 0, 0);
+    if (start.getTime() < now) continue;
+    out.push({ seriesId, day: key, startsAt: start, durationMinutes: rule.duration_minutes });
+  }
+  return out;
+}

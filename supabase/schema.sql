@@ -108,6 +108,21 @@ create table if not exists public.activity_joins (
   unique (activity_id, user_id)
 );
 
+create table if not exists public.series_follows (
+  series_id uuid not null references public.activities(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (series_id, user_id)
+);
+
+create table if not exists public.series_skipped_dates (
+  series_id uuid not null references public.activities(id) on delete cascade,
+  day date not null,
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  primary key (series_id, day)
+);
+
 create table if not exists public.activity_invites (
   id uuid primary key default gen_random_uuid(),
   activity_id uuid not null references public.activities(id) on delete cascade,

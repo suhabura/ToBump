@@ -261,7 +261,7 @@ export async function fetchActivities(opts: {
       result = result.filter((a) => a.distance_m != null && a.distance_m <= maxM);
       result = hideFullEventsExceptInvolved(result, opts.userId);
       result.sort((a, b) => (a.distance_m ?? 0) - (b.distance_m ?? 0));
-      return result;
+      return oneActivityPerSeries(result);
     }
   }
 
@@ -274,7 +274,7 @@ export async function fetchActivities(opts: {
     return new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime();
   });
 
-  return result;
+  return oneActivityPerSeries(result);
 }
 
 function hideFullEventsExceptInvolved(
@@ -287,6 +287,23 @@ function hideFullEventsExceptInvolved(
     if (!full) return true;
     return Boolean(a.is_joined) || a.created_by === userId;
   });
+}
+
+/** Events feed shows one card per series (soonest upcoming). */
+function oneActivityPerSeries(activities: ActivityWithRelations[]): ActivityWithRelations[] {
+  const bySeries = new Map<string, ActivityWithRelations>();
+  for (const a of activities) {
+    const key = a.series_id || a.id;
+    const prev = bySeries.get(key);
+    if (!prev) {
+      bySeries.set(key, a);
+      continue;
+    }
+    if (new Date(a.starts_at).getTime() < new Date(prev.starts_at).getTime()) {
+      bySeries.set(key, a);
+    }
+  }
+  return Array.from(bySeries.values());
 }
 
 /** Find subcategory id by English (or alias / localized) name. */
@@ -910,45 +927,6 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
       supabase.from('activity_joins').insert({ activity_id: id!, user_id: userId }),
       syncActivityEditors(id!, userId, input.editor_user_ids ?? [], input.title),
     ]);
-
-    if (isDateSeries && id && durationMinutes) {
-      const seriesId = (payload.series_id as string | undefined) || id;
-      const seed = new Date(startsAt);
-      for (const day of dateDays.slice(1)) {
-        const start = combineDayAndTime(day, seed.getHours(), seed.getMinutes());
-        const extraId =
-          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-            ? crypto.randomUUID()
-            : undefined;
-        const extra: Record<string, unknown> = {
-          ...payload,
-          starts_at: start.toISOString(),
-          ends_at: new Date(start.getTime() + durationMinutes * 60_000).toISOString(),
-          series_id: seriesId,
-        };
-        if (extraId) extra.id = extraId;
-        else delete extra.id;
-        let extraIns = await supabase.from('activities').insert(extra).select('id').single();
-        if (extraIns.error && /recurrence_dates/i.test(extraIns.error.message ?? '')) {
-          const fallback = { ...extra };
-          delete fallback.recurrence_dates;
-          extraIns = await supabase.from('activities').insert(fallback).select('id').single();
-        }
-        if (extraIns.error) throw extraIns.error;
-        const eid = extraIns.data?.id;
-        if (!eid) throw extraIns.error ?? new Error('Could not create a dated occurrence.');
-        await supabase.from('activity_joins').insert({ activity_id: eid, user_id: userId });
-        await syncActivityEditors(eid, userId, input.editor_user_ids ?? [], input.title);
-        if (inviteIds.length) {
-          const rows = Array.from(new Set(inviteIds)).map((uid) => ({
-            activity_id: eid,
-            user_id: uid,
-            invited_by: userId,
-          }));
-          await supabase.from('activity_invites').upsert(rows, { onConflict: 'activity_id,user_id' });
-        }
-      }
-    }
   }
 
   if (inviteIds.length && id) {

@@ -19,11 +19,33 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button, EmptyState, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { leaveActivity, processDueRecurringActivities } from '@/lib/api';
+import { seriesKey } from '@/lib/finance';
+import {
+  expandSeriesSlots,
+  isSeriesActivity,
+  localDayKey,
+} from '@/lib/recurrence';
+import {
+  fetchSeriesFollows,
+  fetchSkippedDays,
+  joinSeriesOccurrence,
+  openSeriesOccurrence,
+  setSeriesFollow,
+  skipSeriesDay,
+  unskipSeriesDay,
+} from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
 import { activityLocationLabel, categoryLabel } from '@/lib/types';
+import { showAlert } from '@/lib/dialog';
 import { useLocale, useT, type Translations } from '@/i18n';
 import { theme } from '@/constants/theme';
+
+type PlannerItem = ActivityWithRelations & {
+  slotKey: string;
+  virtual?: boolean;
+  skipped?: boolean;
+};
 
 function relativeDayLabel(startsAt: Date, t: Translations, now = new Date()): string {
   const days = differenceInCalendarDays(startOfDay(startsAt), startOfDay(now));
@@ -127,7 +149,10 @@ export default function PlannerScreen() {
   const router = useRouter();
   const [items, setItems] = useState<ActivityWithRelations[]>([]);
   const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
+  const [follows, setFollows] = useState<Set<string>>(new Set());
+  const [skippedBySeries, setSkippedBySeries] = useState<Map<string, Set<string>>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
 
@@ -147,6 +172,13 @@ export default function PlannerScreen() {
     setJoinedIds(new Set(ids));
     const rows = await fetchMineAndJoined(user.id, ids);
     setItems(rows);
+    const seriesIds = Array.from(new Set(rows.map((a) => seriesKey(a))));
+    const [followSet, skipped] = await Promise.all([
+      fetchSeriesFollows(user.id),
+      fetchSkippedDays(seriesIds),
+    ]);
+    setFollows(followSet);
+    setSkippedBySeries(skipped);
     setLoading(false);
   }, [user?.id]);
 
@@ -157,27 +189,103 @@ export default function PlannerScreen() {
   );
 
   const days = useMemo(() => buildCalendarDays(month), [month]);
+  const rangeStart = days[0] ?? startOfMonth(month);
+  const rangeEnd = days[days.length - 1] ?? endOfMonth(month);
+
+  const plannerItems = useMemo(() => {
+    const templates = new Map<string, ActivityWithRelations>();
+    const realByDay = new Map<string, ActivityWithRelations>();
+    for (const a of items) {
+      const sid = seriesKey(a);
+      const prev = templates.get(sid);
+      const aScore = (a.recurrence_dates?.length ?? 0) + (a.recurrence_rules?.length ?? 0);
+      const pScore = prev ? (prev.recurrence_dates?.length ?? 0) + (prev.recurrence_rules?.length ?? 0) : -1;
+      if (!prev || aScore > pScore) {
+        templates.set(sid, a);
+      }
+      realByDay.set(`${sid}:${localDayKey(new Date(a.starts_at))}`, a);
+    }
+
+    const byKey = new Map<string, PlannerItem>();
+
+    for (const a of items) {
+      const sid = seriesKey(a);
+      const day = localDayKey(new Date(a.starts_at));
+      const skipped = skippedBySeries.get(sid)?.has(day) ?? false;
+      byKey.set(`${sid}:${day}`, {
+        ...a,
+        slotKey: `${sid}:${day}`,
+        virtual: false,
+        skipped,
+      });
+    }
+
+    for (const [sid, template] of templates) {
+      if (!isSeriesActivity(template)) continue;
+      const isMine = template.created_by === user?.id;
+      if (!isMine && !follows.has(sid)) continue;
+      const skipped = skippedBySeries.get(sid) ?? new Set();
+      for (const slot of expandSeriesSlots(template, rangeStart, rangeEnd, skipped)) {
+        const mapKey = `${sid}:${slot.day}`;
+        if (byKey.has(mapKey)) continue;
+        const real = realByDay.get(mapKey);
+        if (real) continue;
+        const durationMs = slot.durationMinutes * 60_000;
+        byKey.set(mapKey, {
+          ...template,
+          starts_at: slot.startsAt.toISOString(),
+          ends_at: new Date(slot.startsAt.getTime() + durationMs).toISOString(),
+          duration_minutes: slot.durationMinutes,
+          slotKey: mapKey,
+          virtual: true,
+          skipped: false,
+        });
+      }
+      for (const day of skipped) {
+        const mapKey = `${sid}:${day}`;
+        if (byKey.has(mapKey)) {
+          byKey.set(mapKey, { ...byKey.get(mapKey)!, skipped: true });
+          continue;
+        }
+        const seed = new Date(template.starts_at);
+        const start = new Date(`${day}T12:00:00`);
+        if (Number.isNaN(start.getTime())) continue;
+        start.setHours(seed.getHours(), seed.getMinutes(), 0, 0);
+        if (start < rangeStart || start > addDays(rangeEnd, 1)) continue;
+        byKey.set(mapKey, {
+          ...template,
+          starts_at: start.toISOString(),
+          slotKey: mapKey,
+          virtual: !realByDay.has(mapKey),
+          skipped: true,
+        });
+      }
+    }
+
+    return Array.from(byKey.values());
+  }, [items, follows, skippedBySeries, rangeStart, rangeEnd, user?.id]);
+
   const eventDays = useMemo(() => {
     const set = new Set<string>();
-    for (const a of items) {
+    for (const a of plannerItems) {
       const d = new Date(a.starts_at);
-      if (!Number.isNaN(d.getTime())) set.add(dayKey(d));
+      if (!Number.isNaN(d.getTime())) set.add(localDayKey(d));
     }
     return set;
-  }, [items]);
+  }, [plannerItems]);
 
   const selectedDayEvents = useMemo(() => {
-    return items
+    return plannerItems
       .filter((a) => isSameDay(new Date(a.starts_at), selectedDay))
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-  }, [items, selectedDay]);
+  }, [plannerItems, selectedDay]);
 
   const upcoming = useMemo(() => {
     const now = Date.now();
-    return items
-      .filter((a) => a.status === 'active' && new Date(a.starts_at).getTime() >= now)
+    return plannerItems
+      .filter((a) => !a.virtual && !a.skipped && a.status === 'active' && new Date(a.starts_at).getTime() >= now)
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-  }, [items]);
+  }, [plannerItems]);
 
   const weekLabels = useMemo(
     () => days.slice(0, 7).map((d) => format(d, 'EEEEEE', { locale: dfLocale })),
@@ -196,19 +304,77 @@ export default function PlannerScreen() {
     load();
   }
 
-  function renderEventCard(item: ActivityWithRelations, opts: { showRelative: boolean; allowActions: boolean }) {
+  async function onFollow(item: PlannerItem, follow: boolean) {
+    try {
+      await setSeriesFollow(seriesKey(item), follow);
+      await load();
+    } catch (e) {
+      showAlert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    }
+  }
+
+  async function onJoinSlot(item: PlannerItem) {
+    if (!user) return;
+    setBusyKey(item.slotKey);
+    try {
+      const id = await joinSeriesOccurrence(item, new Date(item.starts_at), user.id);
+      await load();
+      router.push(`/activity/${id}`);
+    } catch (e) {
+      showAlert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function onOpenSlot(item: PlannerItem) {
+    if (item.skipped) return;
+    try {
+      if (item.virtual) {
+        const id = await openSeriesOccurrence(item, new Date(item.starts_at));
+        router.push(`/activity/${id}`);
+        return;
+      }
+      router.push(`/activity/${item.id}`);
+    } catch (e) {
+      showAlert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    }
+  }
+
+  async function onSkip(item: PlannerItem, skip: boolean) {
+    const day = localDayKey(new Date(item.starts_at));
+    try {
+      if (skip) await skipSeriesDay(seriesKey(item), day);
+      else await unskipSeriesDay(seriesKey(item), day);
+      await load();
+    } catch (e) {
+      showAlert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    }
+  }
+
+  function renderEventCard(item: PlannerItem, opts: { showRelative: boolean; allowActions: boolean }) {
     const starts = new Date(item.starts_at);
     const location = activityLocationLabel(item);
     const future = starts.getTime() >= Date.now();
     const isMine = item.created_by === user?.id;
-    const isJoined = joinedIds.has(item.id);
+    const isJoined = !item.virtual && joinedIds.has(item.id);
+    const series = isSeriesActivity(item);
+    const sid = seriesKey(item);
+    const following = follows.has(sid);
     const showActions = opts.allowActions && future;
+    const busy = busyKey === item.slotKey;
     return (
-      <View style={styles.card}>
-        <Pressable style={styles.cardBody} onPress={() => router.push(`/activity/${item.id}`)}>
+      <View style={[styles.card, item.skipped && { opacity: 0.7 }]}>
+        <Pressable style={styles.cardBody} onPress={() => onOpenSlot(item)}>
           <View style={styles.cardTop}>
             <Subtitle>{categoryLabel(item.categories) ?? item.title}</Subtitle>
-            {isMine ? <Text style={styles.tag}>{t.events.organizing}</Text> : null}
+            {item.skipped ? (
+              <Text style={styles.tag}>{t.planner.skipped}</Text>
+            ) : isMine ? (
+              <Text style={styles.tag}>{t.events.organizing}</Text>
+            ) : item.virtual ? (
+              <Text style={styles.tag}>{t.planner.upcomingSlot}</Text>
+            ) : null}
           </View>
           <Muted>
             {format(starts, 'EEE, d MMM · HH:mm', { locale: dfLocale })}
@@ -219,16 +385,37 @@ export default function PlannerScreen() {
               {t.events.location}: {location}
             </Muted>
           ) : null}
+          {series && !isMine ? (
+            <View style={{ marginTop: 8 }}>
+              <Button
+                label={following ? t.planner.unfollowSeries : t.planner.followSeries}
+                variant={following ? 'secondary' : 'primary'}
+                size="sm"
+                onPress={() => onFollow(item, !following)}
+              />
+            </View>
+          ) : null}
         </Pressable>
         {showActions ? (
           <View style={styles.actions} onStartShouldSetResponder={() => true}>
-            <Button
-              label={t.events.chat}
-              variant="secondary"
-              size="sm"
-              icon="comments"
-              onPress={() => router.push(`/chat/${item.id}`)}
-            />
+            {!item.skipped && (isJoined || (!item.virtual && isMine)) ? (
+              <Button
+                label={t.events.chat}
+                variant="secondary"
+                size="sm"
+                icon="comments"
+                onPress={() => router.push(`/chat/${item.id}`)}
+              />
+            ) : null}
+            {!item.skipped && !isJoined ? (
+              <Button
+                label={t.events.join}
+                size="sm"
+                icon="check"
+                loading={busy}
+                onPress={() => onJoinSlot(item)}
+              />
+            ) : null}
             {isJoined && !isMine ? (
               <Button
                 label={t.events.leave}
@@ -236,6 +423,14 @@ export default function PlannerScreen() {
                 size="sm"
                 icon="sign-out"
                 onPress={() => onLeave(item.id)}
+              />
+            ) : null}
+            {isMine && series ? (
+              <Button
+                label={item.skipped ? t.planner.unskipOccurrence : t.planner.skipOccurrence}
+                variant={item.skipped ? 'secondary' : 'dangerOutline'}
+                size="sm"
+                onPress={() => onSkip(item, !item.skipped)}
               />
             ) : null}
           </View>
@@ -251,8 +446,8 @@ export default function PlannerScreen() {
       ) : (
         <FlatList
           data={upcoming}
-          keyExtractor={(i) => i.id}
-          extraData={`${dayKey(selectedDay)}:${joinedIds.size}`}
+          keyExtractor={(i) => i.slotKey}
+          extraData={`${dayKey(selectedDay)}:${joinedIds.size}:${follows.size}:${busyKey}`}
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
             <View style={styles.column}>
@@ -317,7 +512,7 @@ export default function PlannerScreen() {
                 <View style={styles.section}>
                   <Subtitle>{selectedHeading}</Subtitle>
                   {selectedDayEvents.map((item) => (
-                    <View key={`day-${item.id}`}>
+                    <View key={`day-${item.slotKey}`}>
                       {renderEventCard(item, {
                         showRelative: false,
                         allowActions: new Date(item.starts_at).getTime() >= Date.now(),
