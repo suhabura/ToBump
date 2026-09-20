@@ -375,9 +375,8 @@ export default function PlannerScreen() {
     const isJoined = !item.virtual && joinedIds.has(item.id);
     const showActions = opts.allowActions && future;
     const busy = busyKey === item.slotKey;
-    const showRail = showActions || isMine;
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, isMine ? styles.cardMine : null]}>
         <View style={styles.cardBody}>
           <View style={styles.cardTop}>
             <Pressable style={styles.cardTitle} onPress={() => onOpenSlot(item)}>
@@ -399,10 +398,10 @@ export default function PlannerScreen() {
             ) : null}
           </Pressable>
         </View>
-        {showRail ? (
+        {showActions ? (
           <View style={styles.actions} onStartShouldSetResponder={() => true}>
             {isMine ? (
-              <Text style={[styles.tag, styles.tagInActions]} numberOfLines={2}>
+              <Text style={styles.roleLabel} numberOfLines={1}>
                 {t.events.organizing}
               </Text>
             ) : null}
@@ -654,6 +653,10 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     ...theme.shadow.card,
   },
+  cardMine: {
+    borderColor: theme.colors.primaryMuted,
+    backgroundColor: theme.colors.primarySoft,
+  },
   cardBody: {
     flex: 1,
     flexShrink: 1,
@@ -668,19 +671,15 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   cardTitle: { flex: 1, flexShrink: 1, minWidth: 0 },
-  tag: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    overflow: 'hidden',
+  roleLabel: {
+    alignSelf: 'center',
+    maxWidth: '100%',
     fontSize: 11,
     fontWeight: '700',
-    backgroundColor: theme.colors.primarySoft,
-    color: theme.colors.primaryDark,
-  },
-  tagInActions: {
+    lineHeight: 14,
     textAlign: 'center',
-    alignSelf: 'stretch',
+    marginBottom: 2,
+    color: theme.colors.primaryDark,
   },
   tagMuted: {
     paddingHorizontal: 8,
@@ -697,9 +696,9 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 0,
     flexDirection: 'column',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'stretch',
-    gap: 6,
+    gap: 8,
     minWidth: 128,
     paddingVertical: theme.space.md,
     paddingHorizontal: 10,

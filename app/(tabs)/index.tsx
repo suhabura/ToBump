@@ -187,13 +187,13 @@ export default function EventsScreen() {
             const cat = categoryLabel(item.categories) ?? item.title;
             const busy = busyId === item.id;
             const role = isOrganizer
-              ? { label: t.events.organizing, style: styles.tagOrganizing }
+              ? { label: t.events.organizing, style: styles.roleOrganizing }
               : item.is_invited
-                ? { label: t.events.invitedBadge, style: styles.tagInvited }
+                ? { label: t.events.invitedBadge, style: styles.roleInvited }
                 : item.is_open_to_you
-                  ? { label: t.events.openToYou, style: styles.tagOpen }
+                  ? { label: t.events.openToYou, style: styles.roleQuiet }
                   : item.is_from_friend
-                    ? { label: t.events.friend, style: styles.tagOpen }
+                    ? { label: t.events.friend, style: styles.roleQuiet }
                     : null;
             return (
               <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
@@ -236,7 +236,7 @@ export default function EventsScreen() {
 
                 <View style={styles.actions} onStartShouldSetResponder={() => true}>
                   {role ? (
-                    <Text style={[styles.tag, styles.tagInActions, role.style]} numberOfLines={2}>
+                    <Text style={[styles.roleLabel, role.style]} numberOfLines={1}>
                       {role.label}
                     </Text>
                   ) : null}
@@ -323,30 +323,18 @@ const styles = StyleSheet.create({
     flexShrink: 0,
     gap: 2,
   },
-  tag: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-    overflow: 'hidden',
+  roleLabel: {
+    alignSelf: 'center',
+    maxWidth: '100%',
     fontSize: 11,
     fontWeight: '700',
-  },
-  tagInActions: {
+    lineHeight: 14,
     textAlign: 'center',
-    alignSelf: 'stretch',
+    marginBottom: 2,
   },
-  tagOrganizing: {
-    backgroundColor: theme.colors.primarySoft,
-    color: theme.colors.primaryDark,
-  },
-  tagInvited: {
-    backgroundColor: theme.colors.warningSoft,
-    color: '#92400E',
-  },
-  tagOpen: {
-    backgroundColor: theme.colors.infoSoft,
-    color: theme.colors.info,
-  },
+  roleOrganizing: { color: theme.colors.primaryDark },
+  roleInvited: { color: theme.colors.warning },
+  roleQuiet: { color: theme.colors.textMuted },
   count: {
     color: theme.colors.textMuted,
     fontSize: 12,
@@ -368,9 +356,9 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 0,
     flexDirection: 'column',
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
     alignItems: 'stretch',
-    gap: 6,
+    gap: 8,
     minWidth: 128,
     paddingVertical: theme.space.md,
     paddingHorizontal: 10,
