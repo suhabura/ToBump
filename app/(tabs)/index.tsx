@@ -2,9 +2,9 @@ import { format } from 'date-fns';
 import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Button, EmptyState, Input, Loading, Screen, Subtitle } from '@/components/ui';
+import { Button, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchActivities, joinActivity, leaveActivity } from '@/lib/api';
 import { formatDistance } from '@/lib/geo';
@@ -21,6 +21,7 @@ export default function EventsScreen() {
   const { user, configured } = useAuth();
   const router = useRouter();
   const [search, setSearch] = useState('');
+  const [searchOpen, setSearchOpen] = useState(false);
   const [items, setItems] = useState<ActivityWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -152,19 +153,49 @@ export default function EventsScreen() {
   return (
     <Screen style={{ paddingBottom: 0 }}>
       <View style={styles.toolbar}>
-        <Input
-          placeholder={t.events.search}
-          value={search}
-          onChangeText={setSearch}
-          onSubmitEditing={() => void load()}
-          containerStyle={{ marginBottom: 0 }}
-        />
-        <Button
-          label={t.events.create}
-          icon="plus"
-          size="sm"
-          onPress={() => router.push('/activity/create')}
-        />
+        {searchOpen ? (
+          <View style={styles.searchField}>
+            <FontAwesome name="search" size={14} color={theme.colors.textMuted} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder={t.events.search}
+              placeholderTextColor={theme.colors.textMuted}
+              value={search}
+              onChangeText={setSearch}
+              onSubmitEditing={() => void load()}
+              autoFocus
+              returnKeyType="search"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            <Pressable
+              onPress={() => {
+                setSearchOpen(false);
+                if (search) setSearch('');
+              }}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={t.common.cancel}>
+              <FontAwesome name="times" size={16} color={theme.colors.textMuted} />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            onPress={() => setSearchOpen(true)}
+            style={styles.searchHit}
+            accessibilityRole="button"
+            accessibilityLabel={t.events.search}>
+            <FontAwesome name="search" size={18} color={theme.colors.text} />
+          </Pressable>
+        )}
+        <View style={styles.createWrap}>
+          <Button
+            label={t.events.create}
+            icon="plus"
+            size="sm"
+            onPress={() => router.push('/activity/create')}
+          />
+        </View>
       </View>
 
       {loading && !hasLoaded.current ? (
@@ -274,8 +305,43 @@ export default function EventsScreen() {
 
 const styles = StyleSheet.create({
   toolbar: {
-    gap: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
     marginBottom: theme.space.sm,
+  },
+  searchHit: {
+    width: 42,
+    height: 42,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  searchField: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    borderRadius: theme.radius.sm,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+  },
+  searchInput: {
+    flexGrow: 1,
+    flexShrink: 1,
+    minWidth: 0,
+    paddingVertical: 8,
+    fontSize: 16,
+    color: theme.colors.text,
+  },
+  createWrap: {
+    flexShrink: 0,
+    marginLeft: 'auto',
   },
   card: {
     width: '100%',
