@@ -89,7 +89,6 @@ export const sl = {
     location: 'Lokacija',
     locationUnset: 'Lokacija: ni nastavljena',
     organizer: 'Organizator',
-    uncategorized: 'nekategorizirano',
     openMaps: 'Odpri v Zemljevidih',
     officialProvider: 'Uradni ponudnik',
     tobumpBooking: 'ToBump rezervacija',
@@ -247,9 +246,6 @@ export const sl = {
   form: {
     activity: 'Aktivnost',
     activityPlaceholder: 'npr. Nogomet, Tenis ali poljubna lastna aktivnost…',
-    knownActivity: 'Znana podkategorija — bližnji ponudniki so filtrirani po tej aktivnosti.',
-    uncategorizedProviders:
-      'Lastna / nekategorizirana aktivnost — kategorija se ne shrani; lokacijo vpiši ročno.',
     uncategorizedVenueHint:
       'Izberi naslov s predloga ali vpiši ime in pritisni Enter (brez koordinat).',
     needSubcategory: 'Vnesite znano podkategorijo (npr. Nogomet, Koncert, Pohod).',

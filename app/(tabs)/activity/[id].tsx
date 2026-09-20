@@ -271,7 +271,7 @@ export default function ActivityDetailScreen() {
     <Screen>
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         <Title>
-          {categoryLabel(activity.categories) ?? `${activity.title} (${t.events.uncategorized})`}
+          {categoryLabel(activity.categories) ?? activity.title}
         </Title>
 
         {activity.finance_enabled ? (

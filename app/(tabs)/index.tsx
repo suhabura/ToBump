@@ -184,7 +184,7 @@ export default function EventsScreen() {
               item.max_participants != null && (item.join_count ?? 0) >= item.max_participants;
             const location = activityLocationLabel(item);
             const capRange = activityCapacityRange(item);
-            const cat = categoryLabel(item.categories) ?? `${item.title} (${t.events.uncategorized})`;
+            const cat = categoryLabel(item.categories) ?? item.title;
             const busy = busyId === item.id;
             return (
               <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>

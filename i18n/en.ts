@@ -89,7 +89,6 @@ export const en = {
     location: 'Location',
     locationUnset: 'Location: not set',
     organizer: 'Organizer',
-    uncategorized: 'uncategorized',
     openMaps: 'Open in Maps',
     officialProvider: 'Official provider',
     tobumpBooking: 'ToBump booking',
@@ -248,9 +247,6 @@ export const en = {
   form: {
     activity: 'Activity',
     activityPlaceholder: 'e.g. Football, Tennis, or any custom activity…',
-    knownActivity: 'Known subcategory — nearby providers are filtered by this activity.',
-    uncategorizedProviders:
-      'Custom / uncategorized activity — category is not saved; enter the venue manually.',
     uncategorizedVenueHint:
       'Pick an address from suggestions, or type a name and press Enter (no coordinates).',
     needSubcategory: 'Enter a known subcategory (e.g. Football, Concert, Hiking).',

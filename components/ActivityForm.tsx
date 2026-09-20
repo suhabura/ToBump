@@ -231,8 +231,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [locale]);
 
-  const isCategorized = Boolean(matchedCategoryId);
-
   function onVenueLocationChange(next: {
     address: string;
     latitude: number | null;
@@ -679,13 +677,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           return key ? categoryDisplayName(key, locale) : null;
         }}
       />
-      {title.trim() ? (
-        <Muted>
-          {isCategorized
-            ? t.form.knownActivity
-            : t.form.uncategorizedProviders}
-        </Muted>
-      ) : null}
 
       <Text style={styles.section}>{req(t.events.venue)}</Text>
       <View style={styles.row}>
