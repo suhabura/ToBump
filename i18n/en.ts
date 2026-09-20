@@ -296,6 +296,11 @@ export const en = {
       'Pick weekdays. Each day has its own start time and duration. When an occurrence starts, it closes and the next opens; chat carries over.',
     datesHint: 'Tap days on the calendar. The same start time and duration apply to every date. Each date is its own event; invites, chat and finance stay in one series.',
     datesLockedOnEdit: 'Dates are already created. Here you change the time of this occurrence only.',
+    addDatesHint:
+      'Tap a day to add a date — including one you deleted. Existing dates cannot be removed here; delete them from the event.',
+    addExtraDate: 'Add a date',
+    addExtraDateHint:
+      'Extra dates besides the weekly rhythm. Tap a deleted day to bring it back.',
     needDates: 'Pick at least two dates.',
     timeForDates: 'Start time (all dates)',
     datesPicked: (n: number) => (n === 1 ? '1 date selected' : `${n} dates selected`),

@@ -28,7 +28,6 @@ import {
   formatDuration,
   formatFirstOccurrence,
   formatRecurrence,
-  formatRecurrenceDates,
   hydrateRules,
   isoWeekday,
   normalizeRules,
@@ -159,15 +158,31 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [editorIds, setEditorIds] = useState<string[]>(initial?.editor_user_ids ?? []);
   const [showEditors, setShowEditors] = useState(Boolean(initial?.editor_user_ids?.length));
   const [recurrenceMode, setRecurrenceMode] = useState<'once' | 'weekly' | 'dates'>(() => {
+    const weekly =
+      Boolean(initial?.is_recurring) &&
+      ((initial?.recurrence_rules?.length ?? 0) > 0 ||
+        ((initial as { recurrence_weekdays?: number[] } | undefined)?.recurrence_weekdays?.length ?? 0) > 0);
+    if (weekly) return 'weekly';
     if ((initial?.recurrence_dates?.length ?? 0) >= 2) return 'dates';
     if (initial?.is_recurring) return 'weekly';
     return 'once';
   });
   const isRecurring = recurrenceMode !== 'once';
   const isDateSeries = recurrenceMode === 'dates';
+  const lockedDates = useMemo(
+    () => Array.from(new Set(initial?.recurrence_dates ?? [])).sort(),
+    [initial?.recurrence_dates]
+  );
   const [pickedDates, setPickedDates] = useState<string[]>(() =>
     Array.from(new Set(initial?.recurrence_dates ?? [])).sort()
   );
+  const [extraDates, setExtraDates] = useState<string[]>(() => {
+    const weekly =
+      Boolean(initial?.is_recurring) &&
+      ((initial?.recurrence_rules?.length ?? 0) > 0 ||
+        ((initial as { recurrence_weekdays?: number[] } | undefined)?.recurrence_weekdays?.length ?? 0) > 0);
+    return weekly ? Array.from(new Set(initial?.recurrence_dates ?? [])).sort() : [];
+  });
   const [financeEnabled, setFinanceEnabled] = useState(Boolean(initial?.finance_enabled));
   const [fundingMode, setFundingMode] = useState<FundingMode>(() => {
     const raw = initial?.funding_mode;
@@ -579,7 +594,12 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           finance_enabled: financeEnabled,
           recurrence_rules: recurrenceMode === 'weekly' ? normalized : [],
           recurrence_until: recurrenceMode === 'weekly' && recurrenceUntil ? formatDay(recurrenceUntil) : null,
-          recurrence_dates: isDateSeries ? [...pickedDates].sort() : [],
+          recurrence_dates:
+            recurrenceMode === 'dates'
+              ? [...pickedDates].sort()
+              : recurrenceMode === 'weekly'
+                ? [...extraDates].sort()
+                : [],
         },
         activityId
       );
@@ -858,8 +878,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         <View>
           {activityId ? (
             <View>
-              <Muted>{t.form.datesLockedOnEdit}</Muted>
-              {pickedDates.length ? <Muted>{formatRecurrenceDates(pickedDates, locale)}</Muted> : null}
+              <Muted>{t.form.addDatesHint}</Muted>
+              <DateMultiField selected={pickedDates} onChange={setPickedDates} lockedDays={lockedDates} />
+              <Muted>{t.form.datesPicked(pickedDates.length)}</Muted>
             </View>
           ) : (
             <View>
@@ -994,6 +1015,13 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             mode="date"
             minimumDate={computedFirst ?? seriesFromDate}
           />
+          {activityId ? (
+            <View>
+              <Text style={styles.section}>{t.form.addExtraDate}</Text>
+              <Muted>{t.form.addExtraDateHint}</Muted>
+              <DateMultiField selected={extraDates} onChange={setExtraDates} />
+            </View>
+          ) : null}
         </View>
       ) : (
         <View>

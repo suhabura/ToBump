@@ -212,8 +212,12 @@ type ExpandableActivity = {
   recurrence_dates?: string[];
 };
 
-export function isDateSeries(activity: Pick<ExpandableActivity, 'recurrence_dates'>): boolean {
-  return (activity.recurrence_dates?.length ?? 0) >= 2;
+export function isDateSeries(activity: Pick<ExpandableActivity, 'recurrence_dates' | 'is_recurring' | 'recurrence_rules' | 'recurrence_weekdays'>): boolean {
+  if ((activity.recurrence_dates?.length ?? 0) < 2) return false;
+  const weekly =
+    Boolean(activity.is_recurring) &&
+    ((activity.recurrence_rules?.length ?? 0) > 0 || (activity.recurrence_weekdays?.length ?? 0) > 0);
+  return !weekly;
 }
 
 export function isSeriesActivity(activity: ExpandableActivity): boolean {
@@ -278,6 +282,17 @@ export function expandSeriesSlots(
     start.setHours(rule.hour, rule.minute, 0, 0);
     if (start.getTime() < now) continue;
     out.push({ seriesId, day: key, startsAt: start, durationMinutes: rule.duration_minutes });
+  }
+
+  const seen = new Set(out.map((s) => s.day));
+  for (const extra of activity.recurrence_dates ?? []) {
+    const day = String(extra).slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || skipped.has(day) || seen.has(day)) continue;
+    const start = combineDayAndTime(day, seed.getHours(), seed.getMinutes());
+    if (start.getTime() < now) continue;
+    if (startOfLocalDay(start) < from || startOfLocalDay(start) > to) continue;
+    seen.add(day);
+    out.push({ seriesId, day, startsAt: start, durationMinutes: fallbackDuration });
   }
   return out;
 }

@@ -722,9 +722,10 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     throw new Error('Select at least one friend to invite.');
   }
   const dateDays = Array.from(new Set((input.recurrence_dates ?? []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))).sort();
-  const isDateSeries = dateDays.length >= 2;
-  const isWeekly = Boolean(input.is_recurring) && !isDateSeries;
-  const rules = isWeekly ? normalizeRules(input.recurrence_rules ?? []) : [];
+  const weeklyRules = normalizeRules(input.recurrence_rules ?? []);
+  const isWeekly = Boolean(input.is_recurring) && weeklyRules.length > 0;
+  const isDateSeries = dateDays.length >= 2 && !isWeekly;
+  const rules = isWeekly ? weeklyRules : [];
   if (input.is_recurring && !isDateSeries && rules.length === 0) {
     throw new Error('Select at least one weekday for recurrence.');
   }
@@ -805,6 +806,13 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
   }
 
   const weekdays = rules.map((r) => r.weekday);
+  const weeklyExtraDates = isWeekly
+    ? dateDays.filter((d) => {
+        const dt = new Date(`${d}T12:00:00`);
+        if (Number.isNaN(dt.getTime())) return false;
+        return !rules.some((r) => r.weekday === isoWeekday(dt));
+      })
+    : [];
 
   let startsAt = input.starts_at;
   let endsAt = input.ends_at || null;
@@ -857,7 +865,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     recurrence_weekdays: weekdays,
     recurrence_rules: rules,
     recurrence_until: isWeekly ? input.recurrence_until || null : isDateSeries ? dateDays[dateDays.length - 1] : null,
-    recurrence_dates: isDateSeries ? dateDays : [],
+    recurrence_dates: isDateSeries ? dateDays : isWeekly ? weeklyExtraDates : [],
     duration_minutes: durationMinutes,
     updated_at: new Date().toISOString(),
   };
@@ -870,7 +878,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     }
     const { data: existing, error: loadError } = await supabase
       .from('activities')
-      .select('created_by, series_id, is_recurring, starts_at')
+      .select('created_by, series_id, is_recurring, starts_at, recurrence_dates')
       .eq('id', activityId)
       .maybeSingle();
     if (loadError) throw loadError;
@@ -895,6 +903,17 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     } else if (error) {
       throw error;
     }
+
+    if (isDateSeries || isWeekly) {
+      const sid = existing.series_id ?? activityId;
+      const storedDates = isDateSeries ? dateDays : weeklyExtraDates;
+      await supabase.from('activities').update({ recurrence_dates: storedDates }).eq('id', sid);
+      await supabase.from('activities').update({ recurrence_dates: storedDates }).eq('series_id', sid);
+      for (const day of dateDays) {
+        await supabase.from('series_skipped_dates').delete().eq('series_id', sid).eq('day', day);
+      }
+    }
+
     await supabase.from('activity_invites').delete().eq('activity_id', activityId);
 
     // Invite/privacy template applies to this + all upcoming occurrences in the series

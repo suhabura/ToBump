@@ -39,9 +39,11 @@ type Props = {
   selected: string[];
   onChange: (days: string[]) => void;
   hint?: string;
+  /** These days stay selected and cannot be removed here. */
+  lockedDays?: string[];
 };
 
-export function DateMultiField({ selected, onChange, hint }: Props) {
+export function DateMultiField({ selected, onChange, hint, lockedDays = [] }: Props) {
   const { locale } = useLocale();
   const dfLocale = locale === 'sl' ? slLocale : enUS;
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
@@ -51,11 +53,13 @@ export function DateMultiField({ selected, onChange, hint }: Props) {
     [days, dfLocale]
   );
   const selectedSet = useMemo(() => new Set(selected), [selected]);
+  const lockedSet = useMemo(() => new Set(lockedDays), [lockedDays]);
   const today = startOfDay(new Date());
 
   function toggle(day: Date) {
     const key = dayKey(day);
     if (isBefore(startOfDay(day), today)) return;
+    if (lockedSet.has(key)) return;
     if (selectedSet.has(key)) onChange(selected.filter((d) => d !== key));
     else onChange([...selected, key].sort());
   }
@@ -116,12 +120,16 @@ export function DateMultiField({ selected, onChange, hint }: Props) {
         <View style={styles.chips}>
           {selected.map((key) => {
             const d = new Date(`${key}T12:00:00`);
+            const locked = lockedSet.has(key);
             return (
               <Chip
                 key={key}
-                label={`${format(d, 'd. MMM', { locale: dfLocale })} ×`}
+                label={locked ? format(d, 'd. MMM', { locale: dfLocale }) : `${format(d, 'd. MMM', { locale: dfLocale })} ×`}
                 active
-                onPress={() => onChange(selected.filter((x) => x !== key))}
+                onPress={() => {
+                  if (locked) return;
+                  onChange(selected.filter((x) => x !== key));
+                }}
               />
             );
           })}

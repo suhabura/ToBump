@@ -297,6 +297,11 @@ export const sl = {
     datesHint:
       'Tapni dneve v koledarju. Ista ura in trajanje veljata za vse datume. Vsak datum je svoj dogodek; vabila, klepet in finance ostanejo v isti seriji.',
     datesLockedOnEdit: 'Datumi so že ustvarjeni. Tukaj spremeniš uro tega termina.',
+    addDatesHint:
+      'Tapni dan, da dodaš termin — tudi izbrisanega. Obstoječih datumov tukaj ne moreš odstraniti; izbriši jih v dogodku.',
+    addExtraDate: 'Dodaj datum',
+    addExtraDateHint:
+      'Dodatni termini poleg tedenskega ritma. Izbrisani dan vrneš tako, da ga tapneš.',
     needDates: 'Izberi vsaj dva datuma.',
     timeForDates: 'Ura začetka (za vse datume)',
     datesPicked: (n: number) => (n === 1 ? 'Izbran 1 datum' : `Izbranih ${n} datumov`),
