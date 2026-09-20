@@ -59,6 +59,33 @@ function dayKey(d: Date): string {
   return format(startOfDay(d), 'yyyy-MM-dd');
 }
 
+function DayDot({
+  mark,
+  selected,
+}: {
+  mark?: 'organizing' | 'joined' | 'both';
+  selected: boolean;
+}) {
+  if (!mark) return <View style={styles.dot} />;
+  if (selected) return <View style={[styles.dot, styles.dotOnSelected]} />;
+  if (mark === 'both') {
+    return (
+      <View style={styles.dotSplit}>
+        <View style={[styles.dotHalf, { backgroundColor: theme.colors.primary }]} />
+        <View style={[styles.dotHalf, { backgroundColor: theme.colors.accent }]} />
+      </View>
+    );
+  }
+  return (
+    <View
+      style={[
+        styles.dot,
+        mark === 'organizing' ? styles.dotOrganizing : styles.dotJoined,
+      ]}
+    />
+  );
+}
+
 function buildCalendarDays(month: Date): Date[] {
   const start = startOfWeek(startOfMonth(month), { weekStartsOn: 1 });
   const end = endOfWeek(endOfMonth(month), { weekStartsOn: 1 });
@@ -222,7 +249,8 @@ export default function PlannerScreen() {
 
     for (const [sid, template] of templates) {
       if (!isSeriesActivity(template)) continue;
-      if (!follows.has(sid)) continue;
+      const isMine = template.created_by === user?.id;
+      if (!isMine && !follows.has(sid)) continue;
       const skipped = skippedBySeries.get(sid) ?? new Set();
       for (const slot of expandSeriesSlots(template, rangeStart, rangeEnd, skipped)) {
         const mapKey = `${sid}:${slot.day}`;
@@ -262,18 +290,23 @@ export default function PlannerScreen() {
     }
 
     return Array.from(byKey.values());
-  }, [items, follows, skippedBySeries, rangeStart, rangeEnd]);
+  }, [items, follows, skippedBySeries, rangeStart, rangeEnd, user?.id]);
 
   const dayMarks = useMemo(() => {
-    const map = new Map<string, 'organizing' | 'joined'>();
+    const flags = new Map<string, { org: boolean; joined: boolean }>();
     for (const a of plannerItems) {
       const key = localDayKey(new Date(a.starts_at));
       if (Number.isNaN(new Date(a.starts_at).getTime())) continue;
-      if (a.created_by === user?.id) {
-        map.set(key, 'organizing');
-      } else if (map.get(key) !== 'organizing') {
-        map.set(key, 'joined');
-      }
+      const cur = flags.get(key) ?? { org: false, joined: false };
+      if (a.created_by === user?.id) cur.org = true;
+      else cur.joined = true;
+      flags.set(key, cur);
+    }
+    const map = new Map<string, 'organizing' | 'joined' | 'both'>();
+    for (const [key, f] of flags) {
+      if (f.org && f.joined) map.set(key, 'both');
+      else if (f.org) map.set(key, 'organizing');
+      else map.set(key, 'joined');
     }
     return map;
   }, [plannerItems, user?.id]);
@@ -389,7 +422,7 @@ export default function PlannerScreen() {
               {t.events.location}: {location}
             </Muted>
           ) : null}
-          {series ? (
+          {series && !isMine ? (
             <Pressable
               onPress={(e) => {
                 e?.stopPropagation?.();
@@ -502,13 +535,7 @@ export default function PlannerScreen() {
                           ]}>
                           {format(day, 'd')}
                         </Text>
-                        <View
-                          style={[
-                            styles.dot,
-                            mark === 'organizing' && (selected ? styles.dotOnSelected : styles.dotOrganizing),
-                            mark === 'joined' && (selected ? styles.dotOnSelected : styles.dotJoined),
-                          ]}
-                        />
+                        <DayDot mark={mark} selected={selected} />
                       </Pressable>
                     );
                   })}
@@ -608,11 +635,24 @@ const styles = StyleSheet.create({
   dayMuted: { color: theme.colors.textMuted, fontWeight: '500' },
   dayTextSelected: { color: '#fff', fontWeight: '700' },
   dot: {
-    width: 5,
-    height: 5,
-    borderRadius: 3,
-    marginTop: 2,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    marginTop: 3,
     backgroundColor: 'transparent',
+    overflow: 'hidden',
+  },
+  dotSplit: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    marginTop: 3,
+    flexDirection: 'row',
+    overflow: 'hidden',
+  },
+  dotHalf: {
+    flex: 1,
+    height: '100%',
   },
   dotOrganizing: { backgroundColor: theme.colors.primary },
   dotJoined: { backgroundColor: theme.colors.accent },
