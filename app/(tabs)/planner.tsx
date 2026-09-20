@@ -409,6 +409,17 @@ export default function PlannerScreen() {
               <Text style={styles.tag}>{t.planner.skipped}</Text>
             ) : isMine ? (
               <Text style={styles.tag}>{t.events.organizing}</Text>
+            ) : series ? (
+              <Pressable
+                onPress={(e) => {
+                  e?.stopPropagation?.();
+                  onFollow(item, !following);
+                }}
+                style={[styles.followChip, following && styles.followChipOn]}>
+                <Text style={[styles.followChipText, following && styles.followChipTextOn]}>
+                  {following ? t.planner.unfollowSeries : t.planner.followSeries}
+                </Text>
+              </Pressable>
             ) : item.virtual ? (
               <Text style={styles.tag}>{t.planner.upcomingSlot}</Text>
             ) : null}
@@ -421,18 +432,6 @@ export default function PlannerScreen() {
             <Muted>
               {t.events.location}: {location}
             </Muted>
-          ) : null}
-          {series && !isMine ? (
-            <Pressable
-              onPress={(e) => {
-                e?.stopPropagation?.();
-                onFollow(item, !following);
-              }}
-              style={[styles.followChip, following && styles.followChipOn]}>
-              <Text style={[styles.followChipText, following && styles.followChipTextOn]}>
-                {following ? t.planner.unfollowSeries : t.planner.followSeries}
-              </Text>
-            </Pressable>
           ) : null}
         </Pressable>
         {showActions ? (
@@ -696,13 +695,13 @@ const styles = StyleSheet.create({
   },
   followChip: {
     alignSelf: 'flex-start',
-    marginTop: 8,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: theme.colors.border,
     backgroundColor: theme.colors.surface,
+    flexShrink: 0,
   },
   followChipOn: {
     backgroundColor: theme.colors.primarySoft,
