@@ -197,36 +197,38 @@ export default function EventsScreen() {
                     : null;
             return (
               <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
-                <Pressable
-                  style={styles.cardBody}
-                  onPress={() => router.push(`/activity/${item.id}`)}
-                >
-                  {role ? (
-                    <Text style={[styles.overline, role.style]} numberOfLines={1}>
-                      {role.label}
+                <View style={styles.cardMain}>
+                  <Pressable
+                    style={styles.cardBody}
+                    onPress={() => router.push(`/activity/${item.id}`)}
+                  >
+                    {role ? (
+                      <Text style={[styles.overline, role.style]} numberOfLines={1}>
+                        {role.label}
+                      </Text>
+                    ) : null}
+                    <Subtitle>{cat}</Subtitle>
+                    <Text style={styles.when}>
+                      {format(new Date(item.starts_at), 'EEE, d MMM · HH:mm', { locale: dfLocale })}
                     </Text>
-                  ) : null}
-                  <Subtitle>{cat}</Subtitle>
-                  <Text style={styles.when}>
-                    {format(new Date(item.starts_at), 'EEE, d MMM · HH:mm', { locale: dfLocale })}
-                  </Text>
-                  {location ? (
-                    <Text style={styles.metaLine} numberOfLines={1}>
-                      <FontAwesome name="map-marker" size={12} color={theme.colors.textMuted} />{' '}
-                      {location}
-                      {item.distance_m != null ? ` · ${formatDistance(item.distance_m)}` : ''}
+                    {location ? (
+                      <Text style={styles.metaLine} numberOfLines={1}>
+                        <FontAwesome name="map-marker" size={12} color={theme.colors.textMuted} />{' '}
+                        {location}
+                        {item.distance_m != null ? ` · ${formatDistance(item.distance_m)}` : ''}
+                      </Text>
+                    ) : null}
+                    <Text style={styles.metaLine}>
+                      {activityPriceLabel(item, t.common)}
+                      {isOrganizer ? null : ` · ${displayName(item.profiles)}`}
                     </Text>
-                  ) : null}
-                  <Text style={styles.metaLine}>
-                    {activityPriceLabel(item, t.common)}
-                    {isOrganizer ? null : ` · ${displayName(item.profiles)}`}
-                  </Text>
-                  <Text style={styles.metaLine}>
-                    <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
-                    {t.events.joinedCount}: {item.join_count ?? 0}
-                    {capRange ? ` · ${t.events.capacity}: ${capRange}` : ''}
-                  </Text>
-                </Pressable>
+                    <Text style={styles.metaLine}>
+                      <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
+                      {t.events.joinedCount}: {item.join_count ?? 0}
+                      {capRange ? ` · ${t.events.capacity}: ${capRange}` : ''}
+                    </Text>
+                  </Pressable>
+                </View>
 
                 <View style={styles.actions} onStartShouldSetResponder={() => true}>
                   {joined ? (
@@ -289,10 +291,14 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.primaryMuted,
     backgroundColor: theme.colors.primarySoft,
   },
-  cardBody: {
-    flex: 1,
+  cardMain: {
+    flexGrow: 1,
     flexShrink: 1,
+    flexBasis: 0,
     minWidth: 0,
+  },
+  cardBody: {
+    flexGrow: 1,
     padding: theme.space.md,
   },
   overline: {
@@ -323,7 +329,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'stretch',
     gap: 6,
-    minWidth: 128,
+    width: 148,
+    minWidth: 148,
+    maxWidth: 148,
     paddingVertical: theme.space.md,
     paddingHorizontal: 10,
     borderLeftWidth: StyleSheet.hairlineWidth,
