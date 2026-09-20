@@ -438,6 +438,7 @@ export default function ActivityDetailScreen() {
           ) : null}
           {user && isSeriesActivity(activity) && !isOwner ? (
             <View style={{ gap: 6 }}>
+              {following ? <Muted>{t.planner.followShort}</Muted> : null}
               <Button
                 label={following ? t.planner.unfollowSeries : t.planner.followSeries}
                 variant="secondary"
