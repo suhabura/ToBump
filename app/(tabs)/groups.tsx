@@ -144,8 +144,8 @@ export default function GroupsScreen() {
       destructive: true,
       onConfirm: () => {
         void (async () => {
-          const { data, error } = await supabase.from('friend_groups').delete().eq('id', id).select('id');
-          if (error || !data?.length) {
+          const { error } = await supabase.from('friend_groups').delete().eq('id', id);
+          if (error) {
             showAlert(t.common.error, t.groups.deleteFailed);
             return;
           }

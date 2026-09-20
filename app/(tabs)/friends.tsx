@@ -4,7 +4,7 @@ import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { createNotification } from '@/lib/api';
-import { confirmAction, showAlert } from '@/lib/dialog';
+import { showAlert } from '@/lib/dialog';
 import { dedupeFriendshipsByOther, dedupeProfilesByEmail, friendshipOtherId } from '@/lib/friends';
 import { supabase } from '@/lib/supabase';
 import type { Friendship, Profile } from '@/lib/types';
@@ -33,6 +33,8 @@ export default function FriendsScreen() {
   const [results, setResults] = useState<Profile[]>([]);
   const [searching, setSearching] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [pendingRemoveId, setPendingRemoveId] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
   const searchSeq = useRef(0);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -267,28 +269,25 @@ export default function FriendsScreen() {
     const pairIds = Array.from(
       new Set([friendshipOtherId(row, user.id), row.other?.id].filter((id): id is string => Boolean(id)))
     );
-    const name = displayName(row.other);
 
-    const run = async () => {
-      const orFilter = [`id.eq.${row.id}`, ...pairIds.flatMap((id) => [`from_user_id.eq.${id}`, `to_user_id.eq.${id}`])].join(
-        ','
-      );
-      const { data, error } = await supabase.from('friendships').delete().or(orFilter).select('id');
-      if (error || !data?.length) {
-        showAlert(t.common.error, t.friends.removeFailed);
-        return;
-      }
-      await load();
-    };
-
-    confirmAction({
-      title: t.friends.removeConfirmTitle,
-      message: t.friends.removeConfirm(name),
-      confirmLabel: t.friends.remove,
-      cancelLabel: t.common.cancel,
-      destructive: true,
-      onConfirm: () => void run(),
-    });
+    setRemovingId(row.id);
+    const { error } = await supabase.from('friendships').delete().eq('id', row.id);
+    if (error) {
+      setRemovingId(null);
+      setPendingRemoveId(null);
+      showAlert(t.common.error, t.friends.removeFailed);
+      return;
+    }
+    for (const oid of pairIds) {
+      await supabase.from('friendships').delete().eq('from_user_id', user.id).eq('to_user_id', oid);
+      await supabase.from('friendships').delete().eq('from_user_id', oid).eq('to_user_id', user.id);
+    }
+    setFriends((prev) =>
+      prev.filter((f) => f.id !== row.id && !pairIds.includes(friendshipOtherId(f, user.id)))
+    );
+    setPendingRemoveId(null);
+    setRemovingId(null);
+    await load();
   }
 
   if (loading) return <Loading />;
@@ -342,6 +341,7 @@ export default function FriendsScreen() {
         <FlatList
           data={friends}
           keyExtractor={(i) => i.other?.email?.trim().toLowerCase() || i.id}
+          keyboardShouldPersistTaps="handled"
           ListEmptyComponent={<EmptyState title={t.friends.empty} />}
           renderItem={({ item }) => (
             <View style={styles.row}>
@@ -349,13 +349,32 @@ export default function FriendsScreen() {
                 <Text style={styles.name}>{displayName(item.other)}</Text>
                 <Muted>{item.other?.email}</Muted>
               </View>
-              <Button
-                label={t.friends.remove}
-                variant="dangerOutline"
-                size="sm"
-                icon="user-times"
-                onPress={() => void removeFriend(item)}
-              />
+              {pendingRemoveId === item.id ? (
+                <>
+                  <Button
+                    label={t.common.cancel}
+                    variant="ghost"
+                    size="sm"
+                    onPress={() => setPendingRemoveId(null)}
+                  />
+                  <Button
+                    label={t.friends.remove}
+                    variant="dangerOutline"
+                    size="sm"
+                    icon="user-times"
+                    loading={removingId === item.id}
+                    onPress={() => void removeFriend(item)}
+                  />
+                </>
+              ) : (
+                <Button
+                  label={t.friends.remove}
+                  variant="dangerOutline"
+                  size="sm"
+                  icon="user-times"
+                  onPress={() => setPendingRemoveId(item.id)}
+                />
+              )}
             </View>
           )}
         />
