@@ -222,8 +222,7 @@ export default function PlannerScreen() {
 
     for (const [sid, template] of templates) {
       if (!isSeriesActivity(template)) continue;
-      const isMine = template.created_by === user?.id;
-      if (!isMine && !follows.has(sid)) continue;
+      if (!follows.has(sid)) continue;
       const skipped = skippedBySeries.get(sid) ?? new Set();
       for (const slot of expandSeriesSlots(template, rangeStart, rangeEnd, skipped)) {
         const mapKey = `${sid}:${slot.day}`;
@@ -263,16 +262,21 @@ export default function PlannerScreen() {
     }
 
     return Array.from(byKey.values());
-  }, [items, follows, skippedBySeries, rangeStart, rangeEnd, user?.id]);
+  }, [items, follows, skippedBySeries, rangeStart, rangeEnd]);
 
-  const eventDays = useMemo(() => {
-    const set = new Set<string>();
+  const dayMarks = useMemo(() => {
+    const map = new Map<string, 'organizing' | 'joined'>();
     for (const a of plannerItems) {
-      const d = new Date(a.starts_at);
-      if (!Number.isNaN(d.getTime())) set.add(localDayKey(d));
+      const key = localDayKey(new Date(a.starts_at));
+      if (Number.isNaN(new Date(a.starts_at).getTime())) continue;
+      if (a.created_by === user?.id) {
+        map.set(key, 'organizing');
+      } else if (map.get(key) !== 'organizing') {
+        map.set(key, 'joined');
+      }
     }
-    return set;
-  }, [plannerItems]);
+    return map;
+  }, [plannerItems, user?.id]);
 
   const selectedDayEvents = useMemo(() => {
     return plannerItems
@@ -385,15 +389,17 @@ export default function PlannerScreen() {
               {t.events.location}: {location}
             </Muted>
           ) : null}
-          {series && !isMine ? (
-            <View style={{ marginTop: 8 }}>
-              <Button
-                label={following ? t.planner.unfollowSeries : t.planner.followSeries}
-                variant={following ? 'secondary' : 'primary'}
-                size="sm"
-                onPress={() => onFollow(item, !following)}
-              />
-            </View>
+          {series ? (
+            <Pressable
+              onPress={(e) => {
+                e?.stopPropagation?.();
+                onFollow(item, !following);
+              }}
+              style={[styles.followChip, following && styles.followChipOn]}>
+              <Text style={[styles.followChipText, following && styles.followChipTextOn]}>
+                {following ? t.planner.unfollowSeries : t.planner.followSeries}
+              </Text>
+            </Pressable>
           ) : null}
         </Pressable>
         {showActions ? (
@@ -475,7 +481,7 @@ export default function PlannerScreen() {
                     const inMonth = isSameMonth(day, month);
                     const selected = isSameDay(day, selectedDay);
                     const isToday = isSameDay(day, today);
-                    const hasEvent = eventDays.has(dayKey(day));
+                    const mark = dayMarks.get(dayKey(day));
                     return (
                       <Pressable
                         key={day.toISOString()}
@@ -499,7 +505,8 @@ export default function PlannerScreen() {
                         <View
                           style={[
                             styles.dot,
-                            hasEvent && (selected ? styles.dotOnSelected : styles.dotActive),
+                            mark === 'organizing' && (selected ? styles.dotOnSelected : styles.dotOrganizing),
+                            mark === 'joined' && (selected ? styles.dotOnSelected : styles.dotJoined),
                           ]}
                         />
                       </Pressable>
@@ -607,7 +614,8 @@ const styles = StyleSheet.create({
     marginTop: 2,
     backgroundColor: 'transparent',
   },
-  dotActive: { backgroundColor: theme.colors.accent },
+  dotOrganizing: { backgroundColor: theme.colors.primary },
+  dotJoined: { backgroundColor: theme.colors.accent },
   dotOnSelected: { backgroundColor: '#fff' },
   section: { marginBottom: theme.space.sm },
   card: {
@@ -644,6 +652,28 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     backgroundColor: theme.colors.primarySoft,
+    color: theme.colors.primaryDark,
+  },
+  followChip: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.surface,
+  },
+  followChipOn: {
+    backgroundColor: theme.colors.primarySoft,
+    borderColor: theme.colors.primaryMuted,
+  },
+  followChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: theme.colors.textMuted,
+  },
+  followChipTextOn: {
     color: theme.colors.primaryDark,
   },
   actions: {
