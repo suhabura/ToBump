@@ -11,7 +11,6 @@ import { theme } from '@/constants/theme';
 export default function MyPaymentsScreen() {
   const t = useT();
   const { user } = useAuth();
-  const router = useRouter();
   const [data, setData] = useState<PersonalFinance | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -101,10 +100,6 @@ export default function MyPaymentsScreen() {
             ) : null}
           </>
         ) : null}
-
-        <Text style={styles.back} onPress={() => router.back()}>
-          {t.common.cancel}
-        </Text>
       </ScrollView>
     </Screen>
   );
@@ -173,6 +168,5 @@ const styles = StyleSheet.create({
   },
   name: { fontWeight: '700', color: theme.colors.text },
   status: { marginTop: 4, fontSize: 13, color: theme.colors.textMuted, fontWeight: '600' },
-  back: { marginTop: 16, color: theme.colors.primary, fontWeight: '700' },
   error: { color: theme.colors.danger, fontWeight: '600', marginBottom: 8 },
 });
