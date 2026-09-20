@@ -1,5 +1,5 @@
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
@@ -16,6 +16,13 @@ type FriendRow = Friendship & {
   other: Profile | null;
 };
 
+const MIN_SEARCH = 2;
+const SEARCH_DEBOUNCE_MS = 250;
+
+function sanitizeSearch(q: string): string {
+  return q.replace(/[%_,()]/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 export default function FriendsScreen() {
   const t = useT();
   const { user } = useAuth();
@@ -24,7 +31,10 @@ export default function FriendsScreen() {
   const [requests, setRequests] = useState<(Friendship & { from: Profile | null })[]>([]);
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<Profile[]>([]);
+  const [searching, setSearching] = useState(false);
   const [loading, setLoading] = useState(true);
+  const searchSeq = useRef(0);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -90,17 +100,68 @@ export default function FriendsScreen() {
     }, [load])
   );
 
-  async function onSearch() {
-    if (!user || !search.trim()) return;
-    const q = search.trim();
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .neq('id', user.id)
-      .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,email.ilike.%${q}%`)
-      .limit(40);
-    setResults(dedupeProfilesByEmail((data as Profile[]) ?? []).slice(0, 20));
-  }
+  const exclude = useMemo(() => {
+    const ids = new Set<string>();
+    const emails = new Set<string>();
+    for (const f of friends) {
+      ids.add(friendshipOtherId(f, user?.id ?? ''));
+      if (f.other?.id) ids.add(f.other.id);
+      const email = f.other?.email?.trim().toLowerCase();
+      if (email) emails.add(email);
+    }
+    for (const r of requests) ids.add(r.from_user_id);
+    return { ids, emails };
+  }, [friends, requests, user?.id]);
+
+  const runSearch = useCallback(
+    async (raw: string) => {
+      if (!user) return;
+      const q = sanitizeSearch(raw);
+      if (q.length < MIN_SEARCH) {
+        searchSeq.current += 1;
+        setResults([]);
+        setSearching(false);
+        return;
+      }
+      const seq = ++searchSeq.current;
+      setSearching(true);
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .neq('id', user.id)
+        .or(`first_name.ilike.%${q}%,last_name.ilike.%${q}%,email.ilike.%${q}%`)
+        .limit(40);
+      if (seq !== searchSeq.current) return;
+      setResults(
+        dedupeProfilesByEmail((data as Profile[]) ?? [])
+          .filter((p) => !exclude.ids.has(p.id))
+          .filter((p) => {
+            const email = p.email?.trim().toLowerCase();
+            return !email || !exclude.emails.has(email);
+          })
+          .slice(0, 20)
+      );
+      setSearching(false);
+    },
+    [user, exclude]
+  );
+
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    const q = sanitizeSearch(search);
+    if (q.length < MIN_SEARCH) {
+      searchSeq.current += 1;
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    searchTimer.current = setTimeout(() => {
+      void runSearch(search);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [search, runSearch]);
 
   async function sendRequest(toUserId: string) {
     if (!user) return;
@@ -238,14 +299,17 @@ export default function FriendsScreen() {
         placeholder={t.friends.search}
         value={search}
         onChangeText={setSearch}
-        onSubmitEditing={onSearch}
+        onSubmitEditing={() => void runSearch(search)}
         returnKeyType="search"
+        autoCorrect={false}
+        autoCapitalize="none"
       />
-      <Button label={t.friends.searchAction} variant="secondary" onPress={onSearch} />
 
-      {results.length ? (
+      {sanitizeSearch(search).length >= MIN_SEARCH ? (
         <View style={{ marginTop: 12 }}>
           <Subtitle>{t.friends.results}</Subtitle>
+          {searching && !results.length ? <Muted>{t.common.loading}</Muted> : null}
+          {!searching && !results.length ? <Muted>{t.friends.noMatches}</Muted> : null}
           {results.map((p) => (
             <View key={p.id} style={styles.row}>
               <View style={{ flex: 1 }}>

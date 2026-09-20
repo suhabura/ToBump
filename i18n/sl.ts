@@ -116,6 +116,7 @@ export const sl = {
     search: 'Išči uporabnike…',
     searchAction: 'Išči',
     results: 'Rezultati',
+    noMatches: 'Nihče ne ustreza iskanju.',
     requests: 'Prošnje',
     accept: 'Sprejmi',
     reject: 'Zavrni',

@@ -116,6 +116,7 @@ export const en = {
     search: 'Search users…',
     searchAction: 'Search',
     results: 'Results',
+    noMatches: 'No users match this search.',
     requests: 'Requests',
     accept: 'Accept',
     reject: 'Decline',
