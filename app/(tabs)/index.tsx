@@ -201,23 +201,12 @@ export default function EventsScreen() {
                   style={styles.cardBody}
                   onPress={() => router.push(`/activity/${item.id}`)}
                 >
-                  <View style={styles.cardTop}>
-                    <View style={styles.titleBlock}>
-                      <Subtitle>{cat}</Subtitle>
-                    </View>
-                    <View style={styles.countBlock}>
-                      <Text style={styles.count}>
-                        <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
-                        {t.events.joinedCount}: {item.join_count ?? 0}
-                      </Text>
-                      {capRange ? (
-                        <Text style={styles.count}>
-                          {t.events.capacity}: {capRange}
-                        </Text>
-                      ) : null}
-                    </View>
-                  </View>
-
+                  {role ? (
+                    <Text style={[styles.overline, role.style]} numberOfLines={1}>
+                      {role.label}
+                    </Text>
+                  ) : null}
+                  <Subtitle>{cat}</Subtitle>
                   <Text style={styles.when}>
                     {format(new Date(item.starts_at), 'EEE, d MMM · HH:mm', { locale: dfLocale })}
                   </Text>
@@ -232,14 +221,14 @@ export default function EventsScreen() {
                     {activityPriceLabel(item, t.common)}
                     {isOrganizer ? null : ` · ${displayName(item.profiles)}`}
                   </Text>
+                  <Text style={styles.metaLine}>
+                    <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
+                    {t.events.joinedCount}: {item.join_count ?? 0}
+                    {capRange ? ` · ${t.events.capacity}: ${capRange}` : ''}
+                  </Text>
                 </Pressable>
 
                 <View style={styles.actions} onStartShouldSetResponder={() => true}>
-                  {role ? (
-                    <Text style={[styles.roleLabel, role.style]} numberOfLines={1}>
-                      {role.label}
-                    </Text>
-                  ) : null}
                   {joined ? (
                     <>
                       <Button
@@ -306,40 +295,15 @@ const styles = StyleSheet.create({
     minWidth: 0,
     padding: theme.space.md,
   },
-  cardTop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-    gap: 8,
-  },
-  titleBlock: {
-    flex: 1,
-    flexShrink: 1,
-    minWidth: 0,
-  },
-  countBlock: {
-    alignItems: 'flex-end',
-    flexShrink: 0,
-    gap: 2,
-  },
-  roleLabel: {
-    alignSelf: 'center',
-    maxWidth: '100%',
+  overline: {
     fontSize: 11,
     fontWeight: '700',
     lineHeight: 14,
-    textAlign: 'center',
-    marginBottom: 2,
+    marginBottom: 4,
   },
   roleOrganizing: { color: theme.colors.primaryDark },
   roleInvited: { color: theme.colors.warning },
   roleQuiet: { color: theme.colors.textMuted },
-  count: {
-    color: theme.colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-  },
   when: {
     color: theme.colors.primaryDark,
     fontSize: 14,
@@ -356,9 +320,9 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 0,
     flexDirection: 'column',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     alignItems: 'stretch',
-    gap: 8,
+    gap: 6,
     minWidth: 128,
     paddingVertical: theme.space.md,
     paddingHorizontal: 10,

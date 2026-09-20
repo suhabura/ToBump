@@ -378,6 +378,11 @@ export default function PlannerScreen() {
     return (
       <View style={[styles.card, isMine ? styles.cardMine : null]}>
         <View style={styles.cardBody}>
+          {isMine ? (
+            <Text style={styles.overline} numberOfLines={1}>
+              {t.events.organizing}
+            </Text>
+          ) : null}
           <View style={styles.cardTop}>
             <Pressable style={styles.cardTitle} onPress={() => onOpenSlot(item)}>
               <Subtitle>{categoryLabel(item.categories) ?? item.title}</Subtitle>
@@ -400,12 +405,7 @@ export default function PlannerScreen() {
         </View>
         {showActions ? (
           <View style={styles.actions} onStartShouldSetResponder={() => true}>
-            {isMine ? (
-              <Text style={styles.roleLabel} numberOfLines={1}>
-                {t.events.organizing}
-              </Text>
-            ) : null}
-            {showActions && !item.skipped && (isJoined || (!item.virtual && isMine)) ? (
+            {!item.skipped && (isJoined || (!item.virtual && isMine)) ? (
               <Button
                 label={t.events.chat}
                 variant="secondary"
@@ -671,14 +671,11 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   cardTitle: { flex: 1, flexShrink: 1, minWidth: 0 },
-  roleLabel: {
-    alignSelf: 'center',
-    maxWidth: '100%',
+  overline: {
     fontSize: 11,
     fontWeight: '700',
     lineHeight: 14,
-    textAlign: 'center',
-    marginBottom: 2,
+    marginBottom: 4,
     color: theme.colors.primaryDark,
   },
   tagMuted: {
@@ -696,9 +693,9 @@ const styles = StyleSheet.create({
     flexGrow: 0,
     flexShrink: 0,
     flexDirection: 'column',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     alignItems: 'stretch',
-    gap: 8,
+    gap: 6,
     minWidth: 128,
     paddingVertical: theme.space.md,
     paddingHorizontal: 10,
