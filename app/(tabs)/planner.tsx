@@ -59,6 +59,36 @@ function dayKey(d: Date): string {
   return format(startOfDay(d), 'yyyy-MM-dd');
 }
 
+function SeriesToggle({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <View
+      style={styles.cornerControl}
+      onStartShouldSetResponder={() => true}
+      onTouchEnd={(e) => e.stopPropagation()}
+      // RN web: stop the card Pressable from eating the click
+      {...({
+        onClick: (e: { stopPropagation: () => void }) => e.stopPropagation(),
+      } as object)}>
+      <Text style={styles.cornerLabel}>{label}</Text>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+        thumbColor="#fff"
+        ios_backgroundColor={theme.colors.border}
+      />
+    </View>
+  );
+}
+
 function DayDot({
   mark,
   selected,
@@ -402,48 +432,40 @@ export default function PlannerScreen() {
     const busy = busyKey === item.slotKey;
     return (
       <View style={[styles.card, item.skipped && { opacity: 0.7 }]}>
-        <Pressable style={styles.cardBody} onPress={() => onOpenSlot(item)}>
+        <View style={styles.cardBody}>
           {isMine ? <Text style={styles.tag}>{t.events.organizing}</Text> : null}
           <View style={styles.cardTop}>
-            <View style={styles.cardTitle}>
+            <Pressable style={styles.cardTitle} onPress={() => onOpenSlot(item)}>
               <Subtitle>{categoryLabel(item.categories) ?? item.title}</Subtitle>
-            </View>
+            </Pressable>
             {isMine && series && future ? (
-              <View style={styles.cornerControl} onStartShouldSetResponder={() => true}>
-                <Text style={styles.cornerLabel}>{t.planner.skipShort}</Text>
-                <Switch
-                  value={item.skipped}
-                  onValueChange={(v) => onSkip(item, v)}
-                  trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-                  thumbColor="#fff"
-                  style={styles.cornerSwitch}
-                />
-              </View>
+              <SeriesToggle
+                label={t.planner.skipShort}
+                value={item.skipped}
+                onChange={(v) => onSkip(item, v)}
+              />
             ) : series && !isMine ? (
-              <View style={styles.cornerControl} onStartShouldSetResponder={() => true}>
-                <Text style={styles.cornerLabel}>{t.planner.followShort}</Text>
-                <Switch
-                  value={following}
-                  onValueChange={(v) => onFollow(item, v)}
-                  trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-                  thumbColor="#fff"
-                  style={styles.cornerSwitch}
-                />
-              </View>
+              <SeriesToggle
+                label={t.planner.followShort}
+                value={following}
+                onChange={(v) => onFollow(item, v)}
+              />
             ) : item.virtual ? (
               <Text style={styles.tagMuted}>{t.planner.upcomingSlot}</Text>
             ) : null}
           </View>
-          <Muted>
-            {format(starts, 'EEE, d MMM · HH:mm', { locale: dfLocale })}
-            {opts.showRelative ? ` · ${relativeDayLabel(starts, t)}` : ''}
-          </Muted>
-          {location ? (
+          <Pressable onPress={() => onOpenSlot(item)}>
             <Muted>
-              {t.events.location}: {location}
+              {format(starts, 'EEE, d MMM · HH:mm', { locale: dfLocale })}
+              {opts.showRelative ? ` · ${relativeDayLabel(starts, t)}` : ''}
             </Muted>
-          ) : null}
-        </Pressable>
+            {location ? (
+              <Muted>
+                {t.events.location}: {location}
+              </Muted>
+            ) : null}
+          </Pressable>
+        </View>
         {showActions ? (
           <View style={styles.actions} onStartShouldSetResponder={() => true}>
             {!item.skipped && (isJoined || (!item.virtual && isMine)) ? (
@@ -719,9 +741,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     color: theme.colors.textMuted,
-  },
-  cornerSwitch: {
-    transform: [{ scale: 0.82 }],
   },
   actions: {
     flexGrow: 0,
