@@ -253,9 +253,9 @@ export default function PlannerScreen() {
           data={upcoming}
           keyExtractor={(i) => i.id}
           extraData={`${dayKey(selectedDay)}:${joinedIds.size}`}
-          contentContainerStyle={{ paddingBottom: 32 }}
+          contentContainerStyle={styles.listContent}
           ListHeaderComponent={
-            <View>
+            <View style={styles.column}>
               <View style={styles.calCard}>
                 <View style={styles.monthRow}>
                   <Pressable onPress={() => setMonth((m) => subMonths(m, 1))} style={styles.monthBtn}>
@@ -343,6 +343,15 @@ export default function PlannerScreen() {
 }
 
 const styles = StyleSheet.create({
+  listContent: {
+    paddingBottom: 32,
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+  },
+  column: {
+    width: '100%',
+  },
   calCard: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
@@ -350,6 +359,9 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     padding: theme.space.md,
     marginBottom: theme.space.lg,
+    width: '100%',
+    maxWidth: 420,
+    alignSelf: 'center',
     ...theme.shadow.card,
   },
   monthRow: {
