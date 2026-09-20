@@ -416,7 +416,7 @@ export default function PlannerScreen() {
                 onPress={() => onJoinSlot(item)}
               />
             ) : null}
-            {isJoined && !isMine ? (
+            {isJoined ? (
               <Button
                 label={t.events.leave}
                 variant="dangerOutline"
