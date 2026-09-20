@@ -1,23 +1,20 @@
-import { format } from 'date-fns';
-import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { EmptyState, Loading, Muted, Screen, Subtitle, Title } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { fetchMyFinance, type PersonalFinance } from '@/lib/finance';
-import { useLocale, useT } from '@/i18n';
+import { useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
 export default function MyPaymentsScreen() {
   const t = useT();
-  const { locale } = useLocale();
   const { user } = useAuth();
   const router = useRouter();
   const [data, setData] = useState<PersonalFinance | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const dfLocale = locale === 'sl' ? slLocale : enUS;
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -44,6 +41,7 @@ export default function MyPaymentsScreen() {
 
   return (
     <Screen>
+      <ScrollView contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
       <Title>{t.finance.myPayments}</Title>
       {error ? <Text style={styles.error}>{error}</Text> : null}
 
@@ -65,22 +63,41 @@ export default function MyPaymentsScreen() {
       ) : null}
 
       <Subtitle>{t.finance.recent}</Subtitle>
-      {!data?.recent.length ? <EmptyState title={t.finance.noObligations} /> : null}
-      {data?.recent.map((e, idx) => (
-        <View key={`${e.seriesId}-${e.createdAt}-${idx}`} style={styles.row}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.name}>{e.title}</Text>
-            <Muted>
-              {e.amount.toFixed(2)} € · {e.paidByYou ? t.finance.paidByYou : t.finance.someoneElsePaid}
-              {` · ${format(new Date(e.createdAt), 'd MMM yyyy', { locale: dfLocale })}`}
-            </Muted>
-          </View>
-        </View>
-      ))}
+      {!data?.series.length ? <EmptyState title={t.finance.noObligations} /> : null}
+      {data?.series.map((e) => {
+        const status =
+          e.youOwe > 0.001
+            ? t.finance.youOwe(e.youOwe)
+            : e.youAreOwed > 0.001
+              ? t.finance.youAreOwed(e.youAreOwed)
+              : t.finance.yourBalanceSettled;
+        const tone =
+          e.youOwe > 0.001 ? styles.negative : e.youAreOwed > 0.001 ? styles.positive : undefined;
+        return (
+          <Pressable
+            key={e.seriesId}
+            style={styles.row}
+            onPress={() =>
+              router.push({
+                pathname: '/activity/[id]',
+                params: { id: e.activityId, tab: 'finance' },
+              })
+            }
+            accessibilityRole="button"
+            accessibilityLabel={`${e.title}. ${status}`}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.name}>{e.title}</Text>
+              <Text style={[styles.status, tone]}>{status}</Text>
+            </View>
+            <FontAwesome name="angle-right" size={20} color={theme.colors.textMuted} />
+          </Pressable>
+        );
+      })}
 
       <Text style={styles.back} onPress={() => router.back()}>
         {t.common.cancel}
       </Text>
+      </ScrollView>
     </Screen>
   );
 }
@@ -104,8 +121,12 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     padding: theme.space.md,
     marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   name: { fontWeight: '700', color: theme.colors.text },
+  status: { marginTop: 4, fontSize: 13, color: theme.colors.textMuted, fontWeight: '600' },
   back: { marginTop: 16, color: theme.colors.primary, fontWeight: '700' },
   error: { color: theme.colors.danger, fontWeight: '600', marginBottom: 8 },
 });

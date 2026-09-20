@@ -801,20 +801,44 @@ export type ObligationWithMeta = ActivityObligation & {
   activity_expenses?: Pick<ActivityExpense, 'id' | 'title' | 'expense_type' | 'period_key' | 'amount'> | null;
 };
 
+export type PersonalFinanceSeries = {
+  seriesId: string;
+  activityId: string;
+  title: string;
+  youOwe: number;
+  youAreOwed: number;
+};
+
 export type PersonalFinance = {
   youOwe: number;
   youAreOwed: number;
   expensesInvolved: number;
-  recent: {
-    seriesId: string;
-    title: string;
-    amount: number;
-    paidByYou: boolean;
-    createdAt: string;
-  }[];
+  series: PersonalFinanceSeries[];
 };
 
+type SeriesActivityPick = {
+  id: string;
+  title: string;
+  status: string | null;
+  starts_at: string;
+  finance_enabled?: boolean | null;
+  series_id?: string | null;
+};
+
+function pickFinanceActivity(seriesId: string, acts: SeriesActivityPick[]): SeriesActivityPick | null {
+  const sibs = acts.filter((a) => a.id === seriesId || a.series_id === seriesId);
+  const withFinance = sibs.filter((a) => a.finance_enabled !== false);
+  if (!withFinance.length) return null;
+  const active = withFinance.filter((a) => a.status === 'active');
+  const pool = (active.length ? active : withFinance).slice().sort(
+    (a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime()
+  );
+  return pool[0] ?? null;
+}
+
 export async function fetchMyFinance(userId: string): Promise<PersonalFinance> {
+  const empty: PersonalFinance = { youOwe: 0, youAreOwed: 0, expensesInvolved: 0, series: [] };
+
   const { data: memberRows, error: mErr } = await supabase
     .from('activity_expense_members')
     .select('expense_id')
@@ -830,32 +854,57 @@ export async function fetchMyFinance(userId: string): Promise<PersonalFinance> {
     .limit(50);
 
   const allIds = Array.from(new Set([...expenseIds, ...((paidRows ?? []).map((e: { id: string }) => e.id))]));
-  if (!allIds.length) {
-    return { youOwe: 0, youAreOwed: 0, expensesInvolved: 0, recent: [] };
+
+  let obligationRows: {
+    series_id: string;
+    amount_due: number;
+    amount_paid: number;
+    status: ActivityObligation['status'];
+  }[] = [];
+  try {
+    const { data, error } = await supabase
+      .from('activity_obligations')
+      .select('series_id, amount_due, amount_paid, status')
+      .eq('user_id', userId);
+    if (!error) {
+      obligationRows = (data ?? []) as typeof obligationRows;
+    }
+  } catch {
+    /* optional until SQL is applied */
   }
 
-  const { data: expenses, error } = await supabase
-    .from('activity_expenses')
-    .select('*, activity_expense_members(user_id)')
-    .in('id', allIds)
-    .order('created_at', { ascending: false });
-  if (error) throw error;
-
-  const seriesIds = Array.from(
-    new Set(((expenses as ActivityExpense[]) ?? []).map((e) => e.series_id))
-  );
-  const { data: settlements } = seriesIds.length
-    ? await supabase.from('activity_settlements').select('*').in('series_id', seriesIds)
-    : { data: [] as ActivitySettlement[] };
-
-  const bySeries = new Map<string, ExpenseWithMeta[]>();
-  for (const e of (expenses as ExpenseWithMeta[]) ?? []) {
-    const list = bySeries.get(e.series_id) ?? [];
-    list.push({
+  let expenses: ExpenseWithMeta[] = [];
+  if (allIds.length) {
+    const { data, error } = await supabase
+      .from('activity_expenses')
+      .select('*, activity_expense_members(user_id)')
+      .in('id', allIds)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    expenses = ((data as ExpenseWithMeta[]) ?? []).map((e) => ({
       ...e,
       members: (e as ExpenseWithMeta & { activity_expense_members?: { user_id: string }[] })
         .activity_expense_members,
-    });
+    }));
+  }
+
+  const seriesIds = Array.from(
+    new Set([
+      ...expenses.map((e) => e.series_id),
+      ...obligationRows.map((o) => o.series_id),
+    ].filter(Boolean))
+  );
+  if (!seriesIds.length) return empty;
+
+  const { data: settlements } = await supabase
+    .from('activity_settlements')
+    .select('*')
+    .in('series_id', seriesIds);
+
+  const bySeries = new Map<string, ExpenseWithMeta[]>();
+  for (const e of expenses) {
+    const list = bySeries.get(e.series_id) ?? [];
+    list.push(e);
     bySeries.set(e.series_id, list);
   }
 
@@ -866,29 +915,73 @@ export async function fetchMyFinance(userId: string): Promise<PersonalFinance> {
     settlementsBySeries.set(s.series_id, list);
   }
 
-  let youOwe = 0;
-  let youAreOwed = 0;
-  for (const [sid, exps] of bySeries) {
-    const balances = computeBalances(exps, settlementsBySeries.get(sid) ?? [], new Map());
-    const mine = balances.find((b) => b.userId === userId);
-    if (!mine) continue;
-    if (mine.net < 0) youOwe += -mine.net;
-    if (mine.net > 0) youAreOwed += mine.net;
+  const openFeeBySeries = new Map<string, number>();
+  for (const o of obligationRows) {
+    openFeeBySeries.set(
+      o.series_id,
+      round2((openFeeBySeries.get(o.series_id) ?? 0) + obligationOpenAmount(o))
+    );
   }
 
-  const recent = ((expenses as ExpenseWithMeta[]) ?? []).slice(0, 20).map((e) => ({
-    seriesId: e.series_id,
-    title: e.title,
-    amount: Number(e.amount) || 0,
-    paidByYou: e.paid_by === userId,
-    createdAt: e.created_at,
-  }));
+  const orFilter = `id.in.(${seriesIds.join(',')}),series_id.in.(${seriesIds.join(',')})`;
+  let acts: SeriesActivityPick[] = [];
+  const firstActs = await supabase
+    .from('activities')
+    .select('id, title, status, starts_at, finance_enabled, series_id')
+    .or(orFilter);
+  if (firstActs.error && /finance_enabled/i.test(firstActs.error.message ?? '')) {
+    const retry = await supabase
+      .from('activities')
+      .select('id, title, status, starts_at, series_id')
+      .or(orFilter);
+    if (retry.error) throw retry.error;
+    acts = (retry.data as SeriesActivityPick[]) ?? [];
+  } else if (firstActs.error) {
+    throw firstActs.error;
+  } else {
+    acts = (firstActs.data as SeriesActivityPick[]) ?? [];
+  }
+
+  const series: PersonalFinanceSeries[] = [];
+  for (const sid of seriesIds) {
+    const picked = pickFinanceActivity(sid, acts);
+    if (!picked) continue;
+    const balances = computeBalances(
+      bySeries.get(sid) ?? [],
+      settlementsBySeries.get(sid) ?? [],
+      new Map()
+    );
+    const net = balances.find((b) => b.userId === userId)?.net ?? 0;
+    const openFee = openFeeBySeries.get(sid) ?? 0;
+    let rowOwe = 0;
+    let rowOwed = 0;
+    if (Math.abs(net) > 0.001) {
+      if (net < 0) rowOwe = -net;
+      else rowOwed = net;
+    } else if (openFee > 0.001) {
+      rowOwe = openFee;
+    }
+    series.push({
+      seriesId: sid,
+      activityId: picked.id,
+      title: picked.title,
+      youOwe: round2(rowOwe),
+      youAreOwed: round2(rowOwed),
+    });
+  }
+
+  series.sort((a, b) => {
+    const openA = a.youOwe + a.youAreOwed;
+    const openB = b.youOwe + b.youAreOwed;
+    if (openB !== openA) return openB - openA;
+    return a.title.localeCompare(b.title, undefined, { sensitivity: 'base' });
+  });
 
   return {
-    youOwe: round2(youOwe),
-    youAreOwed: round2(youAreOwed),
-    expensesInvolved: allIds.length,
-    recent,
+    youOwe: round2(series.reduce((sum, s) => sum + s.youOwe, 0)),
+    youAreOwed: round2(series.reduce((sum, s) => sum + s.youAreOwed, 0)),
+    expensesInvolved: series.length,
+    series,
   };
 }
 

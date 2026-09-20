@@ -1,7 +1,7 @@
 import { format } from 'date-fns';
 import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Button, Chip, EmptyState, Loading, Muted, Screen, Subtitle, Title } from '@/components/ui';
@@ -32,7 +32,9 @@ export default function ActivityDetailScreen() {
   const t = useT();
   const { locale } = useLocale();
   const dfLocale = locale === 'sl' ? slLocale : enUS;
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, tab: tabParam } = useLocalSearchParams<{ id: string; tab?: string | string[] }>();
+  const financeTab =
+    (Array.isArray(tabParam) ? tabParam[0] : tabParam) === 'finance' ? 'finance' : null;
   const { user } = useAuth();
   const router = useRouter();
   const [activity, setActivity] = useState<ActivityWithRelations | null>(null);
@@ -46,9 +48,15 @@ export default function ActivityDetailScreen() {
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoaded = useRef(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'details' | 'finance'>('details');
+  const [tab, setTab] = useState<'details' | 'finance'>(financeTab ?? 'details');
+  const tabRef = useRef(tab);
+  tabRef.current = tab;
   const [following, setFollowing] = useState(false);
   const [seriesBusy, setSeriesBusy] = useState(false);
+
+  useEffect(() => {
+    setTab(financeTab ?? 'details');
+  }, [id, financeTab]);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!user || !id) return;
@@ -69,7 +77,13 @@ export default function ActivityDetailScreen() {
       .eq('status', 'active')
       .maybeSingle();
     if (next?.id && next.id !== id) {
-      router.replace(`/activity/${next.id}`);
+      router.replace({
+        pathname: '/activity/[id]',
+        params: {
+          id: next.id,
+          ...(financeTab || tabRef.current === 'finance' ? { tab: 'finance' } : {}),
+        },
+      });
       return;
     }
 
@@ -141,7 +155,7 @@ export default function ActivityDetailScreen() {
     }
     hasLoaded.current = true;
     setLoading(false);
-  }, [id, user?.id, router]);
+  }, [id, user?.id, router, financeTab]);
 
   useFocusEffect(
     useCallback(() => {
