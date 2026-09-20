@@ -338,12 +338,11 @@ export default function ActivityDetailScreen() {
           if (!location) return <Muted>{t.events.locationUnset}</Muted>;
           const ent = activity.enterprises;
           const point = activityVenuePoint(activity);
-          const address = ent?.address?.trim() || (!ent ? activity.venue_text?.trim() : '') || '';
           const mapsLink = point
             ? mapsUrl(point)
-            : address
+            : ent?.address?.trim()
               ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                  ent ? `${ent.name}, ${address}` : address
+                  `${ent.name}, ${ent.address.trim()}`
                 )}`
               : null;
           return (
