@@ -14,7 +14,7 @@ import {
 } from 'date-fns';
 import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
 import { Button, EmptyState, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
@@ -212,32 +212,47 @@ export default function PlannerScreen() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
+  const hasLoaded = useRef(false);
 
-  const load = useCallback(async () => {
-    if (!user?.id) return;
-    setLoading(true);
-    try {
-      await processDueRecurringActivities();
-    } catch {
-      /* optional */
-    }
-    const { data: joins } = await supabase
-      .from('activity_joins')
-      .select('activity_id')
-      .eq('user_id', user.id);
-    const ids = (joins ?? []).map((j) => j.activity_id);
-    setJoinedIds(new Set(ids));
-    const rows = await fetchMineAndJoined(user.id, ids);
-    setItems(rows);
-    const seriesIds = Array.from(new Set(rows.map((a) => seriesKey(a))));
-    const [followSet, skipped] = await Promise.all([
-      fetchSeriesFollows(user.id),
-      fetchSkippedDays(seriesIds),
-    ]);
-    setFollows(followSet);
-    setSkippedBySeries(skipped);
-    setLoading(false);
-  }, [user?.id]);
+  const load = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!user?.id) {
+        setLoading(false);
+        return;
+      }
+      if (!opts?.silent || !hasLoaded.current) {
+        setLoading(true);
+      }
+      try {
+        if (!opts?.silent) {
+          try {
+            await processDueRecurringActivities();
+          } catch {
+            /* optional */
+          }
+        }
+        const { data: joins } = await supabase
+          .from('activity_joins')
+          .select('activity_id')
+          .eq('user_id', user.id);
+        const ids = (joins ?? []).map((j) => j.activity_id);
+        setJoinedIds(new Set(ids));
+        const rows = await fetchMineAndJoined(user.id, ids);
+        setItems(rows);
+        const seriesIds = Array.from(new Set(rows.map((a) => seriesKey(a))));
+        const [followSet, skipped] = await Promise.all([
+          fetchSeriesFollows(user.id),
+          fetchSkippedDays(seriesIds),
+        ]);
+        setFollows(followSet);
+        setSkippedBySeries(skipped);
+        hasLoaded.current = true;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [user?.id]
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -368,13 +383,13 @@ export default function PlannerScreen() {
   async function onLeave(id: string) {
     if (!user) return;
     await leaveActivity(id, user.id);
-    load();
+    await load({ silent: true });
   }
 
   async function onFollow(item: PlannerItem, follow: boolean) {
     try {
       await setSeriesFollow(seriesKey(item), follow);
-      await load();
+      await load({ silent: true });
     } catch (e) {
       showAlert(t.common.error, e instanceof Error ? e.message : t.common.error);
     }
@@ -385,7 +400,7 @@ export default function PlannerScreen() {
     setBusyKey(item.slotKey);
     try {
       await joinSeriesOccurrence(item, new Date(item.starts_at), user.id);
-      await load();
+      await load({ silent: true });
     } catch (e) {
       showAlert(t.common.error, e instanceof Error ? e.message : t.common.error);
     } finally {
@@ -412,7 +427,7 @@ export default function PlannerScreen() {
     try {
       if (skip) await skipSeriesDay(seriesKey(item), day);
       else await unskipSeriesDay(seriesKey(item), day);
-      await load();
+      await load({ silent: true });
     } catch (e) {
       showAlert(t.common.error, e instanceof Error ? e.message : t.common.error);
     }
@@ -502,7 +517,7 @@ export default function PlannerScreen() {
 
   return (
     <Screen>
-      {loading ? (
+      {loading && !hasLoaded.current ? (
         <Loading />
       ) : (
         <FlatList
