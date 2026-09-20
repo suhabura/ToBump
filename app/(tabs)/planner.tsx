@@ -248,14 +248,15 @@ export default function PlannerScreen() {
     const byKey = new Map<string, PlannerItem>();
 
     for (const a of items) {
+      if (a.status === 'cancelled') continue;
       const sid = seriesKey(a);
       const day = localDayKey(new Date(a.starts_at));
-      const skipped = skippedBySeries.get(sid)?.has(day) ?? false;
+      if (skippedBySeries.get(sid)?.has(day)) continue;
       byKey.set(`${sid}:${day}`, {
         ...a,
         slotKey: `${sid}:${day}`,
         virtual: false,
-        skipped,
+        skipped: false,
       });
     }
 
@@ -266,9 +267,9 @@ export default function PlannerScreen() {
       const skipped = skippedBySeries.get(sid) ?? new Set();
       for (const slot of expandSeriesSlots(template, rangeStart, rangeEnd, skipped)) {
         const mapKey = `${sid}:${slot.day}`;
+        if (skipped.has(slot.day)) continue;
         if (byKey.has(mapKey)) continue;
-        const real = realByDay.get(mapKey);
-        if (real) continue;
+        if (realByDay.get(mapKey)) continue;
         const durationMs = slot.durationMinutes * 60_000;
         byKey.set(mapKey, {
           ...template,
@@ -280,25 +281,6 @@ export default function PlannerScreen() {
           skipped: false,
         });
       }
-      for (const day of skipped) {
-        const mapKey = `${sid}:${day}`;
-        if (byKey.has(mapKey)) {
-          byKey.set(mapKey, { ...byKey.get(mapKey)!, skipped: true });
-          continue;
-        }
-        const seed = new Date(template.starts_at);
-        const start = new Date(`${day}T12:00:00`);
-        if (Number.isNaN(start.getTime())) continue;
-        start.setHours(seed.getHours(), seed.getMinutes(), 0, 0);
-        if (start < rangeStart || start > addDays(rangeEnd, 1)) continue;
-        byKey.set(mapKey, {
-          ...template,
-          starts_at: start.toISOString(),
-          slotKey: mapKey,
-          virtual: !realByDay.has(mapKey),
-          skipped: true,
-        });
-      }
     }
 
     return Array.from(byKey.values());
@@ -307,6 +289,7 @@ export default function PlannerScreen() {
   const dayMarks = useMemo(() => {
     const flags = new Map<string, { org: boolean; joined: boolean }>();
     for (const a of plannerItems) {
+      if (a.skipped || a.status === 'cancelled') continue;
       const key = localDayKey(new Date(a.starts_at));
       if (Number.isNaN(new Date(a.starts_at).getTime())) continue;
       const cur = flags.get(key) ?? { org: false, joined: false };
@@ -325,7 +308,12 @@ export default function PlannerScreen() {
 
   const selectedDayEvents = useMemo(() => {
     return plannerItems
-      .filter((a) => isSameDay(new Date(a.starts_at), selectedDay))
+      .filter(
+        (a) =>
+          !a.skipped &&
+          a.status !== 'cancelled' &&
+          isSameDay(new Date(a.starts_at), selectedDay)
+      )
       .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   }, [plannerItems, selectedDay]);
 
@@ -388,16 +376,14 @@ export default function PlannerScreen() {
     const showActions = opts.allowActions && future;
     const busy = busyKey === item.slotKey;
     return (
-      <View style={[styles.card, item.skipped && { opacity: 0.7 }]}>
+      <View style={styles.card}>
         <View style={styles.cardBody}>
           {isMine ? <Text style={styles.tag}>{t.events.organizing}</Text> : null}
           <View style={styles.cardTop}>
             <Pressable style={styles.cardTitle} onPress={() => onOpenSlot(item)}>
               <Subtitle>{categoryLabel(item.categories) ?? item.title}</Subtitle>
             </Pressable>
-            {item.skipped ? (
-              <Text style={styles.tagMuted}>{t.planner.skipped}</Text>
-            ) : item.virtual ? (
+            {item.virtual ? (
               <Text style={styles.tagMuted}>{t.planner.upcomingSlot}</Text>
             ) : null}
           </View>

@@ -18,15 +18,9 @@ import {
   type DeleteActivityMode,
 } from '@/lib/api';
 import { fetchActivityGuests, removeGuestAttendance, type GuestAttendanceWithGuest } from '@/lib/guests';
-import { formatRecurrence, formatRecurrenceDates, hydrateRules, isSeriesActivity, localDayKey, rulesFromLegacy } from '@/lib/recurrence';
+import { formatRecurrence, formatRecurrenceDates, hydrateRules, isSeriesActivity, rulesFromLegacy } from '@/lib/recurrence';
 import { seriesKey } from '@/lib/finance';
-import {
-  fetchSeriesFollows,
-  fetchSkippedDays,
-  setSeriesFollow,
-  skipSeriesDay,
-  unskipSeriesDay,
-} from '@/lib/seriesPlanner';
+import { fetchSeriesFollows, setSeriesFollow } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations, Profile } from '@/lib/types';
 import { activityCapacityRange, activityLocationLabel, activityPriceLabel, activityVenuePoint, categoryLabel, displayName } from '@/lib/types';
@@ -54,7 +48,6 @@ export default function ActivityDetailScreen() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [tab, setTab] = useState<'details' | 'finance'>('details');
   const [following, setFollowing] = useState(false);
-  const [skipped, setSkipped] = useState(false);
   const [seriesBusy, setSeriesBusy] = useState(false);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
@@ -137,22 +130,14 @@ export default function ActivityDetailScreen() {
       setGuests([]);
     }
     if (act && user) {
-      const sid = seriesKey(act);
-      const day = localDayKey(new Date(act.starts_at));
       try {
-        const [followSet, skippedMap] = await Promise.all([
-          fetchSeriesFollows(user.id),
-          fetchSkippedDays([sid]),
-        ]);
-        setFollowing(followSet.has(sid));
-        setSkipped(skippedMap.get(sid)?.has(day) ?? false);
+        const followSet = await fetchSeriesFollows(user.id);
+        setFollowing(followSet.has(seriesKey(act)));
       } catch {
         setFollowing(false);
-        setSkipped(false);
       }
     } else {
       setFollowing(false);
-      setSkipped(false);
     }
     hasLoaded.current = true;
     setLoading(false);
@@ -255,21 +240,6 @@ export default function ActivityDetailScreen() {
     }
   }
 
-  async function onToggleSkip() {
-    if (!activity || !user) return;
-    setSeriesBusy(true);
-    try {
-      const day = localDayKey(new Date(activity.starts_at));
-      if (skipped) await unskipSeriesDay(seriesKey(activity), day);
-      else await skipSeriesDay(seriesKey(activity), day);
-      setSkipped(!skipped);
-    } catch (e) {
-      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
-    } finally {
-      setSeriesBusy(false);
-    }
-  }
-
   async function onToggleFollow() {
     if (!activity || !user) return;
     setSeriesBusy(true);
@@ -320,7 +290,6 @@ export default function ActivityDetailScreen() {
             ? ` – ${format(new Date(activity.ends_at), 'HH:mm', { locale: dfLocale })}`
             : ''}
         </Muted>
-        {skipped ? <Muted>{t.planner.skippedBanner}</Muted> : null}
         {(activity.recurrence_dates?.length ?? 0) >= 2 ? (
           <Muted>
             {t.events.dates}: {formatRecurrenceDates(activity.recurrence_dates ?? [], locale)}
@@ -453,29 +422,15 @@ export default function ActivityDetailScreen() {
               />
             </>
           ) : null}
-          {user && isSeriesActivity(activity) ? (
+          {user && isSeriesActivity(activity) && !isOwner ? (
             <View style={{ gap: 6 }}>
-              {isOwner && (skipped || new Date(activity.starts_at).getTime() >= Date.now()) ? (
-                <>
-                  <Button
-                    label={skipped ? t.planner.unskipOccurrence : t.planner.skipOccurrence}
-                    variant={skipped ? 'secondary' : 'dangerOutline'}
-                    loading={seriesBusy}
-                    onPress={() => void onToggleSkip()}
-                  />
-                  <Muted>{t.planner.skipHint}</Muted>
-                </>
-              ) : !isOwner ? (
-                <>
-                  <Button
-                    label={following ? t.planner.unfollowSeries : t.planner.followSeries}
-                    variant="secondary"
-                    loading={seriesBusy}
-                    onPress={() => void onToggleFollow()}
-                  />
-                  <Muted>{t.planner.followHint}</Muted>
-                </>
-              ) : null}
+              <Button
+                label={following ? t.planner.unfollowSeries : t.planner.followSeries}
+                variant="secondary"
+                loading={seriesBusy}
+                onPress={() => void onToggleFollow()}
+              />
+              <Muted>{t.planner.followHint}</Muted>
             </View>
           ) : null}
         </View>

@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { distanceMeters } from '@/lib/geo';
-import { combineDayAndTime, firstOccurrence, isoWeekday, normalizeRules, type RecurrenceRule } from '@/lib/recurrence';
+import { combineDayAndTime, firstOccurrence, isoWeekday, localDayKey, normalizeRules, type RecurrenceRule } from '@/lib/recurrence';
 import type { ActivityWithRelations, Category, Privacy } from '@/lib/types';
 import {
   DEFAULT_SUBCATEGORIES,
@@ -598,17 +598,54 @@ export async function processDueRecurringActivities() {
 /** Delete one occurrence (series continues) or the whole series / single event. */
 export async function deleteActivity(activityId: string, mode: DeleteActivityMode = 'series') {
   if (mode === 'occurrence') {
-    const { error: skipError } = await supabase.rpc('skip_recurring_occurrence', {
-      p_activity_id: activityId,
+    const { data: act, error: loadError } = await supabase
+      .from('activities')
+      .select('id, series_id, starts_at, recurrence_dates')
+      .eq('id', activityId)
+      .maybeSingle();
+    if (loadError) throw loadError;
+    if (!act) return;
+
+    const sid = (act.series_id as string | null) ?? act.id;
+    const day = localDayKey(new Date(act.starts_at as string));
+
+    const { error: skipDayErr } = await supabase.rpc('skip_series_day', {
+      p_series_id: sid,
+      p_day: day,
     });
-    if (!skipError) {
-      await assertActivityGone(activityId);
-      return;
+    if (skipDayErr) {
+      const { error: ins } = await supabase.from('series_skipped_dates').insert({
+        series_id: sid,
+        day,
+      });
+      if (ins && ins.code !== '23505') {
+        const { error: skipError } = await supabase.rpc('skip_recurring_occurrence', {
+          p_activity_id: activityId,
+        });
+        if (skipError) {
+          const { error: delError } = await supabase.from('activities').delete().eq('id', activityId);
+          if (delError) throw delError;
+        }
+      } else {
+        await supabase
+          .from('activities')
+          .update({ status: 'cancelled', updated_at: new Date().toISOString() })
+          .eq('id', activityId)
+          .eq('status', 'active');
+        await supabase.rpc('skip_recurring_occurrence', { p_activity_id: activityId });
+      }
     }
 
-    const { error: delError } = await supabase.from('activities').delete().eq('id', activityId);
-    if (delError) throw delError;
-    await assertActivityGone(activityId);
+    const dates = ((act.recurrence_dates as string[] | null) ?? [])
+      .map((d) => String(d).slice(0, 10))
+      .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+    if (dates.includes(day)) {
+      const nextDates = dates.filter((d) => d !== day);
+      await supabase.from('activities').update({ recurrence_dates: nextDates }).eq('id', sid);
+      await supabase.from('activities').update({ recurrence_dates: nextDates }).eq('series_id', sid);
+    }
+
+    await assertOccurrenceRemoved(activityId);
     return;
   }
 
@@ -661,6 +698,18 @@ async function assertActivityGone(activityId: string) {
   const { data, error } = await supabase.from('activities').select('id').eq('id', activityId).maybeSingle();
   if (error) throw error;
   if (data) {
+    throw new Error('Could not delete the event. Try again.');
+  }
+}
+
+async function assertOccurrenceRemoved(activityId: string) {
+  const { data, error } = await supabase
+    .from('activities')
+    .select('id, status')
+    .eq('id', activityId)
+    .maybeSingle();
+  if (error) throw error;
+  if (data && (data as { status?: string }).status === 'active') {
     throw new Error('Could not delete the event. Try again.');
   }
 }
