@@ -375,10 +375,10 @@ export default function PlannerScreen() {
     const isJoined = !item.virtual && joinedIds.has(item.id);
     const showActions = opts.allowActions && future;
     const busy = busyKey === item.slotKey;
+    const showRail = showActions || isMine;
     return (
       <View style={styles.card}>
         <View style={styles.cardBody}>
-          {isMine ? <Text style={styles.tag}>{t.events.organizing}</Text> : null}
           <View style={styles.cardTop}>
             <Pressable style={styles.cardTitle} onPress={() => onOpenSlot(item)}>
               <Subtitle>{categoryLabel(item.categories) ?? item.title}</Subtitle>
@@ -399,9 +399,14 @@ export default function PlannerScreen() {
             ) : null}
           </Pressable>
         </View>
-        {showActions ? (
+        {showRail ? (
           <View style={styles.actions} onStartShouldSetResponder={() => true}>
-            {!item.skipped && (isJoined || (!item.virtual && isMine)) ? (
+            {isMine ? (
+              <Text style={[styles.tag, styles.tagInActions]} numberOfLines={2}>
+                {t.events.organizing}
+              </Text>
+            ) : null}
+            {showActions && !item.skipped && (isJoined || (!item.virtual && isMine)) ? (
               <Button
                 label={t.events.chat}
                 variant="secondary"
@@ -410,7 +415,7 @@ export default function PlannerScreen() {
                 onPress={() => router.push(`/chat/${item.id}`)}
               />
             ) : null}
-            {!item.skipped && !isJoined ? (
+            {showActions && !item.skipped && !isJoined ? (
               <Button
                 label={t.events.join}
                 size="sm"
@@ -419,7 +424,7 @@ export default function PlannerScreen() {
                 onPress={() => onJoinSlot(item)}
               />
             ) : null}
-            {isJoined ? (
+            {showActions && isJoined ? (
               <Button
                 label={t.events.leave}
                 variant="dangerOutline"
@@ -664,7 +669,6 @@ const styles = StyleSheet.create({
   },
   cardTitle: { flex: 1, flexShrink: 1, minWidth: 0 },
   tag: {
-    alignSelf: 'flex-start',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
@@ -673,7 +677,10 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     backgroundColor: theme.colors.primarySoft,
     color: theme.colors.primaryDark,
-    marginBottom: 6,
+  },
+  tagInActions: {
+    textAlign: 'center',
+    alignSelf: 'stretch',
   },
   tagMuted: {
     paddingHorizontal: 8,

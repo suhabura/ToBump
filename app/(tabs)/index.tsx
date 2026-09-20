@@ -186,6 +186,15 @@ export default function EventsScreen() {
             const capRange = activityCapacityRange(item);
             const cat = categoryLabel(item.categories) ?? item.title;
             const busy = busyId === item.id;
+            const role = isOrganizer
+              ? { label: t.events.organizing, style: styles.tagOrganizing }
+              : item.is_invited
+                ? { label: t.events.invitedBadge, style: styles.tagInvited }
+                : item.is_open_to_you
+                  ? { label: t.events.openToYou, style: styles.tagOpen }
+                  : item.is_from_friend
+                    ? { label: t.events.friend, style: styles.tagOpen }
+                    : null;
             return (
               <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
                 <Pressable
@@ -193,17 +202,9 @@ export default function EventsScreen() {
                   onPress={() => router.push(`/activity/${item.id}`)}
                 >
                   <View style={styles.cardTop}>
-                    {isOrganizer ? (
-                      <Text style={[styles.tag, styles.tagOrganizing]}>{t.events.organizing}</Text>
-                    ) : item.is_invited ? (
-                      <Text style={[styles.tag, styles.tagInvited]}>{t.events.invitedBadge}</Text>
-                    ) : item.is_open_to_you ? (
-                      <Text style={[styles.tag, styles.tagOpen]}>{t.events.openToYou}</Text>
-                    ) : item.is_from_friend ? (
-                      <Text style={[styles.tag, styles.tagOpen]}>{t.events.friend}</Text>
-                    ) : (
-                      <View />
-                    )}
+                    <View style={styles.titleBlock}>
+                      <Subtitle>{cat}</Subtitle>
+                    </View>
                     <View style={styles.countBlock}>
                       <Text style={styles.count}>
                         <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
@@ -217,7 +218,6 @@ export default function EventsScreen() {
                     </View>
                   </View>
 
-                  <Subtitle>{cat}</Subtitle>
                   <Text style={styles.when}>
                     {format(new Date(item.starts_at), 'EEE, d MMM · HH:mm', { locale: dfLocale })}
                   </Text>
@@ -235,6 +235,11 @@ export default function EventsScreen() {
                 </Pressable>
 
                 <View style={styles.actions} onStartShouldSetResponder={() => true}>
+                  {role ? (
+                    <Text style={[styles.tag, styles.tagInActions, role.style]} numberOfLines={2}>
+                      {role.label}
+                    </Text>
+                  ) : null}
                   {joined ? (
                     <>
                       <Button
@@ -308,18 +313,27 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 8,
   },
+  titleBlock: {
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
+  },
   countBlock: {
     alignItems: 'flex-end',
     flexShrink: 0,
     gap: 2,
   },
   tag: {
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 4,
     borderRadius: 999,
     overflow: 'hidden',
     fontSize: 11,
     fontWeight: '700',
+  },
+  tagInActions: {
+    textAlign: 'center',
+    alignSelf: 'stretch',
   },
   tagOrganizing: {
     backgroundColor: theme.colors.primarySoft,
