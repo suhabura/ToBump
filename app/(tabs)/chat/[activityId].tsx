@@ -31,14 +31,56 @@ export default function ChatScreen() {
   const [activityTitle, setActivityTitle] = useState('');
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const listRef = useRef<FlatList>(null);
+  const threadIdRef = useRef(activityId);
 
   useEffect(() => {
     if (!activityId) return;
+    let cancelled = false;
+    let channel: ReturnType<typeof supabase.channel> | null = null;
 
     (async () => {
-      const { data: act } = await supabase.from('activities').select('title, created_by').eq('id', activityId).single();
+      const first = await supabase
+        .from('activities')
+        .select('title, created_by, series_id, recurrence_dates')
+        .eq('id', activityId)
+        .single();
+      let act = first.data as {
+        title?: string;
+        created_by?: string;
+        series_id?: string | null;
+        recurrence_dates?: string[];
+      } | null;
+      if (first.error && /recurrence_dates/i.test(first.error.message ?? '')) {
+        const retry = await supabase
+          .from('activities')
+          .select('title, created_by, series_id')
+          .eq('id', activityId)
+          .single();
+        act = retry.data;
+      } else if (first.error) {
+        act = null;
+      }
+      if (cancelled) return;
       setActivityTitle(act?.title ?? '');
-      const { data: joins } = await supabase.from('activity_joins').select('user_id').eq('activity_id', activityId);
+      const dates = Array.isArray(act?.recurrence_dates) ? act.recurrence_dates : [];
+      const isDateSeries = dates.length >= 2;
+      const sid = (act?.series_id as string | undefined) || activityId;
+      let activityIds = [activityId];
+      if (isDateSeries) {
+        const { data: sibs } = await supabase
+          .from('activities')
+          .select('id')
+          .or(`id.eq.${sid},series_id.eq.${sid}`);
+        activityIds = Array.from(new Set((sibs ?? []).map((s: { id: string }) => s.id)));
+        if (!activityIds.length) activityIds = [activityId];
+      }
+      const threadId = isDateSeries ? sid : activityId;
+      threadIdRef.current = threadId;
+
+      const { data: joins } = await supabase
+        .from('activity_joins')
+        .select('user_id')
+        .in('activity_id', activityIds);
       const ids = new Set((joins ?? []).map((j: { user_id: string }) => j.user_id));
       if (act?.created_by) ids.add(act.created_by);
       setMemberIds([...ids]);
@@ -46,40 +88,45 @@ export default function ChatScreen() {
       const { data } = await supabase
         .from('chat_messages')
         .select('*, profiles:user_id(first_name, last_name)')
-        .eq('activity_id', activityId)
+        .in('activity_id', activityIds)
         .order('created_at', { ascending: true });
+      if (cancelled) return;
       setMessages((data as Msg[]) ?? []);
       setLoading(false);
+
+      channel = supabase
+        .channel(`chat-${threadId}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `activity_id=eq.${threadId}` },
+          async (payload) => {
+            const row = payload.new as ChatMessage;
+            const { data: profile } = await supabase
+              .from('profiles')
+              .select('first_name, last_name')
+              .eq('id', row.user_id)
+              .maybeSingle();
+            setMessages((prev) => (prev.some((m) => m.id === row.id) ? prev : [...prev, { ...row, profiles: profile }]));
+          }
+        )
+        .subscribe();
+      if (cancelled) {
+        supabase.removeChannel(channel);
+      }
     })();
 
-    const channel = supabase
-      .channel(`chat-${activityId}`)
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `activity_id=eq.${activityId}` },
-        async (payload) => {
-          const row = payload.new as ChatMessage;
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('first_name, last_name')
-            .eq('id', row.user_id)
-            .maybeSingle();
-          setMessages((prev) => [...prev, { ...row, profiles: profile }]);
-        }
-      )
-      .subscribe();
-
     return () => {
-      supabase.removeChannel(channel);
+      cancelled = true;
+      if (channel) supabase.removeChannel(channel);
     };
   }, [activityId]);
 
   async function send() {
-    if (!user || !text.trim()) return;
+    if (!user || !text.trim() || !threadIdRef.current) return;
     const message = text.trim();
     setText('');
     const { error } = await supabase.from('chat_messages').insert({
-      activity_id: activityId,
+      activity_id: threadIdRef.current,
       user_id: user.id,
       message,
     });
@@ -90,7 +137,7 @@ export default function ChatScreen() {
     for (const uid of memberIds) {
       if (uid === user.id) continue;
       await createNotification(uid, 'message', t.chat.newMessage(activityTitle), {
-        activity_id: activityId,
+        activity_id: threadIdRef.current,
       });
     }
   }

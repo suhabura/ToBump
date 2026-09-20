@@ -58,6 +58,21 @@ export function formatDuration(minutes: number): string {
   return `${m} min`;
 }
 
+export function formatRecurrenceDates(dates: string[], locale: RecurrenceLocale = 'en'): string {
+  const loc = locale === 'sl' ? slLocale : enUS;
+  const unique = Array.from(new Set(dates.filter(Boolean))).sort();
+  if (!unique.length) return '';
+  return unique
+    .map((day) => format(new Date(`${day}T12:00:00`), locale === 'sl' ? 'd. MMM yyyy' : 'd MMM yyyy', { locale: loc }))
+    .join(' · ');
+}
+
+export function combineDayAndTime(day: string, hours: number, minutes: number): Date {
+  const [y, m, d] = day.split('-').map(Number);
+  const x = new Date(y, (m || 1) - 1, d || 1, hours, minutes, 0, 0);
+  return x;
+}
+
 export function formatRecurrence(rules: RecurrenceRule[], locale: RecurrenceLocale = 'en'): string {
   if (!rules?.length) return '';
   const sorted = [...rules].sort((a, b) => a.weekday - b.weekday);

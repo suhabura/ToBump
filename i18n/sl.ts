@@ -81,6 +81,8 @@ export const sl = {
     addSlot: 'Dodaj termin',
     recurring: 'Ponavljajoče',
     once: 'Enkratno',
+    weekly: 'Tedensko',
+    dates: 'Izbrani datumi',
     chat: 'Klepet',
     openChat: 'Odpri klepet',
     location: 'Lokacija',
@@ -278,6 +280,12 @@ export const sl = {
     recurrence: 'Ponavljanje',
     recurrenceHint:
       'Izberi dneve. Vsak dan ima svojo uro začetka in trajanje. Ko se termin začne, se zapre in odpre naslednji; klepet se prenese.',
+    datesHint:
+      'Tapni dneve v koledarju. Ista ura in trajanje veljata za vse datume. Vsak datum je svoj dogodek; vabila, klepet in finance ostanejo v isti seriji.',
+    datesLockedOnEdit: 'Datumi so že ustvarjeni. Tukaj spremeniš uro tega termina.',
+    needDates: 'Izberi vsaj dva datuma.',
+    timeForDates: 'Ura začetka (za vse datume)',
+    datesPicked: (n: number) => (n === 1 ? 'Izbran 1 datum' : `Izbranih ${n} datumov`),
     daysAndSlots: 'Dnevi in termini',
     firstOccurrence: 'Prvi termin',
     firstOccurrenceComputed: (when: string) => `Prvi dejanski termin: ${when}`,

@@ -81,6 +81,7 @@ create table if not exists public.activities (
   recurrence_rules jsonb not null default '[]'::jsonb,
   duration_minutes int,
   recurrence_until date,
+  recurrence_dates date[] not null default '{}'::date[],
   series_id uuid,
   previous_activity_id uuid references public.activities(id) on delete set null,
   series_privacy text check (series_privacy is null or series_privacy in ('invite', 'friends', 'group', 'friends_of_friends')),
@@ -333,17 +334,38 @@ create policy "friendships_delete" on public.friendships for delete to authentic
   using (from_user_id = auth.uid() or to_user_id = auth.uid());
 
 -- Chat (joined or creator)
-create policy "chat_select" on public.chat_messages for select to authenticated
-  using (
-    exists (select 1 from public.activity_joins j where j.activity_id = chat_messages.activity_id and j.user_id = auth.uid())
-    or exists (select 1 from public.activities a where a.id = chat_messages.activity_id and a.created_by = auth.uid())
+create or replace function public.user_in_activity_series(p_activity_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.activities target
+    where target.id = p_activity_id
+      and (
+        target.created_by = auth.uid()
+        or exists (
+          select 1
+          from public.activities sib
+          join public.activity_joins j on j.activity_id = sib.id and j.user_id = auth.uid()
+          where coalesce(sib.series_id, sib.id) = coalesce(target.series_id, target.id)
+        )
+      )
   );
+$$;
+
+grant execute on function public.user_in_activity_series(uuid) to authenticated;
+
+drop policy if exists "chat_select" on public.chat_messages;
+drop policy if exists "chat_insert" on public.chat_messages;
+create policy "chat_select" on public.chat_messages for select to authenticated
+  using (public.user_in_activity_series(activity_id));
 create policy "chat_insert" on public.chat_messages for insert to authenticated
   with check (
-    user_id = auth.uid() and (
-      exists (select 1 from public.activity_joins j where j.activity_id = activity_id and j.user_id = auth.uid())
-      or exists (select 1 from public.activities a where a.id = activity_id and a.created_by = auth.uid())
-    )
+    user_id = auth.uid() and public.user_in_activity_series(activity_id)
   );
 
 -- Notifications

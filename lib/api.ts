@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { distanceMeters } from '@/lib/geo';
-import { firstOccurrence, isoWeekday, normalizeRules, type RecurrenceRule } from '@/lib/recurrence';
+import { combineDayAndTime, firstOccurrence, isoWeekday, normalizeRules, type RecurrenceRule } from '@/lib/recurrence';
 import type { ActivityWithRelations, Category, Privacy } from '@/lib/types';
 import {
   DEFAULT_SUBCATEGORIES,
@@ -529,8 +529,10 @@ export type ActivityInput = {
   /** Enable Tricount-style shared expenses for this event / series */
   finance_enabled?: boolean;
   recurrence_rules?: RecurrenceRule[];
-  /** Last calendar day for the series (YYYY-MM-DD), required when recurring */
+  /** Last calendar day for the series (YYYY-MM-DD), required when weekly */
   recurrence_until?: string | null;
+  /** Picked calendar days (YYYY-MM-DD) for a dated series */
+  recurrence_dates?: string[];
   duration_minutes?: number | null;
 };
 
@@ -653,14 +655,20 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
   if (input.privacy === 'invite' && !(input.invite_user_ids?.length)) {
     throw new Error('Select at least one friend to invite.');
   }
-  const rules = input.is_recurring ? normalizeRules(input.recurrence_rules ?? []) : [];
-  if (input.is_recurring && rules.length === 0) {
+  const dateDays = Array.from(new Set((input.recurrence_dates ?? []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))).sort();
+  const isDateSeries = dateDays.length >= 2;
+  const isWeekly = Boolean(input.is_recurring) && !isDateSeries;
+  const rules = isWeekly ? normalizeRules(input.recurrence_rules ?? []) : [];
+  if (input.is_recurring && !isDateSeries && rules.length === 0) {
     throw new Error('Select at least one weekday for recurrence.');
   }
-  if (input.is_recurring && rules.some((r) => !r.duration_minutes || r.duration_minutes < 15)) {
+  if (isWeekly && rules.some((r) => !r.duration_minutes || r.duration_minutes < 15)) {
     throw new Error('Set a duration for each day (at least 15 min).');
   }
-  if (input.is_recurring) {
+  if (input.is_recurring && !isDateSeries && !isWeekly) {
+    throw new Error('Select at least two dates, or pick weekdays.');
+  }
+  if (isWeekly) {
     const until = input.recurrence_until?.trim();
     if (!until || !/^\d{4}-\d{2}-\d{2}$/.test(until)) {
       throw new Error('Set an end date for the recurring series.');
@@ -736,7 +744,17 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
   let endsAt = input.ends_at || null;
   let durationMinutes: number | null = null;
 
-  if (input.is_recurring && startsAt) {
+  if (isDateSeries) {
+    const seed = startsAt ? new Date(startsAt) : new Date();
+    durationMinutes = Math.max(15, Math.round(input.duration_minutes || durationMinutes || 90));
+    if (activityId && startsAt) {
+      endsAt = new Date(seed.getTime() + durationMinutes * 60_000).toISOString();
+    } else {
+      const first = combineDayAndTime(dateDays[0], seed.getHours(), seed.getMinutes());
+      startsAt = first.toISOString();
+      endsAt = new Date(first.getTime() + durationMinutes * 60_000).toISOString();
+    }
+  } else if (isWeekly && startsAt) {
     const from = new Date(startsAt);
     const until = input.recurrence_until ? new Date(`${input.recurrence_until}T23:59:59`) : null;
     const first = firstOccurrence(from, rules, { now: from, until });
@@ -768,11 +786,12 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     group_id: input.privacy === 'group' ? input.group_id || null : null,
     chat_enabled: input.chat_enabled ?? true,
     created_by: userId,
-    is_recurring: Boolean(input.is_recurring),
+    is_recurring: Boolean(input.is_recurring) || isDateSeries,
     finance_enabled: Boolean(input.finance_enabled),
     recurrence_weekdays: weekdays,
     recurrence_rules: rules,
-    recurrence_until: input.is_recurring ? input.recurrence_until || null : null,
+    recurrence_until: isWeekly ? input.recurrence_until || null : isDateSeries ? dateDays[dateDays.length - 1] : null,
+    recurrence_dates: isDateSeries ? dateDays : [],
     duration_minutes: durationMinutes,
     updated_at: new Date().toISOString(),
   };
@@ -802,7 +821,14 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     }
 
     const { error } = await supabase.from('activities').update(payload).eq('id', activityId);
-    if (error) throw error;
+    if (error && /recurrence_dates/i.test(error.message ?? '')) {
+      const fallback = { ...payload };
+      delete fallback.recurrence_dates;
+      const retry = await supabase.from('activities').update(fallback).eq('id', activityId);
+      if (retry.error) throw retry.error;
+    } else if (error) {
+      throw error;
+    }
     await supabase.from('activity_invites').delete().eq('activity_id', activityId);
 
     // Invite/privacy template applies to this + all upcoming occurrences in the series
@@ -858,7 +884,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
       payload.id = newId;
       payload.series_id = newId;
     }
-    if (input.is_recurring) {
+    if (input.is_recurring || isDateSeries) {
       payload.series_privacy = input.privacy;
       payload.series_group_id = input.privacy === 'group' ? input.group_id || null : null;
       payload.series_invite_user_ids = inviteIds;
@@ -867,8 +893,15 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
       payload.series_group_id = null;
       payload.series_invite_user_ids = [];
     }
-    const { data, error } = await supabase.from('activities').insert(payload).select('id').single();
-    if (error) throw error;
+    let { data, error } = await supabase.from('activities').insert(payload).select('id').single();
+    if (error && /recurrence_dates/i.test(error.message ?? '')) {
+      const fallback = { ...payload };
+      delete fallback.recurrence_dates;
+      const retry = await supabase.from('activities').insert(fallback).select('id').single();
+      data = retry.data;
+      error = retry.error;
+    }
+    if (error || !data?.id) throw error ?? new Error('Could not create the event.');
     id = data.id;
     if (!newId) {
       await supabase.from('activities').update({ series_id: id }).eq('id', id);
@@ -877,6 +910,45 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
       supabase.from('activity_joins').insert({ activity_id: id!, user_id: userId }),
       syncActivityEditors(id!, userId, input.editor_user_ids ?? [], input.title),
     ]);
+
+    if (isDateSeries && id && durationMinutes) {
+      const seriesId = (payload.series_id as string | undefined) || id;
+      const seed = new Date(startsAt);
+      for (const day of dateDays.slice(1)) {
+        const start = combineDayAndTime(day, seed.getHours(), seed.getMinutes());
+        const extraId =
+          typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : undefined;
+        const extra: Record<string, unknown> = {
+          ...payload,
+          starts_at: start.toISOString(),
+          ends_at: new Date(start.getTime() + durationMinutes * 60_000).toISOString(),
+          series_id: seriesId,
+        };
+        if (extraId) extra.id = extraId;
+        else delete extra.id;
+        let extraIns = await supabase.from('activities').insert(extra).select('id').single();
+        if (extraIns.error && /recurrence_dates/i.test(extraIns.error.message ?? '')) {
+          const fallback = { ...extra };
+          delete fallback.recurrence_dates;
+          extraIns = await supabase.from('activities').insert(fallback).select('id').single();
+        }
+        if (extraIns.error) throw extraIns.error;
+        const eid = extraIns.data?.id;
+        if (!eid) throw extraIns.error ?? new Error('Could not create a dated occurrence.');
+        await supabase.from('activity_joins').insert({ activity_id: eid, user_id: userId });
+        await syncActivityEditors(eid, userId, input.editor_user_ids ?? [], input.title);
+        if (inviteIds.length) {
+          const rows = Array.from(new Set(inviteIds)).map((uid) => ({
+            activity_id: eid,
+            user_id: uid,
+            invited_by: userId,
+          }));
+          await supabase.from('activity_invites').upsert(rows, { onConflict: 'activity_id,user_id' });
+        }
+      }
+    }
   }
 
   if (inviteIds.length && id) {

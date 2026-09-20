@@ -18,7 +18,7 @@ import {
   type DeleteActivityMode,
 } from '@/lib/api';
 import { fetchActivityGuests, removeGuestAttendance, type GuestAttendanceWithGuest } from '@/lib/guests';
-import { formatRecurrence, hydrateRules, rulesFromLegacy } from '@/lib/recurrence';
+import { formatRecurrence, formatRecurrenceDates, hydrateRules, rulesFromLegacy } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations, Profile } from '@/lib/types';
 import { activityCapacityRange, activityLocationLabel, activityPriceLabel, activityVenuePoint, categoryLabel, displayName } from '@/lib/types';
@@ -262,7 +262,11 @@ export default function ActivityDetailScreen() {
             ? ` – ${format(new Date(activity.ends_at), 'HH:mm', { locale: enUS })}`
             : ''}
         </Muted>
-        {activity.is_recurring ? (
+        {(activity.recurrence_dates?.length ?? 0) >= 2 ? (
+          <Muted>
+            {t.events.dates}: {formatRecurrenceDates(activity.recurrence_dates ?? [], locale)}
+          </Muted>
+        ) : activity.is_recurring ? (
           <Muted>
             {t.events.recurring}:{' '}
             {formatRecurrence(

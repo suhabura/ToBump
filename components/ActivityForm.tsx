@@ -3,6 +3,7 @@ import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button, Chip, Input, Muted } from '@/components/ui';
 import { DateTimeField } from '@/components/DateTimeField';
+import { DateMultiField } from '@/components/DateMultiField';
 import { LocationField } from '@/components/LocationField';
 import { SuggestInput } from '@/components/SuggestInput';
 import { FriendPicker } from '@/components/FriendPicker';
@@ -22,10 +23,12 @@ import {
   upsertSeriesFinanceSettings,
 } from '@/lib/finance';
 import {
+  combineDayAndTime,
   firstOccurrence,
   formatDuration,
   formatFirstOccurrence,
   formatRecurrence,
+  formatRecurrenceDates,
   hydrateRules,
   isoWeekday,
   normalizeRules,
@@ -155,7 +158,16 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [inviteIds, setInviteIds] = useState<string[]>(initial?.invite_user_ids ?? []);
   const [editorIds, setEditorIds] = useState<string[]>(initial?.editor_user_ids ?? []);
   const [showEditors, setShowEditors] = useState(Boolean(initial?.editor_user_ids?.length));
-  const [isRecurring, setIsRecurring] = useState(Boolean(initial?.is_recurring));
+  const [recurrenceMode, setRecurrenceMode] = useState<'once' | 'weekly' | 'dates'>(() => {
+    if ((initial?.recurrence_dates?.length ?? 0) >= 2) return 'dates';
+    if (initial?.is_recurring) return 'weekly';
+    return 'once';
+  });
+  const isRecurring = recurrenceMode !== 'once';
+  const isDateSeries = recurrenceMode === 'dates';
+  const [pickedDates, setPickedDates] = useState<string[]>(() =>
+    Array.from(new Set(initial?.recurrence_dates ?? [])).sort()
+  );
   const [financeEnabled, setFinanceEnabled] = useState(Boolean(initial?.finance_enabled));
   const [fundingMode, setFundingMode] = useState<FundingMode>(() => {
     const raw = initial?.funding_mode;
@@ -193,9 +205,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   }, [categories, locale]);
 
   const computedFirst = useMemo(() => {
-    if (!isRecurring) return null;
+    if (recurrenceMode !== 'weekly') return null;
     return firstOccurrence(seriesFromDate, rules, { now: new Date(), until: recurrenceUntil });
-  }, [isRecurring, seriesFromDate, rules, recurrenceUntil]);
+  }, [recurrenceMode, seriesFromDate, rules, recurrenceUntil]);
 
   useEffect(() => {
     const key = resolveActivityCategoryKey(title, locale);
@@ -394,12 +406,18 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     );
   }
 
-  function setRecurring(on: boolean) {
-    setIsRecurring(on);
-    if (!on) {
+  function setRecurringMode(mode: 'once' | 'weekly' | 'dates') {
+    setRecurrenceMode(mode);
+    if (mode === 'once') {
       setRules([]);
       setRecurrenceUntil(null);
       setFundingMode('per_event');
+    }
+    if (mode !== 'weekly') setRules([]);
+    if (mode === 'dates' && !startsAt) {
+      const d = new Date();
+      d.setHours(18, 0, 0, 0);
+      setStartsAt(d);
     }
   }
 
@@ -409,22 +427,36 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       setFormError(t.form.needActivityStart);
       return;
     }
-    const normalized = isRecurring ? normalizeRules(rules) : [];
-    if (isRecurring && normalized.length === 0) {
+    const normalized = recurrenceMode === 'weekly' ? normalizeRules(rules) : [];
+    if (recurrenceMode === 'weekly' && normalized.length === 0) {
       setFormError(t.form.needWeekday);
       return;
     }
-    if (isRecurring && normalized.some((r) => !r.duration_minutes || r.duration_minutes < 15)) {
+    if (recurrenceMode === 'weekly' && normalized.some((r) => !r.duration_minutes || r.duration_minutes < 15)) {
       setFormError(t.form.needDurationPerDay);
       return;
     }
-    if (!isRecurring && durationMinutes < 15) {
+    if (recurrenceMode !== 'weekly' && durationMinutes < 15) {
       setFormError(t.form.minDuration);
       return;
     }
 
     let startToSave = startsAt;
-    if (isRecurring) {
+    if (isDateSeries) {
+      const days = [...pickedDates].sort();
+      if (!activityId && days.length < 2) {
+        setFormError(t.form.needDates);
+        return;
+      }
+      const seed = startsAt ?? new Date();
+      const orig = activityId ? parseInitialDate(initial?.starts_at) : null;
+      const day = orig ? formatDay(orig) : days[0];
+      if (!day) {
+        setFormError(t.form.needDates);
+        return;
+      }
+      startToSave = combineDayAndTime(day, seed.getHours(), seed.getMinutes());
+    } else if (recurrenceMode === 'weekly') {
       if (!recurrenceUntil) {
         setFormError(t.form.needSeriesEnd);
         return;
@@ -528,7 +560,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           category_id,
           starts_at: startToSave.toISOString(),
           ends_at: null,
-          duration_minutes: isRecurring
+          duration_minutes: recurrenceMode === 'weekly'
             ? normalized.find((r) => r.weekday === isoWeekday(startToSave))?.duration_minutes ??
               durationMinutes
             : durationMinutes,
@@ -545,8 +577,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           editor_user_ids: isCreator ? editorIds : undefined,
           is_recurring: isRecurring,
           finance_enabled: financeEnabled,
-          recurrence_rules: isRecurring ? normalized : [],
-          recurrence_until: isRecurring && recurrenceUntil ? formatDay(recurrenceUntil) : null,
+          recurrence_rules: recurrenceMode === 'weekly' ? normalized : [],
+          recurrence_until: recurrenceMode === 'weekly' && recurrenceUntil ? formatDay(recurrenceUntil) : null,
+          recurrence_dates: isDateSeries ? [...pickedDates].sort() : [],
         },
         activityId
       );
@@ -806,11 +839,58 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       ) : null}
 
       <Text style={styles.section}>{req(t.form.recurrence)}</Text>
-      <View style={styles.row}>
-        <Chip label={t.events.once} active={!isRecurring} onPress={() => setRecurring(false)} />
-        <Chip label={t.events.recurring} active={isRecurring} onPress={() => setRecurring(true)} />
-      </View>
-      {isRecurring ? (
+      {activityId ? (
+        <Muted>
+          {recurrenceMode === 'dates'
+            ? t.events.dates
+            : recurrenceMode === 'weekly'
+              ? t.events.weekly
+              : t.events.once}
+        </Muted>
+      ) : (
+        <View style={styles.row}>
+          <Chip label={t.events.once} active={recurrenceMode === 'once'} onPress={() => setRecurringMode('once')} />
+          <Chip label={t.events.weekly} active={recurrenceMode === 'weekly'} onPress={() => setRecurringMode('weekly')} />
+          <Chip label={t.events.dates} active={recurrenceMode === 'dates'} onPress={() => setRecurringMode('dates')} />
+        </View>
+      )}
+      {recurrenceMode === 'dates' ? (
+        <View>
+          {activityId ? (
+            <View>
+              <Muted>{t.form.datesLockedOnEdit}</Muted>
+              {pickedDates.length ? <Muted>{formatRecurrenceDates(pickedDates, locale)}</Muted> : null}
+            </View>
+          ) : (
+            <View>
+              <Muted>{t.form.datesHint}</Muted>
+              <DateMultiField selected={pickedDates} onChange={setPickedDates} />
+              <Muted>{t.form.datesPicked(pickedDates.length)}</Muted>
+            </View>
+          )}
+          <DateTimeField
+            label={req(t.form.timeForDates)}
+            value={startsAt}
+            onChange={setStartsAt}
+            mode="time"
+            minimumDate={new Date(2000, 0, 1)}
+          />
+          <View style={{ marginBottom: theme.space.md }}>
+            <Text style={styles.durationLabel}>{req(t.form.duration)}</Text>
+            <View style={styles.durationRow}>
+              <View style={styles.durationBlock}>
+                <Chip label="−1h" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 60))} />
+                <Chip label="−30m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 30))} />
+                <Chip label="−15m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 15))} />
+                <Text style={styles.durationValue}>{formatDuration(durationMinutes)}</Text>
+                <Chip label="+15m" active={false} onPress={() => setDurationMinutes((m) => m + 15)} />
+                <Chip label="+30m" active={false} onPress={() => setDurationMinutes((m) => m + 30)} />
+                <Chip label="+1h" active={false} onPress={() => setDurationMinutes((m) => m + 60)} />
+              </View>
+            </View>
+          </View>
+        </View>
+      ) : recurrenceMode === 'weekly' ? (
         <View>
           <Muted>{t.form.recurrenceHint}</Muted>
           <Text style={styles.section}>{t.form.daysAndSlots}</Text>

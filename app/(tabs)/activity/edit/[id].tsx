@@ -40,6 +40,7 @@ export default function EditActivityScreen() {
     series_id?: string | null;
     recurrence_rules?: RecurrenceRule[];
     recurrence_until?: string | null;
+    recurrence_dates?: string[];
     duration_minutes?: number | null;
   } | null>(null);
 
@@ -127,6 +128,7 @@ export default function EditActivityScreen() {
         series_id: act.series_id ?? act.id,
         recurrence_rules: rules,
         recurrence_until: act.recurrence_until ?? null,
+        recurrence_dates: Array.isArray(act.recurrence_dates) ? act.recurrence_dates : [],
         duration_minutes: act.duration_minutes,
       });
     })();

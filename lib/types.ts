@@ -234,6 +234,8 @@ export type Activity = {
   duration_minutes: number | null;
   /** Last day a new occurrence may start (YYYY-MM-DD) */
   recurrence_until: string | null;
+  /** Explicit calendar days (YYYY-MM-DD) for a dated series */
+  recurrence_dates?: string[];
   series_id: string | null;
   previous_activity_id: string | null;
   /** Locked from first recurring event — used when opening the next occurrence */
