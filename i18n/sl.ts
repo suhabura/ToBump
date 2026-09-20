@@ -101,11 +101,12 @@ export const sl = {
   },
   planner: {
     title: 'Planer',
-    empty: 'Nimate prihajajočih dogodkov, katerim ste se pridružili.',
+    empty: 'Nimate prihajajočih dogodkov, ki jih organizirate ali se jim pridružujete.',
     emptyPast: 'Še nimate preteklih dogodkov, na katerih ste bili.',
     upcoming: 'Prihajajoči',
     past: 'Pretekli',
     today: 'danes',
+    todayHeading: 'Danes',
     tomorrow: 'jutri',
     dayAfterTomorrow: 'pojutrišnjem',
     inDays: (n: number) => `čez ${n} dni`,

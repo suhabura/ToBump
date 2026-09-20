@@ -101,11 +101,12 @@ export const en = {
   },
   planner: {
     title: 'Planner',
-    empty: 'No upcoming events you have joined.',
+    empty: 'No upcoming events you organize or have joined.',
     emptyPast: 'No past events you attended yet.',
     upcoming: 'Upcoming',
     past: 'Past',
     today: 'today',
+    todayHeading: 'Today',
     tomorrow: 'tomorrow',
     dayAfterTomorrow: 'day after tomorrow',
     inDays: (n: number) => `in ${n} days`,
