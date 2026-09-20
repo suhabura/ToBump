@@ -18,7 +18,7 @@ const NavLight = {
   colors: {
     ...DefaultTheme.colors,
     primary: theme.colors.primary,
-    background: theme.colors.background,
+    background: theme.colors.surface,
     card: theme.colors.surface,
     text: theme.colors.text,
     border: theme.colors.border,
@@ -70,7 +70,7 @@ export default function RootLayout() {
       <AppI18n>
         <ThemeProvider value={NavLight}>
           <AuthGate>
-            <Stack>
+            <Stack screenOptions={{ contentStyle: { backgroundColor: theme.colors.surface } }}>
               <Stack.Screen name="(auth)" options={{ headerShown: false }} />
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="+not-found" />

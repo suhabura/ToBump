@@ -1,8 +1,8 @@
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Tabs, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { theme } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { useT } from '@/i18n';
@@ -12,11 +12,19 @@ function TabIcon({ name, color }: { name: React.ComponentProps<typeof FontAwesom
   return <FontAwesome size={22} name={name} color={color} style={{ marginBottom: -2 }} />;
 }
 
+const webPad = (edge: 'top' | 'bottom') =>
+  `env(safe-area-inset-${edge}, 0px)` as unknown as number;
+
 function TabAppHeader({ title, unread }: { title: string; unread: number }) {
   const t = useT();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   return (
-    <SafeAreaView edges={['top']} style={styles.headerSafe}>
+    <View
+      style={[
+        styles.headerSafe,
+        { paddingTop: Platform.OS === 'web' ? webPad('top') : insets.top },
+      ]}>
       <View style={styles.headerBar} accessibilityRole="header">
         <Text style={styles.brandTab} numberOfLines={1}>
           {title}
@@ -42,7 +50,7 @@ function TabAppHeader({ title, unread }: { title: string; unread: number }) {
           </View>
         </Pressable>
       </View>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -143,9 +151,16 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: theme.colors.surface,
           borderTopColor: theme.colors.border,
-          height: 52 + insets.bottom,
           paddingTop: 4,
-          paddingBottom: insets.bottom,
+          ...(Platform.OS === 'web'
+            ? {
+                height: 'calc(52px + env(safe-area-inset-bottom, 0px))' as unknown as number,
+                paddingBottom: webPad('bottom'),
+              }
+            : {
+                height: 52 + insets.bottom,
+                paddingBottom: insets.bottom,
+              }),
         },
         headerStyle: { backgroundColor: theme.colors.surface },
         headerTintColor: theme.colors.text,

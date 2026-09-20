@@ -12,6 +12,10 @@ export default function Root({ children }: { children: ReactNode }) {
         <meta charSet="utf-8" />
         <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
         <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no, viewport-fit=cover" />
+        <meta name="theme-color" content="#F3F5F0" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
         {/*
           Disable body scrolling on web. This makes ScrollView components work closer to how they do on native.
@@ -19,7 +23,7 @@ export default function Root({ children }: { children: ReactNode }) {
         */}
         <ScrollViewStyleReset />
 
-        {/* Using raw CSS styles as an escape-hatch to ensure the background color never flickers in dark-mode. */}
+        {/* Match header/tab bar so leftover phone chrome is not sage or black. */}
         <style dangerouslySetInnerHTML={{ __html: responsiveBackground }} />
         {/* Add any additional <head> elements that you want globally available on web... */}
       </head>
@@ -29,16 +33,22 @@ export default function Root({ children }: { children: ReactNode }) {
 }
 
 const responsiveBackground = `
-html, body, #root {
+html {
   height: 100%;
-  height: 100dvh;
+  height: 100svh;
+  height: -webkit-fill-available;
+  background-color: #F3F5F0;
+}
+body, #root {
+  display: flex;
+  flex-direction: column;
   margin: 0;
+  min-height: 100%;
+  min-height: 100svh;
+  min-height: -webkit-fill-available;
+  background-color: #F3F5F0;
 }
-body {
-  background-color: #E5E8E1;
-}
-@media (prefers-color-scheme: dark) {
-  body {
-    background-color: #000;
-  }
+#root {
+  flex: 1;
+  width: 100%;
 }`;
