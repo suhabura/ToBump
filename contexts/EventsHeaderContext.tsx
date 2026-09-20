@@ -7,7 +7,6 @@ export type EventsHeaderControls = {
   onSearchOpen: () => void;
   onSearchClose: () => void;
   onSearchSubmit: () => void;
-  onCreate: () => void;
 } | null;
 
 type EventsHeaderContextValue = {

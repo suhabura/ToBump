@@ -73,9 +73,8 @@ export default function EventsScreen() {
       onSearchSubmit: () => {
         void load();
       },
-      onCreate: () => router.push('/activity/create'),
     });
-  }, [search, searchOpen, load, router, setControls]);
+  }, [search, searchOpen, load, setControls]);
 
   useEffect(() => () => setControls(null), [setControls]);
 
@@ -181,7 +180,7 @@ export default function EventsScreen() {
         <FlatList
           data={items}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: 32, paddingTop: 4 }}
+          contentContainerStyle={{ paddingBottom: 96, paddingTop: 4 }}
           ListEmptyComponent={<EmptyState title={t.events.empty} />}
           renderItem={({ item }) => {
             const isOrganizer = item.created_by === user?.id;
@@ -274,11 +273,40 @@ export default function EventsScreen() {
           }}
         />
       )}
+      <View style={styles.fabWrap} pointerEvents="box-none">
+        <Pressable
+          onPress={() => router.push('/activity/create')}
+          style={({ pressed }) => [styles.fab, pressed ? { opacity: 0.9, transform: [{ scale: 0.96 }] } : null]}
+          accessibilityRole="button"
+          accessibilityLabel={t.events.create}>
+          <FontAwesome name="plus" size={22} color="#fff" />
+        </Pressable>
+      </View>
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
+  fabWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 12,
+    alignItems: 'center',
+  },
+  fab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: theme.colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#355A3C',
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
+  },
   card: {
     width: '100%',
     flexDirection: 'row',

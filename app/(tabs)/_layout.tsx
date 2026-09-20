@@ -95,17 +95,9 @@ function TabAppHeader({
       ) : (
         <View style={styles.headerBar} accessibilityRole="header">
           <View style={styles.headerSlot}>
-            {events ? (
-              <HeaderIcon
-                name="search"
-                onPress={() => extras?.onSearchOpen()}
-                accessibilityLabel={t.events.search}
-              />
-            ) : (
-              <Text style={styles.brandTab} numberOfLines={1}>
-                {title}
-              </Text>
-            )}
+            <Text style={styles.brandTab} numberOfLines={1}>
+              {title}
+            </Text>
           </View>
           <View style={styles.logoWrap} pointerEvents="none">
             <Image
@@ -118,10 +110,9 @@ function TabAppHeader({
           <View style={[styles.headerSlot, styles.headerSlotRight]}>
             {events ? (
               <HeaderIcon
-                name="plus"
-                color={theme.colors.accent}
-                onPress={() => extras?.onCreate()}
-                accessibilityLabel={t.events.create}
+                name="search"
+                onPress={() => extras?.onSearchOpen()}
+                accessibilityLabel={t.events.search}
               />
             ) : null}
             <HeaderIcon
