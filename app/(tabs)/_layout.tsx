@@ -147,7 +147,7 @@ export default function TabLayout() {
         options={{
           title: t.tabs.events,
           header: () => <TabAppHeader title={t.tabs.events} unread={unread} />,
-          tabBarIcon: ({ color }) => <TabIcon name="calendar" color={String(color)} />,
+          tabBarIcon: ({ color }) => <TabIcon name="list-alt" color={String(color)} />,
         }}
       />
       <Tabs.Screen
@@ -155,7 +155,7 @@ export default function TabLayout() {
         options={{
           title: t.tabs.planner,
           header: () => <TabAppHeader title={t.tabs.planner} unread={unread} />,
-          tabBarIcon: ({ color }) => <TabIcon name="list-alt" color={String(color)} />,
+          tabBarIcon: ({ color }) => <TabIcon name="calendar" color={String(color)} />,
         }}
       />
       <Tabs.Screen

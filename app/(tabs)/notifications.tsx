@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { enUS } from 'date-fns/locale';
+import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -7,11 +7,13 @@ import { Button, EmptyState, Loading, Muted, Screen } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
 import type { Notification } from '@/lib/types';
-import { useT } from '@/i18n';
+import { useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
 export default function NotificationsScreen() {
   const t = useT();
+  const { locale } = useLocale();
+  const dfLocale = locale === 'sl' ? slLocale : enUS;
   const { user } = useAuth();
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -60,7 +62,7 @@ export default function NotificationsScreen() {
             style={[styles.card, !item.is_read && styles.unread]}
             onPress={() => markRead(item.id)}>
             <Text style={styles.msg}>{item.message}</Text>
-            <Muted>{format(new Date(item.created_at), 'd MMM yyyy HH:mm', { locale: enUS })}</Muted>
+            <Muted>{format(new Date(item.created_at), 'd MMM yyyy HH:mm', { locale: dfLocale })}</Muted>
           </Pressable>
         )}
       />

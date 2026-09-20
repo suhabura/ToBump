@@ -120,6 +120,8 @@ export const en = {
     unskipOccurrence: 'Reinstate this date',
     skipShort: 'Skip',
     upcomingSlot: 'Upcoming date',
+    legendOrganizing: 'Organizing',
+    legendJoined: 'Joined',
   },
   friends: {
     title: 'Friends',

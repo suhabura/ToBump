@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { enUS } from 'date-fns/locale';
+import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -11,11 +11,13 @@ import { formatDistance } from '@/lib/geo';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
 import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName } from '@/lib/types';
-import { useT } from '@/i18n';
+import { useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
 export default function EventsScreen() {
   const t = useT();
+  const { locale } = useLocale();
+  const dfLocale = locale === 'sl' ? slLocale : enUS;
   const { user, configured } = useAuth();
   const router = useRouter();
   const [search, setSearch] = useState('');
@@ -211,7 +213,7 @@ export default function EventsScreen() {
 
                   <Subtitle>{cat}</Subtitle>
                   <Text style={styles.when}>
-                    {format(new Date(item.starts_at), 'EEE, d MMM · HH:mm', { locale: enUS })}
+                    {format(new Date(item.starts_at), 'EEE, d MMM · HH:mm', { locale: dfLocale })}
                   </Text>
                   {location ? (
                     <Text style={styles.metaLine} numberOfLines={1}>

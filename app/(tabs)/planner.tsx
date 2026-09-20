@@ -562,6 +562,16 @@ export default function PlannerScreen() {
                     );
                   })}
                 </View>
+                <View style={styles.legend}>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.dot, styles.dotOrganizing]} />
+                    <Text style={styles.legendText}>{t.planner.legendOrganizing}</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.dot, styles.dotJoined]} />
+                    <Text style={styles.legendText}>{t.planner.legendJoined}</Text>
+                  </View>
+                </View>
               </View>
 
               {selectedDayEvents.length ? (
@@ -679,6 +689,18 @@ const styles = StyleSheet.create({
   dotOrganizing: { backgroundColor: theme.colors.primary },
   dotJoined: { backgroundColor: theme.colors.accent },
   dotOnSelected: { backgroundColor: '#fff' },
+  legend: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 16,
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: theme.colors.border,
+  },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  legendText: { fontSize: 12, fontWeight: '600', color: theme.colors.textMuted },
   section: { marginBottom: theme.space.sm },
   card: {
     width: '100%',

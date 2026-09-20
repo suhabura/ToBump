@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { enUS } from 'date-fns/locale';
+import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useRef, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -29,6 +29,7 @@ import { theme } from '@/constants/theme';
 export default function ActivityDetailScreen() {
   const t = useT();
   const { locale } = useLocale();
+  const dfLocale = locale === 'sl' ? slLocale : enUS;
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const router = useRouter();
@@ -257,9 +258,9 @@ export default function ActivityDetailScreen() {
         ) : (
           <>
         <Muted>
-          {format(new Date(activity.starts_at), 'EEEE, d MMMM yyyy · HH:mm', { locale: enUS })}
+          {format(new Date(activity.starts_at), 'EEEE, d MMMM yyyy · HH:mm', { locale: dfLocale })}
           {activity.ends_at
-            ? ` – ${format(new Date(activity.ends_at), 'HH:mm', { locale: enUS })}`
+            ? ` – ${format(new Date(activity.ends_at), 'HH:mm', { locale: dfLocale })}`
             : ''}
         </Muted>
         {(activity.recurrence_dates?.length ?? 0) >= 2 ? (
@@ -284,7 +285,7 @@ export default function ActivityDetailScreen() {
               locale
             )}
             {activity.recurrence_until
-              ? ` · ${t.form.seriesEnds} ${format(new Date(`${activity.recurrence_until}T12:00:00`), 'd MMM yyyy', { locale: enUS })}`
+              ? ` · ${t.form.seriesEnds} ${format(new Date(`${activity.recurrence_until}T12:00:00`), 'd MMM yyyy', { locale: dfLocale })}`
               : ''}
           </Muted>
         ) : null}

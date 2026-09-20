@@ -120,6 +120,8 @@ export const sl = {
     unskipOccurrence: 'Termin velja',
     skipShort: 'Odpade',
     upcomingSlot: 'Prihodnji termin',
+    legendOrganizing: 'Organiziraš',
+    legendJoined: 'Pridružen',
   },
   friends: {
     title: 'Prijatelji',
