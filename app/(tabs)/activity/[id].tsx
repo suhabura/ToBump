@@ -334,7 +334,9 @@ export default function ActivityDetailScreen() {
           );
         })()}
         <Muted>
-          {t.common.price}: {activityPriceLabel(activity, t.common)}
+          {(!activity.finance_enabled || activity.price == null)
+            ? t.common.priceUnspecified
+            : `${t.common.price}: ${activityPriceLabel(activity, t.common)}`}
         </Muted>
         <Muted>
           {t.events.joinedCount}: {participantCount}

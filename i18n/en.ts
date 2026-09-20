@@ -561,6 +561,7 @@ export const en = {
     free: 'Free',
     required: 'Required field',
     notSet: 'Not set',
+    priceUnspecified: 'Price unspecified',
     user: 'User',
     phone: 'Phone',
     price: 'Price',

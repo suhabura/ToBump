@@ -395,9 +395,9 @@ export function activityLocationLabel(a: {
 
 export function activityPriceLabel(
   a: { price?: number | null; finance_enabled?: boolean | null },
-  labels: { free: string; notSet: string }
+  labels: { free: string; priceUnspecified: string }
 ): string {
-  if (!a.finance_enabled || a.price == null) return labels.notSet;
+  if (!a.finance_enabled || a.price == null) return labels.priceUnspecified;
   if (Number(a.price) > 0) return `${a.price} €`;
   return labels.free;
 }

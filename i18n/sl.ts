@@ -562,6 +562,7 @@ export const sl = {
     free: 'Brezplačno',
     required: 'Obvezno polje',
     notSet: 'Ni nastavljeno',
+    priceUnspecified: 'Cena ni določena',
     user: 'Uporabnik',
     phone: 'Telefon',
     price: 'Cena',
