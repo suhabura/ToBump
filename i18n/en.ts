@@ -53,6 +53,7 @@ export const en = {
     needLocationForRadius: 'Set your profile location to filter commercial events by distance.',
     friend: 'Friend',
     joined: 'Joined',
+    joinedCount: 'Signed up',
     full: 'Full',
     eventFull: 'This event just filled up. Try another one.',
     privacy: 'Privacy',

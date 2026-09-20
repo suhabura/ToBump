@@ -204,11 +204,17 @@ export default function EventsScreen() {
                     ) : (
                       <View />
                     )}
-                    <Text style={styles.count}>
-                      <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
-                      {item.join_count ?? 0}
-                      {capRange ? ` · ${capRange}` : ''}
-                    </Text>
+                    <View style={styles.countBlock}>
+                      <Text style={styles.count}>
+                        <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
+                        {t.events.joinedCount}: {item.join_count ?? 0}
+                      </Text>
+                      {capRange ? (
+                        <Text style={styles.count}>
+                          {t.events.capacity}: {capRange}
+                        </Text>
+                      ) : null}
+                    </View>
                   </View>
 
                   <Subtitle>{cat}</Subtitle>
@@ -297,10 +303,15 @@ const styles = StyleSheet.create({
   },
   cardTop: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'space-between',
     marginBottom: 8,
     gap: 8,
+  },
+  countBlock: {
+    alignItems: 'flex-end',
+    flexShrink: 0,
+    gap: 2,
   },
   tag: {
     paddingHorizontal: 10,

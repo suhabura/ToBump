@@ -53,6 +53,7 @@ export const sl = {
     needLocationForRadius: 'Nastavi lokacijo v profilu za filtriranje po razdalji.',
     friend: 'Prijatelj',
     joined: 'Pridružen',
+    joinedCount: 'Prijavljeni',
     full: 'Polno',
     eventFull: 'Dogodek se je ravnokar zapolnil. Poskusi drugega.',
     privacy: 'Zasebnost',

@@ -337,9 +337,13 @@ export default function ActivityDetailScreen() {
           {t.common.price}: {activityPriceLabel(activity, t.common)}
         </Muted>
         <Muted>
-          {t.events.participants}: {participantCount}
-          {capRange ? ` · ${capRange}` : ''}
+          {t.events.joinedCount}: {participantCount}
         </Muted>
+        {capRange ? (
+          <Muted>
+            {t.events.capacity}: {capRange}
+          </Muted>
+        ) : null}
 
         <View style={{ marginTop: 20, gap: 10 }}>
           {joined ? (
