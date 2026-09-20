@@ -384,9 +384,8 @@ export default function PlannerScreen() {
     if (!user) return;
     setBusyKey(item.slotKey);
     try {
-      const id = await joinSeriesOccurrence(item, new Date(item.starts_at), user.id);
+      await joinSeriesOccurrence(item, new Date(item.starts_at), user.id);
       await load();
-      router.push(`/activity/${id}`);
     } catch (e) {
       showAlert(t.common.error, e instanceof Error ? e.message : t.common.error);
     } finally {
