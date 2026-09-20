@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react';
-import { Alert, FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { FriendPicker } from '@/components/FriendPicker';
 import { useAuth } from '@/contexts/AuthContext';
+import { confirmAction, showAlert } from '@/lib/dialog';
 import { supabase } from '@/lib/supabase';
 import { dedupeProfilesByEmail, friendshipOtherId } from '@/lib/friends';
 import type { FriendGroup, Profile } from '@/lib/types';
@@ -103,11 +104,11 @@ export default function GroupsScreen() {
 
   async function createGroup() {
     if (!user || !name.trim()) {
-      Alert.alert(t.common.error, t.groups.needName);
+      showAlert(t.common.error, t.groups.needName);
       return;
     }
     if (selectedMembers.length === 0) {
-      Alert.alert(t.common.error, t.groups.needMember);
+      showAlert(t.common.error, t.groups.needMember);
       return;
     }
     setSaving(true);
@@ -118,7 +119,7 @@ export default function GroupsScreen() {
       .single();
     if (err || !data) {
       setSaving(false);
-      Alert.alert(t.common.error, errMessage(err, t) || t.groups.createFailed);
+      showAlert(t.common.error, errMessage(err, t) || t.groups.createFailed);
       return;
     }
     const { error: memErr } = await supabase.from('friend_group_members').insert(
@@ -126,7 +127,7 @@ export default function GroupsScreen() {
     );
     setSaving(false);
     if (memErr) {
-      Alert.alert(t.common.error, errMessage(memErr, t));
+      showAlert(t.common.error, errMessage(memErr, t));
       return;
     }
     setName('');
@@ -134,9 +135,24 @@ export default function GroupsScreen() {
     load();
   }
 
-  async function deleteGroup(id: string) {
-    await supabase.from('friend_groups').delete().eq('id', id);
-    load();
+  async function deleteGroup(id: string, groupName: string) {
+    confirmAction({
+      title: t.groups.delete,
+      message: t.groups.deleteConfirm(groupName),
+      confirmLabel: t.groups.delete,
+      cancelLabel: t.common.cancel,
+      destructive: true,
+      onConfirm: () => {
+        void (async () => {
+          const { data, error } = await supabase.from('friend_groups').delete().eq('id', id).select('id');
+          if (error || !data?.length) {
+            showAlert(t.common.error, t.groups.deleteFailed);
+            return;
+          }
+          load();
+        })();
+      },
+    });
   }
 
   if (loading) return <Loading />;
@@ -177,7 +193,7 @@ export default function GroupsScreen() {
                 .map((id) => displayName(friends.find((f) => f.id === id) ?? null))
                 .join(', ') || '—'}
             </Muted>
-            <Button label={t.groups.delete} variant="ghost" onPress={() => deleteGroup(item.id)} />
+            <Button label={t.groups.delete} variant="ghost" onPress={() => deleteGroup(item.id, item.name)} />
           </View>
         )}
       />

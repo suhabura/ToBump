@@ -1,8 +1,9 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Chip, EmptyState, Input, Loading, Muted, Screen, Subtitle, Title } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
+import { showAlert } from '@/lib/dialog';
 import {
   fetchShopProduct,
   formatShopPrice,
@@ -48,15 +49,14 @@ export default function ShopProductScreen() {
     setSubmitting(false);
     if (error) {
       if (product.id.startsWith('local-')) {
-        Alert.alert(t.shop.title, t.shop.runSql);
+        showAlert(t.shop.title, t.shop.runSql);
       } else {
-        Alert.alert(t.common.error, error);
+        showAlert(t.common.error, error);
       }
       return;
     }
-    Alert.alert(t.shop.orderSentTitle, t.shop.orderSentBody, [
-      { text: t.common.ok, onPress: () => router.back() },
-    ]);
+    showAlert(t.shop.orderSentTitle, t.shop.orderSentBody);
+    router.back();
   }
 
   if (loading) return <Loading />;

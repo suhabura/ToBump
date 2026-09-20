@@ -187,10 +187,12 @@ export const en = {
     myGroups: 'My groups',
     empty: "You don't have any groups yet.",
     delete: 'Delete',
+    deleteConfirm: (name: string) => `Delete group “${name}”?`,
     membersCount: (n: number) => `${n} members:`,
     needName: 'Enter a group name.',
     needMember: 'Add at least one member.',
     createFailed: "Couldn't create the group.",
+    deleteFailed: "Couldn't delete the group.",
   },
   chat: {
     empty: 'Start a conversation about the event.',

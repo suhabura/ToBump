@@ -59,7 +59,10 @@ export function Button({
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={(e) => {
+        e?.stopPropagation?.();
+        onPress();
+      }}
       disabled={disabled || loading}
       style={({ pressed }) => [
         styles.btn,

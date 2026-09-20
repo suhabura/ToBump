@@ -186,10 +186,12 @@ export const sl = {
     myGroups: 'Moje skupine',
     empty: 'Še nimate skupin.',
     delete: 'Izbriši',
+    deleteConfirm: (name: string) => `Izbrisati skupino »${name}«?`,
     membersCount: (n: number) => `${n} članov:`,
     needName: 'Vnesite ime skupine.',
     needMember: 'Dodajte vsaj enega člana.',
     createFailed: 'Skupine ni bilo mogoče ustvariti.',
+    deleteFailed: 'Skupine ni bilo mogoče izbrisati.',
   },
   chat: {
     empty: 'Začnite pogovor o dogodku.',

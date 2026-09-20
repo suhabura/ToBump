@@ -1,9 +1,10 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
-import { Alert, FlatList, Platform, StyleSheet, Text, View } from 'react-native';
+import { FlatList, StyleSheet, Text, View } from 'react-native';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { createNotification } from '@/lib/api';
+import { confirmAction, showAlert } from '@/lib/dialog';
 import { dedupeFriendshipsByOther, dedupeProfilesByEmail, friendshipOtherId } from '@/lib/friends';
 import { supabase } from '@/lib/supabase';
 import type { Friendship, Profile } from '@/lib/types';
@@ -114,7 +115,7 @@ export default function FriendsScreen() {
           from_user_id: user.id,
         });
       }
-      Alert.alert('OK', t.friends.requestSent);
+      showAlert('OK', t.friends.requestSent);
       setResults([]);
       setSearch('');
       load();
@@ -133,7 +134,7 @@ export default function FriendsScreen() {
 
     if (existing) {
       if (existing.status === 'accepted') {
-        Alert.alert(t.common.error, t.friends.alreadyFriends);
+        showAlert(t.common.error, t.friends.alreadyFriends);
         return;
       }
       if (existing.status === 'pending') {
@@ -141,7 +142,7 @@ export default function FriendsScreen() {
           await respond(existing.id, 'accepted', existing.from_user_id);
           return;
         }
-        Alert.alert(t.common.error, t.friends.alreadyPending);
+        showAlert(t.common.error, t.friends.alreadyPending);
         return;
       }
     }
@@ -155,13 +156,13 @@ export default function FriendsScreen() {
       const msg = /duplicate|unique/i.test(error.message)
         ? t.friends.alreadyPending
         : error.message;
-      Alert.alert(t.common.error, msg);
+      showAlert(t.common.error, msg);
       return;
     }
     await createNotification(toUserId, 'friend_request', t.friends.newRequest, {
       from_user_id: user.id,
     });
-    Alert.alert('OK', t.friends.requestSent);
+    showAlert('OK', t.friends.requestSent);
     setResults([]);
     setSearch('');
     load();
@@ -201,35 +202,32 @@ export default function FriendsScreen() {
   }
 
   async function removeFriend(row: FriendRow) {
-    if (!user || !row.other?.id) return;
-    const otherId = row.other.id;
+    if (!user || !row.id) return;
+    const pairIds = Array.from(
+      new Set([friendshipOtherId(row, user.id), row.other?.id].filter((id): id is string => Boolean(id)))
+    );
     const name = displayName(row.other);
 
     const run = async () => {
-      const { error } = await supabase
-        .from('friendships')
-        .delete()
-        .or(
-          `and(from_user_id.eq.${user.id},to_user_id.eq.${otherId}),and(from_user_id.eq.${otherId},to_user_id.eq.${user.id})`
-        );
-      if (error) {
-        Alert.alert(t.common.error, t.friends.removeFailed);
+      const orFilter = [`id.eq.${row.id}`, ...pairIds.flatMap((id) => [`from_user_id.eq.${id}`, `to_user_id.eq.${id}`])].join(
+        ','
+      );
+      const { data, error } = await supabase.from('friendships').delete().or(orFilter).select('id');
+      if (error || !data?.length) {
+        showAlert(t.common.error, t.friends.removeFailed);
         return;
       }
       await load();
     };
 
-    if (Platform.OS === 'web') {
-      if (typeof window !== 'undefined' && window.confirm(t.friends.removeConfirm(name))) {
-        await run();
-      }
-      return;
-    }
-
-    Alert.alert(t.friends.removeConfirmTitle, t.friends.removeConfirm(name), [
-      { text: t.common.cancel, style: 'cancel' },
-      { text: t.friends.remove, style: 'destructive', onPress: () => void run() },
-    ]);
+    confirmAction({
+      title: t.friends.removeConfirmTitle,
+      message: t.friends.removeConfirm(name),
+      confirmLabel: t.friends.remove,
+      cancelLabel: t.common.cancel,
+      destructive: true,
+      onConfirm: () => void run(),
+    });
   }
 
   if (loading) return <Loading />;

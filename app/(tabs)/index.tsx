@@ -185,11 +185,11 @@ export default function EventsScreen() {
             const cat = categoryLabel(item.categories) ?? `${item.title} (${t.events.uncategorized})`;
             const busy = busyId === item.id;
             return (
-              <Pressable
-                style={[styles.card, isOrganizer ? styles.cardMine : null]}
-                onPress={() => router.push(`/activity/${item.id}`)}
-              >
-                <View style={styles.cardBody}>
+              <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
+                <Pressable
+                  style={styles.cardBody}
+                  onPress={() => router.push(`/activity/${item.id}`)}
+                >
                   <View style={styles.cardTop}>
                     {isOrganizer ? (
                       <Text style={[styles.tag, styles.tagOrganizing]}>{t.events.organizing}</Text>
@@ -224,7 +224,7 @@ export default function EventsScreen() {
                     {activityPriceLabel(item, t.common)}
                     {isOrganizer ? null : ` · ${displayName(item.profiles)}`}
                   </Text>
-                </View>
+                </Pressable>
 
                 <View style={styles.actions} onStartShouldSetResponder={() => true}>
                   {joined ? (
@@ -256,7 +256,7 @@ export default function EventsScreen() {
                     />
                   )}
                 </View>
-              </Pressable>
+              </View>
             );
           }}
         />
