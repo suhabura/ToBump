@@ -15,7 +15,7 @@ import {
 import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Switch, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button, EmptyState, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { leaveActivity, processDueRecurringActivities } from '@/lib/api';
@@ -30,9 +30,6 @@ import {
   fetchSkippedDays,
   joinSeriesOccurrence,
   openSeriesOccurrence,
-  setSeriesFollow,
-  skipSeriesDay,
-  unskipSeriesDay,
 } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
@@ -57,36 +54,6 @@ function relativeDayLabel(startsAt: Date, t: Translations, now = new Date()): st
 
 function dayKey(d: Date): string {
   return format(startOfDay(d), 'yyyy-MM-dd');
-}
-
-function SeriesToggle({
-  label,
-  value,
-  onChange,
-}: {
-  label: string;
-  value: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  return (
-    <View
-      style={styles.cornerControl}
-      onStartShouldSetResponder={() => true}
-      onTouchEnd={(e) => e.stopPropagation()}
-      // RN web: stop the card Pressable from eating the click
-      {...({
-        onClick: (e: { stopPropagation: () => void }) => e.stopPropagation(),
-      } as object)}>
-      <Text style={styles.cornerLabel}>{label}</Text>
-      <Switch
-        value={value}
-        onValueChange={onChange}
-        trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-        thumbColor="#fff"
-        ios_backgroundColor={theme.colors.border}
-      />
-    </View>
-  );
 }
 
 function DayDot({
@@ -386,15 +353,6 @@ export default function PlannerScreen() {
     await load({ silent: true });
   }
 
-  async function onFollow(item: PlannerItem, follow: boolean) {
-    try {
-      await setSeriesFollow(seriesKey(item), follow);
-      await load({ silent: true });
-    } catch (e) {
-      showAlert(t.common.error, e instanceof Error ? e.message : t.common.error);
-    }
-  }
-
   async function onJoinSlot(item: PlannerItem) {
     if (!user) return;
     setBusyKey(item.slotKey);
@@ -409,7 +367,6 @@ export default function PlannerScreen() {
   }
 
   async function onOpenSlot(item: PlannerItem) {
-    if (item.skipped) return;
     try {
       if (item.virtual) {
         const id = await openSeriesOccurrence(item, new Date(item.starts_at));
@@ -422,26 +379,12 @@ export default function PlannerScreen() {
     }
   }
 
-  async function onSkip(item: PlannerItem, skip: boolean) {
-    const day = localDayKey(new Date(item.starts_at));
-    try {
-      if (skip) await skipSeriesDay(seriesKey(item), day);
-      else await unskipSeriesDay(seriesKey(item), day);
-      await load({ silent: true });
-    } catch (e) {
-      showAlert(t.common.error, e instanceof Error ? e.message : t.common.error);
-    }
-  }
-
   function renderEventCard(item: PlannerItem, opts: { showRelative: boolean; allowActions: boolean }) {
     const starts = new Date(item.starts_at);
     const location = activityLocationLabel(item);
     const future = starts.getTime() >= Date.now();
     const isMine = item.created_by === user?.id;
     const isJoined = !item.virtual && joinedIds.has(item.id);
-    const series = isSeriesActivity(item);
-    const sid = seriesKey(item);
-    const following = follows.has(sid);
     const showActions = opts.allowActions && future;
     const busy = busyKey === item.slotKey;
     return (
@@ -452,18 +395,8 @@ export default function PlannerScreen() {
             <Pressable style={styles.cardTitle} onPress={() => onOpenSlot(item)}>
               <Subtitle>{categoryLabel(item.categories) ?? item.title}</Subtitle>
             </Pressable>
-            {isMine && series && future ? (
-              <SeriesToggle
-                label={t.planner.skipShort}
-                value={item.skipped}
-                onChange={(v) => onSkip(item, v)}
-              />
-            ) : series && !isMine ? (
-              <SeriesToggle
-                label={t.planner.followShort}
-                value={following}
-                onChange={(v) => onFollow(item, v)}
-              />
+            {item.skipped ? (
+              <Text style={styles.tagMuted}>{t.planner.skipped}</Text>
             ) : item.virtual ? (
               <Text style={styles.tagMuted}>{t.planner.upcomingSlot}</Text>
             ) : null}
@@ -766,17 +699,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.surfaceElevated,
     color: theme.colors.textMuted,
     flexShrink: 0,
-  },
-  cornerControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    flexShrink: 0,
-  },
-  cornerLabel: {
-    fontSize: 11,
-    fontWeight: '700',
-    color: theme.colors.textMuted,
   },
   actions: {
     flexGrow: 0,
