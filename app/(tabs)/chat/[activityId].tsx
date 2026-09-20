@@ -41,41 +41,25 @@ export default function ChatScreen() {
     (async () => {
       const first = await supabase
         .from('activities')
-        .select('title, created_by, series_id, recurrence_dates')
+        .select('title, created_by, series_id')
         .eq('id', activityId)
         .single();
-      let act = first.data as {
-        title?: string;
-        created_by?: string;
-        series_id?: string | null;
-        recurrence_dates?: string[];
-      } | null;
-      if (first.error && /recurrence_dates/i.test(first.error.message ?? '')) {
-        const retry = await supabase
-          .from('activities')
-          .select('title, created_by, series_id')
-          .eq('id', activityId)
-          .single();
-        act = retry.data;
-      } else if (first.error) {
-        act = null;
-      }
+      const act = first.error
+        ? null
+        : (first.data as { title?: string; created_by?: string; series_id?: string | null } | null);
       if (cancelled) return;
       setActivityTitle(act?.title ?? '');
-      const dates = Array.isArray(act?.recurrence_dates) ? act.recurrence_dates : [];
-      const isDateSeries = dates.length >= 2;
       const sid = (act?.series_id as string | undefined) || activityId;
-      let activityIds = [activityId];
-      if (isDateSeries) {
-        const { data: sibs } = await supabase
-          .from('activities')
-          .select('id')
-          .or(`id.eq.${sid},series_id.eq.${sid}`);
-        activityIds = Array.from(new Set((sibs ?? []).map((s: { id: string }) => s.id)));
-        if (!activityIds.length) activityIds = [activityId];
-      }
-      const threadId = isDateSeries ? sid : activityId;
+      const { data: sibs } = await supabase
+        .from('activities')
+        .select('id')
+        .or(`id.eq.${sid},series_id.eq.${sid}`);
+      const activityIds = Array.from(
+        new Set((sibs ?? []).map((s: { id: string }) => s.id).concat(activityId))
+      );
+      const threadId = sid;
       threadIdRef.current = threadId;
+      const siblingSet = new Set(activityIds);
 
       const { data: joins } = await supabase
         .from('activity_joins')
@@ -98,9 +82,10 @@ export default function ChatScreen() {
         .channel(`chat-${threadId}`)
         .on(
           'postgres_changes',
-          { event: 'INSERT', schema: 'public', table: 'chat_messages', filter: `activity_id=eq.${threadId}` },
+          { event: 'INSERT', schema: 'public', table: 'chat_messages' },
           async (payload) => {
             const row = payload.new as ChatMessage;
+            if (!siblingSet.has(row.activity_id)) return;
             const { data: profile } = await supabase
               .from('profiles')
               .select('first_name, last_name')

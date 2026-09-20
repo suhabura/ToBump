@@ -169,9 +169,7 @@ begin
   where e.activity_id = cur.id
   on conflict do nothing;
 
-  update public.chat_messages
-  set activity_id = new_id
-  where activity_id = cur.id;
+  -- Series chat stays on the original activity_ids; the app loads all siblings.
 
   update public.activities
   set status = 'completed', updated_at = now()
