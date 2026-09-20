@@ -500,6 +500,11 @@ export const en = {
     someoneElsePaid: 'Someone else paid',
     noObligations: 'No events where you have money involved.',
     yourBalanceSettled: 'Settled',
+    openBalances: 'Open',
+    archiveBalances: (n: number) => `Archive (${n})`,
+    noOpenBalances: 'No open balances.',
+    archiveHint:
+      'Settled, or more than 90 days after the last occurrence. The debt stays; it just leaves the daily list.',
     runSql:
       'In Supabase SQL Editor run supabase/activity_finance_ledger_fix.sql. If tables are missing, run activity_finance_ledger.sql first.',
     needMembers: 'Select at least one person to split with.',

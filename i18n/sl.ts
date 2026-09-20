@@ -501,6 +501,10 @@ export const sl = {
     someoneElsePaid: 'Plačal je kdo drug',
     noObligations: 'Nisi vpet v finance nobenega dogodka.',
     yourBalanceSettled: 'Poravnano',
+    openBalances: 'Odprto',
+    archiveBalances: (n: number) => `Arhiv (${n})`,
+    noOpenBalances: 'Ni odprtih bilanc.',
+    archiveHint: 'Poravnano ali več kot 90 dni po zadnjem terminu. Dolg ostane, samo ni na vsakodnevnem seznamu.',
     runSql:
       'V Supabase SQL Editorju zaženi supabase/activity_finance_ledger_fix.sql (popravi plačila → ledger). Če tabel še ni, najprej activity_finance_ledger.sql.',
     needMembers: 'Izberi vsaj eno osebo za delitev.',

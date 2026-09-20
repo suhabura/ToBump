@@ -807,6 +807,7 @@ export type PersonalFinanceSeries = {
   title: string;
   youOwe: number;
   youAreOwed: number;
+  archived: boolean;
 };
 
 export type PersonalFinance = {
@@ -834,6 +835,30 @@ function pickFinanceActivity(seriesId: string, acts: SeriesActivityPick[]): Seri
     (a, b) => new Date(b.starts_at).getTime() - new Date(a.starts_at).getTime()
   );
   return pool[0] ?? null;
+}
+
+/** Settled rows, or last occurrence older than this, leave the daily Open list. Debt is never written off. */
+export const FINANCE_ARCHIVE_AFTER_MS = 90 * 24 * 60 * 60 * 1000;
+
+function seriesSiblings(seriesId: string, acts: SeriesActivityPick[]): SeriesActivityPick[] {
+  return acts.filter((a) => a.id === seriesId || a.series_id === seriesId);
+}
+
+function seriesIsLive(sibs: SeriesActivityPick[], now: number): boolean {
+  return sibs.some(
+    (a) => a.status === 'active' || new Date(a.starts_at).getTime() > now
+  );
+}
+
+function seriesEndedLongAgo(sibs: SeriesActivityPick[], now: number): boolean {
+  if (seriesIsLive(sibs, now)) return false;
+  let last = 0;
+  for (const a of sibs) {
+    const t = new Date(a.starts_at).getTime();
+    if (Number.isFinite(t) && t > last) last = t;
+  }
+  if (!last) return false;
+  return now - last >= FINANCE_ARCHIVE_AFTER_MS;
 }
 
 export async function fetchMyFinance(userId: string): Promise<PersonalFinance> {
@@ -943,6 +968,7 @@ export async function fetchMyFinance(userId: string): Promise<PersonalFinance> {
   }
 
   const series: PersonalFinanceSeries[] = [];
+  const now = Date.now();
   for (const sid of seriesIds) {
     const picked = pickFinanceActivity(sid, acts);
     if (!picked) continue;
@@ -967,6 +993,9 @@ export async function fetchMyFinance(userId: string): Promise<PersonalFinance> {
       title: picked.title,
       youOwe: round2(rowOwe),
       youAreOwed: round2(rowOwed),
+      archived:
+        (rowOwe <= 0.001 && rowOwed <= 0.001) ||
+        seriesEndedLongAgo(seriesSiblings(sid, acts), now),
     });
   }
 
@@ -980,7 +1009,7 @@ export async function fetchMyFinance(userId: string): Promise<PersonalFinance> {
   return {
     youOwe: round2(series.reduce((sum, s) => sum + s.youOwe, 0)),
     youAreOwed: round2(series.reduce((sum, s) => sum + s.youAreOwed, 0)),
-    expensesInvolved: series.length,
+    expensesInvolved: series.filter((s) => !s.archived).length,
     series,
   };
 }
