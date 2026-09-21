@@ -228,10 +228,8 @@ export async function fetchActivities(opts: {
   if (opts.filter === 'feed' || opts.filter === 'all' || !opts.filter) {
     result = result.filter(
       (a) =>
-        a.is_invited ||
-        Boolean(a.is_open_to_you) ||
         a.created_by === opts.userId ||
-        Boolean(a.is_joined)
+        (!a.is_joined && (a.is_invited || Boolean(a.is_open_to_you)))
     );
   } else if (opts.filter === 'invited') {
     result = result.filter((a) => a.is_invited || Boolean(a.is_open_to_you));

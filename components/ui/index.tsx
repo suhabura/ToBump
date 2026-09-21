@@ -40,6 +40,7 @@ export function Button({
   loading,
   size = 'md',
   icon,
+  selected,
 }: {
   label: string;
   onPress: () => void;
@@ -48,6 +49,7 @@ export function Button({
   loading?: boolean;
   size?: 'md' | 'sm';
   icon?: React.ComponentProps<typeof FontAwesome>['name'];
+  selected?: boolean;
 }) {
   const isLight = variant === 'secondary' || variant === 'ghost' || variant === 'dangerOutline';
   const iconColor =
@@ -72,6 +74,7 @@ export function Button({
         variant === 'danger' && styles.btnDanger,
         variant === 'dangerOutline' && styles.btnDangerOutline,
         variant === 'ghost' && styles.btnGhost,
+        selected && styles.btnSelected,
         (disabled || loading) && { opacity: 0.5 },
         pressed && { opacity: 0.88, transform: [{ scale: 0.985 }] },
       ]}>
@@ -248,6 +251,11 @@ const styles = StyleSheet.create({
   },
   btnGhost: {
     backgroundColor: 'transparent',
+  },
+  btnSelected: {
+    backgroundColor: theme.colors.primarySoft,
+    borderWidth: 2,
+    borderColor: theme.colors.primaryDark,
   },
   btnText: {
     color: '#fff',

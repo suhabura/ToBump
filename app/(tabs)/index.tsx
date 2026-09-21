@@ -7,7 +7,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Button, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEventsHeader } from '@/contexts/EventsHeaderContext';
-import { fetchActivities, clearActivityDecline, declineActivity, joinActivity, leaveActivity } from '@/lib/api';
+import { fetchActivities, clearActivityDecline, declineActivity, joinActivity } from '@/lib/api';
 import { formatDistance } from '@/lib/geo';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
@@ -177,19 +177,6 @@ export default function EventsScreen() {
     }
   }
 
-  async function onLeave(item: ActivityWithRelations) {
-    if (!user) return;
-    setBusyId(item.id);
-    try {
-      await leaveActivity(item.id, user.id);
-      await load({ silent: true });
-    } catch (e) {
-      Alert.alert(t.common.error, e instanceof Error && e.message === 'DECLINES_DB' ? t.events.declineDbFix : e instanceof Error ? e.message : t.common.error);
-    } finally {
-      setBusyId(null);
-    }
-  }
-
   if (!configured) {
     return (
       <Screen>
@@ -265,37 +252,26 @@ export default function EventsScreen() {
                   </Text>
                 </Pressable>
 
-                <View style={styles.actions} onStartShouldSetResponder={() => true}>
-                  <View>
-                    {joined ? (
-                      <Button
-                        label={t.events.leave}
-                        variant="dangerOutline"
-                        size="sm"
-                        icon="sign-out"
-                        loading={busy}
-                        onPress={() => void onLeave(item)}
-                      />
-                    ) : (
-                      <Button
-                        label={full ? t.events.full : t.events.join}
-                        disabled={full}
-                        loading={busy}
-                        size="sm"
-                        icon="check"
-                        onPress={() => void onJoin(item)}
-                      />
-                    )}
-                  </View>
-                  {joined ? null : (
-                    <Text
-                      style={[styles.declineLink, declined ? styles.declineOn : null]}
+                {joined ? null : (
+                  <View style={styles.actions} onStartShouldSetResponder={() => true}>
+                    <Button
+                      label={t.events.decline}
+                      variant="secondary"
+                      size="sm"
+                      selected={declined}
+                      disabled={busy}
                       onPress={() => void onDecline(item)}
-                    >
-                      {t.events.decline}
-                    </Text>
-                  )}
-                </View>
+                    />
+                    <Button
+                      label={full ? t.events.full : t.events.join}
+                      disabled={full || busy}
+                      loading={busy}
+                      size="sm"
+                      icon="check"
+                      onPress={() => void onJoin(item)}
+                    />
+                  </View>
+                )}
               </View>
             );
           }}
@@ -377,23 +353,9 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 12,
+    justifyContent: 'flex-end',
+    gap: 8,
     paddingHorizontal: theme.space.md,
     paddingBottom: theme.space.md,
-  },
-  declineLink: {
-    color: theme.colors.textMuted,
-    fontSize: 15,
-    fontWeight: '600',
-    paddingVertical: 8,
-    paddingHorizontal: 4,
-  },
-  declineOn: {
-    color: theme.colors.primaryDark,
-    backgroundColor: theme.colors.surface,
-    borderRadius: theme.radius.sm,
-    paddingHorizontal: 10,
-    overflow: 'hidden',
   },
 });
