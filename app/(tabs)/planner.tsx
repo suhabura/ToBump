@@ -265,7 +265,17 @@ export default function PlannerScreen() {
       const isMine = template.created_by === user?.id;
       if (!isMine && !follows.has(sid)) continue;
       const skipped = skippedBySeries.get(sid) ?? new Set();
-      for (const slot of expandSeriesSlots(template, rangeStart, rangeEnd, skipped)) {
+      let seriesStart = template.starts_at;
+      for (const a of items) {
+        if (seriesKey(a) !== sid) continue;
+        if (new Date(a.starts_at).getTime() < new Date(seriesStart).getTime()) seriesStart = a.starts_at;
+      }
+      for (const slot of expandSeriesSlots(
+        { ...template, starts_at: seriesStart },
+        rangeStart,
+        rangeEnd,
+        skipped
+      )) {
         const mapKey = `${sid}:${slot.day}`;
         if (skipped.has(slot.day)) continue;
         if (byKey.has(mapKey)) continue;

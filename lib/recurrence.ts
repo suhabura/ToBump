@@ -227,7 +227,7 @@ export function isSeriesActivity(activity: ExpandableActivity): boolean {
   return rules.length > 0 || (activity.recurrence_weekdays?.length ?? 0) > 0;
 }
 
-/** Future slots in [rangeStart, rangeEnd] (local), excluding skipped YYYY-MM-DD days. */
+/** Future slots in [rangeStart, rangeEnd] (local), from the series start through recurrence_until. Skipped YYYY-MM-DD days are excluded. Explicit extra dates are kept even when they fall before the weekly start. */
 export function expandSeriesSlots(
   activity: ExpandableActivity,
   rangeStart: Date,
@@ -269,10 +269,12 @@ export function expandSeriesSlots(
   );
   if (!rules.length) return out;
   const byDay = new Map(rules.map((r) => [r.weekday, r]));
+  const seriesStartDay = startOfLocalDay(seed);
   const untilDay = activity.recurrence_until ? startOfLocalDay(new Date(`${activity.recurrence_until}T12:00:00`)) : null;
 
   for (let cursor = new Date(from); cursor.getTime() <= to.getTime(); cursor.setDate(cursor.getDate() + 1)) {
     const day = startOfLocalDay(cursor);
+    if (day.getTime() < seriesStartDay.getTime()) continue;
     if (untilDay && day.getTime() > untilDay.getTime()) break;
     const key = localDayKey(day);
     if (skipped.has(key)) continue;
