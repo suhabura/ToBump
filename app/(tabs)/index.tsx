@@ -155,7 +155,7 @@ export default function EventsScreen() {
   }
 
   async function onDecline(item: ActivityWithRelations) {
-    if (!user || item.created_by === user.id) return;
+    if (!user) return;
     setBusyId(item.id);
     try {
       if (item.is_declined) await clearActivityDecline(item.id, user.id);
@@ -293,14 +293,12 @@ export default function EventsScreen() {
                         icon="check"
                         onPress={() => void onJoin(item)}
                       />
-                      {!isOrganizer ? (
-                        <Text
-                          style={[styles.declineLink, declined ? styles.declineOn : null]}
-                          onPress={() => void onDecline(item)}
-                        >
-                          {declined ? t.events.declinedYou : t.events.decline}
-                        </Text>
-                      ) : null}
+                      <Text
+                        style={[styles.declineLink, declined ? styles.declineOn : null]}
+                        onPress={() => void onDecline(item)}
+                      >
+                        {declined ? t.events.declinedYou : t.events.decline}
+                      </Text>
                     </>
                   )}
                 </View>

@@ -246,7 +246,7 @@ export default function ActivityDetailScreen() {
   }
 
   async function onDeclineToggle() {
-    if (!user || !activity || user.id === activity.created_by) return;
+    if (!user || !activity) return;
     try {
       if (declined) await clearActivityDecline(activity.id, user.id);
       else await declineActivity(activity.id, user.id);
@@ -473,14 +473,12 @@ export default function ActivityDetailScreen() {
                 onPress={onJoin}
                 disabled={full}
               />
-              {!isOwner ? (
-                <Text
-                  style={[styles.declineLink, declined ? styles.declineOn : null]}
-                  onPress={() => void onDeclineToggle()}
-                >
-                  {declined ? t.events.declinedYou : t.events.decline}
-                </Text>
-              ) : null}
+              <Text
+                style={[styles.declineLink, declined ? styles.declineOn : null]}
+                onPress={() => void onDeclineToggle()}
+              >
+                {declined ? t.events.declinedYou : t.events.decline}
+              </Text>
             </>
           )}
           {canEdit ? (
