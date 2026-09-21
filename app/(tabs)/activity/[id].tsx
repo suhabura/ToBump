@@ -266,7 +266,8 @@ export default function ActivityDetailScreen() {
     setDeleteOpen(false);
     try {
       await deleteActivity(activity.id, mode);
-      router.replace('/(tabs)');
+      if (router.canGoBack()) router.back();
+      else router.replace('/(tabs)');
     } catch (e) {
       const msg =
         e instanceof Error && e.message && !/could not delete/i.test(e.message)
