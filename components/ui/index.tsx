@@ -44,20 +44,23 @@ export function Button({
 }: {
   label: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'danger' | 'dangerOutline' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'danger' | 'dangerOutline' | 'ghost' | 'outline';
   disabled?: boolean;
   loading?: boolean;
   size?: 'md' | 'sm';
   icon?: React.ComponentProps<typeof FontAwesome>['name'];
   selected?: boolean;
 }) {
-  const isLight = variant === 'secondary' || variant === 'ghost' || variant === 'dangerOutline';
-  const iconColor =
-    variant === 'dangerOutline'
+  const isLight = variant === 'secondary' || variant === 'ghost' || variant === 'dangerOutline' || variant === 'outline';
+  const iconColor = selected
+    ? theme.colors.primaryDark
+    : variant === 'dangerOutline'
       ? theme.colors.danger
-      : isLight
-        ? theme.colors.primary
-        : '#fff';
+      : variant === 'outline'
+        ? theme.colors.text
+        : isLight
+          ? theme.colors.primary
+          : '#fff';
 
   return (
     <Pressable
@@ -74,6 +77,7 @@ export function Button({
         variant === 'danger' && styles.btnDanger,
         variant === 'dangerOutline' && styles.btnDangerOutline,
         variant === 'ghost' && styles.btnGhost,
+        variant === 'outline' && styles.btnOutline,
         selected && styles.btnSelected,
         (disabled || loading) && { opacity: 0.5 },
         pressed && { opacity: 0.88, transform: [{ scale: 0.985 }] },
@@ -88,6 +92,7 @@ export function Button({
               styles.btnText,
               size === 'sm' && styles.btnTextSm,
               (variant === 'secondary' || variant === 'ghost') && { color: theme.colors.primary },
+              variant === 'outline' && { color: selected ? theme.colors.primaryDark : theme.colors.text },
               variant === 'dangerOutline' && { color: theme.colors.danger },
               variant === 'danger' && { color: '#fff' },
             ]}>
@@ -252,8 +257,13 @@ const styles = StyleSheet.create({
   btnGhost: {
     backgroundColor: 'transparent',
   },
+  btnOutline: {
+    backgroundColor: theme.colors.surface,
+    borderWidth: 1.5,
+    borderColor: theme.colors.text,
+  },
   btnSelected: {
-    backgroundColor: theme.colors.primarySoft,
+    backgroundColor: theme.colors.surface,
     borderWidth: 2,
     borderColor: theme.colors.primaryDark,
   },

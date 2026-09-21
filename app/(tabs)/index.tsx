@@ -256,7 +256,7 @@ export default function EventsScreen() {
                   <View style={styles.actions} onStartShouldSetResponder={() => true}>
                     <Button
                       label={t.events.decline}
-                      variant="secondary"
+                      variant="outline"
                       size="sm"
                       selected={declined}
                       disabled={busy}

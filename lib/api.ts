@@ -228,8 +228,8 @@ export async function fetchActivities(opts: {
   if (opts.filter === 'feed' || opts.filter === 'all' || !opts.filter) {
     result = result.filter(
       (a) =>
-        a.created_by === opts.userId ||
-        (!a.is_joined && (a.is_invited || Boolean(a.is_open_to_you)))
+        !a.is_joined &&
+        (a.created_by === opts.userId || a.is_invited || Boolean(a.is_open_to_you))
     );
   } else if (opts.filter === 'invited') {
     result = result.filter((a) => a.is_invited || Boolean(a.is_open_to_you));
@@ -1061,10 +1061,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     if (!newId) {
       await supabase.from('activities').update({ series_id: id }).eq('id', id);
     }
-    await Promise.all([
-      supabase.from('activity_joins').insert({ activity_id: id!, user_id: userId }),
-      syncActivityEditors(id!, userId, input.editor_user_ids ?? [], input.title),
-    ]);
+    await syncActivityEditors(id!, userId, input.editor_user_ids ?? [], input.title);
   }
 
   if (inviteIds.length && id) {
