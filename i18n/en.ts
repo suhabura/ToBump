@@ -56,7 +56,7 @@ export const en = {
     joined: 'Joined',
     joinedCount: 'Signed up',
     decline: 'Not going',
-    undecided: 'Not sure yet',
+    revert: 'Revert',
     openList: 'Open',
     declinedEmpty: "You haven't marked any events as not going.",
     declinedYou: "You can't come",

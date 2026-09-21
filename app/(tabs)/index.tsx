@@ -202,11 +202,13 @@ export default function EventsScreen() {
       ) : (
         <View style={styles.listWrap}>
         <View style={styles.tabs}>
-          <Chip label={t.events.openList} active={list === 'open'} onPress={() => setList('open')} />
           <Chip
-            label={
-              declinedItems.length > 0 ? `${t.events.decline} · ${declinedItems.length}` : t.events.decline
-            }
+            label={`${t.events.openList} · ${openItems.length}`}
+            active={list === 'open'}
+            onPress={() => setList('open')}
+          />
+          <Chip
+            label={`${t.events.decline} · ${declinedItems.length}`}
             active={list === 'declined'}
             onPress={() => setList('declined')}
           />
@@ -276,7 +278,7 @@ export default function EventsScreen() {
                 {joined ? null : (
                   <View style={styles.actions} onStartShouldSetResponder={() => true}>
                     <Button
-                      label={list === 'declined' ? t.events.undecided : t.events.decline}
+                      label={list === 'declined' ? t.events.revert : t.events.decline}
                       variant="outline"
                       size="sm"
                       disabled={busy}
