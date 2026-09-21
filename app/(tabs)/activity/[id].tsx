@@ -236,6 +236,7 @@ export default function ActivityDetailScreen() {
       await leaveActivity(activity.id, user.id);
       void load({ silent: true });
     } catch (e) {
+      void load({ silent: true });
       const msg = e instanceof Error ? e.message : t.common.error;
       Alert.alert(t.common.error, msg === 'DECLINES_DB' ? t.events.declineDbFix : msg);
     }

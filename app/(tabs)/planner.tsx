@@ -409,6 +409,7 @@ export default function PlannerScreen() {
       await leaveActivity(id, user.id);
       await load({ silent: true });
     } catch (e) {
+      await load({ silent: true });
       const msg = e instanceof Error ? e.message : t.common.error;
       showAlert(t.common.error, msg === 'DECLINES_DB' ? t.events.declineDbFix : msg);
     }

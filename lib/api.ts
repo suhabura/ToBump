@@ -589,8 +589,13 @@ export async function declineActivity(activityId: string, userId: string) {
 }
 
 export async function leaveActivity(activityId: string, userId: string) {
-  // Record the decline first so a missing table does not drop the join or the fee.
-  await declineActivity(activityId, userId);
+  // This date only. A failed "not going" write must not keep the signup.
+  let declineError: unknown = null;
+  try {
+    await declineActivity(activityId, userId);
+  } catch (e) {
+    declineError = e;
+  }
 
   try {
     const { clearAttendanceFundingFee } = await import('@/lib/finance');
@@ -605,6 +610,7 @@ export async function leaveActivity(activityId: string, userId: string) {
     .eq('activity_id', activityId)
     .eq('user_id', userId);
   if (error) throw error;
+  if (declineError) throw declineError;
 }
 
 export type ActivityInput = {
