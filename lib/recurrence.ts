@@ -244,19 +244,16 @@ export function seriesEndDay(until: string | null | undefined, extraDates?: stri
   return end;
 }
 
-/** End date for a series. Uses the newest stored end, then lets a later extra date move it. */
+/** End date stored on the series. The newest saved end wins. Dates after it are not shown. */
 export function seriesEndFromRows(
   rows: {
     recurrence_until?: string | null;
-    recurrence_dates?: string[] | null;
     updated_at?: string | null;
   }[]
 ): string | null {
   let base: string | null = null;
   let stamp = -Infinity;
-  const extras: string[] = [];
   for (const row of rows) {
-    for (const raw of row.recurrence_dates ?? []) extras.push(raw);
     const until = dayKeyOf(row.recurrence_until);
     const updatedMs = row.updated_at ? new Date(row.updated_at).getTime() : 0;
     const updated = Number.isFinite(updatedMs) ? updatedMs : 0;
@@ -265,10 +262,10 @@ export function seriesEndFromRows(
       stamp = updated;
     }
   }
-  return seriesEndDay(base, extras);
+  return base;
 }
 
-/** Future slots in [rangeStart, rangeEnd] (local), from the series start through the series end. Skipped YYYY-MM-DD days are excluded. Explicit extra dates are kept even when they fall before the weekly start. An extra date after the end moves the end to that day, so weekly days in between stay. */
+/** Future slots in [rangeStart, rangeEnd] (local), from the series start through recurrence_until. The end day is included. Nothing after it is drawn. */
 export function expandSeriesSlots(
   activity: ExpandableActivity,
   rangeStart: Date,
@@ -288,13 +285,16 @@ export function expandSeriesSlots(
   const to = startOfLocalDay(rangeEnd);
   const now = Date.now() - 30_000;
   const out: SeriesSlot[] = [];
+  const endKey = dayKeyOf(activity.recurrence_until);
+  const untilDay = endKey ? startOfLocalDay(new Date(`${endKey}T12:00:00`)) : null;
 
   if (isDateSeries(activity)) {
     for (const day of activity.recurrence_dates ?? []) {
-      if (skipped.has(day)) continue;
-      const start = combineDayAndTime(day, seed.getHours(), seed.getMinutes());
+      const key = String(day).slice(0, 10);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || skipped.has(key)) continue;
+      if (endKey && key > endKey) continue;
+      const start = combineDayAndTime(key, seed.getHours(), seed.getMinutes());
       if (start.getTime() < now) continue;
-      const key = localDayKey(start);
       if (startOfLocalDay(start) < from || startOfLocalDay(start) > to) continue;
       out.push({ seriesId, day: key, startsAt: start, durationMinutes: fallbackDuration });
     }
@@ -311,8 +311,6 @@ export function expandSeriesSlots(
   if (!rules.length) return out;
   const byDay = new Map(rules.map((r) => [r.weekday, r]));
   const seriesStartDay = startOfLocalDay(seed);
-  const endKey = seriesEndDay(activity.recurrence_until, activity.recurrence_dates);
-  const untilDay = endKey ? startOfLocalDay(new Date(`${endKey}T12:00:00`)) : null;
 
   for (let cursor = new Date(from); cursor.getTime() <= to.getTime(); cursor.setDate(cursor.getDate() + 1)) {
     const day = startOfLocalDay(cursor);

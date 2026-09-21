@@ -23,7 +23,6 @@ import { ensureDueRecurringActivities, leaveActivity } from '@/lib/api';
 import { seriesKey } from '@/lib/finance';
 import {
   expandSeriesSlots,
-  isDateSeries,
   isSeriesActivity,
   localDayKey,
   seriesEndFromRows,
@@ -301,7 +300,7 @@ export default function PlannerScreen() {
       const day = localDayKey(new Date(a.starts_at));
       const end = seriesEnds.get(sid);
       const template = templates.get(sid);
-      if (end && day > end && template && isSeriesActivity(template) && !isDateSeries(template)) continue;
+      if (end && day > end && template && isSeriesActivity(template)) continue;
       if (skippedBySeries.get(sid)?.has(day)) continue;
       byKey.set(`${sid}:${day}`, {
         ...a,
