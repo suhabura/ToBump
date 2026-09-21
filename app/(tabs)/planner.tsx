@@ -23,8 +23,10 @@ import { ensureDueRecurringActivities, leaveActivity } from '@/lib/api';
 import { seriesKey } from '@/lib/finance';
 import {
   expandSeriesSlots,
+  isDateSeries,
   isSeriesActivity,
   localDayKey,
+  seriesEndFromRows,
 } from '@/lib/recurrence';
 import {
   fetchSeriesFollows,
@@ -139,17 +141,12 @@ async function fetchMineAndJoined(
   const windowToIso = endOfDay(windowEnd).toISOString();
   const pastFromIso = pastFrom.toISOString();
   const nowIso = new Date().toISOString();
-  const fromDay = localDayKey(windowStart);
 
   async function load(select: string) {
     const created = () => supabase.from('activities').select(select).eq('created_by', userId);
     const joined = () => supabase.from('activities').select(select).in('id', joinIds);
     const templateFilter = (query: ReturnType<typeof created>) =>
-      query
-        .eq('status', 'active')
-        .eq('is_recurring', true)
-        .lte('starts_at', windowToIso)
-        .or(`recurrence_until.is.null,recurrence_until.gte.${fromDay}`);
+      query.eq('status', 'active').eq('is_recurring', true).lte('starts_at', windowToIso);
 
     const createdWindow = created()
       .in('status', ['active', 'completed'])
@@ -275,6 +272,7 @@ export default function PlannerScreen() {
 
   const plannerItems = useMemo(() => {
     const templates = new Map<string, ActivityWithRelations>();
+    const seriesRows = new Map<string, ActivityWithRelations[]>();
     const realByDay = new Map<string, ActivityWithRelations>();
     for (const a of items) {
       const sid = seriesKey(a);
@@ -284,7 +282,15 @@ export default function PlannerScreen() {
       if (!prev || aScore > pScore) {
         templates.set(sid, a);
       }
+      const rows = seriesRows.get(sid) ?? [];
+      rows.push(a);
+      seriesRows.set(sid, rows);
       realByDay.set(`${sid}:${localDayKey(new Date(a.starts_at))}`, a);
+    }
+
+    const seriesEnds = new Map<string, string | null>();
+    for (const [sid, rows] of seriesRows) {
+      seriesEnds.set(sid, seriesEndFromRows(rows));
     }
 
     const byKey = new Map<string, PlannerItem>();
@@ -293,6 +299,9 @@ export default function PlannerScreen() {
       if (a.status === 'cancelled') continue;
       const sid = seriesKey(a);
       const day = localDayKey(new Date(a.starts_at));
+      const end = seriesEnds.get(sid);
+      const template = templates.get(sid);
+      if (end && day > end && template && isSeriesActivity(template) && !isDateSeries(template)) continue;
       if (skippedBySeries.get(sid)?.has(day)) continue;
       byKey.set(`${sid}:${day}`, {
         ...a,
@@ -312,8 +321,15 @@ export default function PlannerScreen() {
         if (seriesKey(a) !== sid) continue;
         if (new Date(a.starts_at).getTime() < new Date(seriesStart).getTime()) seriesStart = a.starts_at;
       }
+      const rows = seriesRows.get(sid) ?? [template];
+      const extraDates = Array.from(new Set(rows.flatMap((row) => row.recurrence_dates ?? [])));
       for (const slot of expandSeriesSlots(
-        { ...template, starts_at: seriesStart },
+        {
+          ...template,
+          starts_at: seriesStart,
+          recurrence_until: seriesEnds.get(sid) ?? template.recurrence_until,
+          recurrence_dates: extraDates,
+        },
         rangeStart,
         rangeEnd,
         skipped

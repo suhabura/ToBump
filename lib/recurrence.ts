@@ -227,7 +227,48 @@ export function isSeriesActivity(activity: ExpandableActivity): boolean {
   return rules.length > 0 || (activity.recurrence_weekdays?.length ?? 0) > 0;
 }
 
-/** Future slots in [rangeStart, rangeEnd] (local), from the series start through recurrence_until. Skipped YYYY-MM-DD days are excluded. Explicit extra dates are kept even when they fall before the weekly start. */
+export function dayKeyOf(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const day = String(value).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : null;
+}
+
+/** Weekly series end. An extra date after the stored end moves the end to that day. */
+export function seriesEndDay(until: string | null | undefined, extraDates?: string[] | null): string | null {
+  let end = dayKeyOf(until);
+  if (!end) return null;
+  for (const raw of extraDates ?? []) {
+    const day = dayKeyOf(raw);
+    if (day && day > end) end = day;
+  }
+  return end;
+}
+
+/** End date for a series. Uses the newest stored end, then lets a later extra date move it. */
+export function seriesEndFromRows(
+  rows: {
+    recurrence_until?: string | null;
+    recurrence_dates?: string[] | null;
+    updated_at?: string | null;
+  }[]
+): string | null {
+  let base: string | null = null;
+  let stamp = -Infinity;
+  const extras: string[] = [];
+  for (const row of rows) {
+    for (const raw of row.recurrence_dates ?? []) extras.push(raw);
+    const until = dayKeyOf(row.recurrence_until);
+    const updatedMs = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+    const updated = Number.isFinite(updatedMs) ? updatedMs : 0;
+    if (until && updated >= stamp) {
+      base = until;
+      stamp = updated;
+    }
+  }
+  return seriesEndDay(base, extras);
+}
+
+/** Future slots in [rangeStart, rangeEnd] (local), from the series start through the series end. Skipped YYYY-MM-DD days are excluded. Explicit extra dates are kept even when they fall before the weekly start. An extra date after the end moves the end to that day, so weekly days in between stay. */
 export function expandSeriesSlots(
   activity: ExpandableActivity,
   rangeStart: Date,
@@ -270,7 +311,8 @@ export function expandSeriesSlots(
   if (!rules.length) return out;
   const byDay = new Map(rules.map((r) => [r.weekday, r]));
   const seriesStartDay = startOfLocalDay(seed);
-  const untilDay = activity.recurrence_until ? startOfLocalDay(new Date(`${activity.recurrence_until}T12:00:00`)) : null;
+  const endKey = seriesEndDay(activity.recurrence_until, activity.recurrence_dates);
+  const untilDay = endKey ? startOfLocalDay(new Date(`${endKey}T12:00:00`)) : null;
 
   for (let cursor = new Date(from); cursor.getTime() <= to.getTime(); cursor.setDate(cursor.getDate() + 1)) {
     const day = startOfLocalDay(cursor);
@@ -292,6 +334,7 @@ export function expandSeriesSlots(
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || skipped.has(day) || seen.has(day)) continue;
     const start = combineDayAndTime(day, seed.getHours(), seed.getMinutes());
     if (start.getTime() < now) continue;
+    if (untilDay && startOfLocalDay(start).getTime() > untilDay.getTime()) continue;
     if (startOfLocalDay(start) < from || startOfLocalDay(start) > to) continue;
     seen.add(day);
     out.push({ seriesId, day, startsAt: start, durationMinutes: fallbackDuration });

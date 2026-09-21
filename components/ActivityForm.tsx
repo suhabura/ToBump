@@ -210,6 +210,21 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
 
+  function changeExtraDates(next: string[]) {
+    setExtraDates(next);
+    setRecurrenceUntil((current) => {
+      if (!current) return current;
+      const untilDay = formatDay(current);
+      let later = untilDay;
+      for (const day of next) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day > later) later = day;
+      }
+      if (later === untilDay) return current;
+      const moved = new Date(`${later}T12:00:00`);
+      return Number.isNaN(moved.getTime()) ? current : moved;
+    });
+  }
+
   // Only English canonical names from seed + DB English rows — show localized labels once
   const activitySuggestions = useMemo(() => {
     const englishKeys = new Set(DEFAULT_SUBCATEGORIES);
@@ -953,7 +968,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             <View>
               <Text style={styles.section}>{t.form.addExtraDate}</Text>
               <Muted>{t.form.addExtraDateHint}</Muted>
-              <DateMultiField selected={extraDates} onChange={setExtraDates} />
+              <DateMultiField selected={extraDates} onChange={changeExtraDates} />
             </View>
           ) : null}
         </View>

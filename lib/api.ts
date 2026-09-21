@@ -1,6 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { distanceMeters } from '@/lib/geo';
-import { combineDayAndTime, firstOccurrence, isoWeekday, localDayKey, normalizeRules, type RecurrenceRule } from '@/lib/recurrence';
+import { combineDayAndTime, firstOccurrence, isoWeekday, localDayKey, normalizeRules, seriesEndDay, type RecurrenceRule } from '@/lib/recurrence';
 import type { ActivityWithRelations, Category, Privacy } from '@/lib/types';
 import {
   DEFAULT_SUBCATEGORIES,
@@ -913,6 +913,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
   let startsAt = input.starts_at;
   let endsAt = input.ends_at || null;
   let durationMinutes: number | null = null;
+  const weeklyUntil = isWeekly ? seriesEndDay(input.recurrence_until, dateDays) : null;
 
   if (isDateSeries) {
     const seed = startsAt ? new Date(startsAt) : new Date();
@@ -926,7 +927,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     }
   } else if (isWeekly && startsAt) {
     const from = new Date(startsAt);
-    const until = input.recurrence_until ? new Date(`${input.recurrence_until}T23:59:59`) : null;
+    const until = weeklyUntil ? new Date(`${weeklyUntil}T23:59:59`) : null;
     const first = firstOccurrence(from, rules, { now: from, until });
     if (first) startsAt = first.toISOString();
     const start = new Date(startsAt);
@@ -960,7 +961,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     finance_enabled: Boolean(input.finance_enabled),
     recurrence_weekdays: weekdays,
     recurrence_rules: rules,
-    recurrence_until: isWeekly ? input.recurrence_until || null : isDateSeries ? dateDays[dateDays.length - 1] : null,
+    recurrence_until: isWeekly ? weeklyUntil : isDateSeries ? dateDays[dateDays.length - 1] : null,
     recurrence_dates: isDateSeries ? dateDays : isWeekly ? weeklyExtraDates : [],
     duration_minutes: durationMinutes,
     updated_at: new Date().toISOString(),
@@ -1008,8 +1009,12 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     if (isDateSeries || isWeekly) {
       const sid = existing.series_id ?? activityId;
       const storedDates = isDateSeries ? dateDays : weeklyExtraDates;
-      await supabase.from('activities').update({ recurrence_dates: storedDates }).eq('id', sid);
-      await supabase.from('activities').update({ recurrence_dates: storedDates }).eq('series_id', sid);
+      const seriesPatch = {
+        recurrence_dates: storedDates,
+        recurrence_until: payload.recurrence_until,
+      };
+      await supabase.from('activities').update(seriesPatch).eq('id', sid);
+      await supabase.from('activities').update(seriesPatch).eq('series_id', sid);
       for (const day of dateDays) {
         await supabase.from('series_skipped_dates').delete().eq('series_id', sid).eq('day', day);
       }
