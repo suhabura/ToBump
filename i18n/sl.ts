@@ -56,6 +56,7 @@ export const sl = {
     joined: 'Pridružen',
     joinedCount: 'Prijavljeni',
     decline: 'Ne pridem',
+    undecided: 'Še ne vem',
     openList: 'Odprti',
     declinedEmpty: 'Ni dogodkov, kjer si označil, da ne prideš.',
     declinedYou: 'Ne prideš',

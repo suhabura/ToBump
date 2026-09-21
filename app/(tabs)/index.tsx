@@ -243,7 +243,6 @@ export default function EventsScreen() {
                     : host
                       ? { label: host, style: styles.roleQuiet }
                       : null;
-            const declined = Boolean(item.is_declined);
             return (
               <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
                 <Pressable
@@ -277,10 +276,9 @@ export default function EventsScreen() {
                 {joined ? null : (
                   <View style={styles.actions} onStartShouldSetResponder={() => true}>
                     <Button
-                      label={t.events.decline}
+                      label={list === 'declined' ? t.events.undecided : t.events.decline}
                       variant="outline"
                       size="sm"
-                      selected={declined}
                       disabled={busy}
                       onPress={() => void onDecline(item)}
                     />
