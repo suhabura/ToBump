@@ -106,7 +106,12 @@ async function attachDeclineCounts(
   }));
 }
 
-export async function fetchActivities(opts: {
+export type EventsInbox = {
+  open: ActivityWithRelations[];
+  declined: ActivityWithRelations[];
+};
+
+type FetchActivitiesOpts = {
   userId: string;
   filter?: 'all' | 'mine' | 'invited' | 'commercial' | 'feed';
   search?: string;
@@ -117,7 +122,15 @@ export async function fetchActivities(opts: {
   categoryId?: string | null;
   /** Commercial: max price inclusive; 0 = free only; null/undefined = any */
   maxPrice?: number | null;
-}): Promise<ActivityWithRelations[]> {
+  /** Split undecided cards from explicit not-going cards. */
+  inbox?: boolean;
+};
+
+export function fetchActivities(opts: FetchActivitiesOpts & { inbox: true }): Promise<EventsInbox>;
+export function fetchActivities(opts: FetchActivitiesOpts): Promise<ActivityWithRelations[]>;
+export async function fetchActivities(
+  opts: FetchActivitiesOpts
+): Promise<ActivityWithRelations[] | EventsInbox> {
   void ensureDueRecurringActivities();
 
   const nowIso = new Date().toISOString();
@@ -285,6 +298,25 @@ export async function fetchActivities(opts: {
       result.sort((a, b) => (a.distance_m ?? 0) - (b.distance_m ?? 0));
       return attachDeclineCounts(oneActivityPerSeries(result), opts.userId);
     }
+  }
+
+  if (opts.inbox) {
+    const marked = await attachDeclineCounts(result, opts.userId);
+    // Drop a declined date before picking the series card, so the next date still asks.
+    const open = oneActivityPerSeries(
+      hideFullEventsExceptInvolved(
+        marked.filter((a) => !a.is_declined),
+        opts.userId
+      )
+    );
+    open.sort((a, b) => {
+      if (a.sort_group !== b.sort_group) return (a.sort_group ?? 0) - (b.sort_group ?? 0);
+      return new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime();
+    });
+    const declined = marked
+      .filter((a) => a.is_declined)
+      .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+    return { open, declined };
   }
 
   // Full events drop out of Events (still visible to organizer / already joined)

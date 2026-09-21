@@ -4,7 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Button, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
+import { Button, Chip, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEventsHeader } from '@/contexts/EventsHeaderContext';
 import { fetchActivities, clearActivityDecline, declineActivity, joinActivity } from '@/lib/api';
@@ -24,7 +24,9 @@ export default function EventsScreen() {
   const { setControls } = useEventsHeader();
   const [search, setSearch] = useState('');
   const [searchOpen, setSearchOpen] = useState(false);
-  const [items, setItems] = useState<ActivityWithRelations[]>([]);
+  const [list, setList] = useState<'open' | 'declined'>('open');
+  const [openItems, setOpenItems] = useState<ActivityWithRelations[]>([]);
+  const [declinedItems, setDeclinedItems] = useState<ActivityWithRelations[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -33,7 +35,8 @@ export default function EventsScreen() {
   const loadedAt = useRef(0);
   const fetchedSearch = useRef<string | null>(null);
   const itemsRef = useRef<ActivityWithRelations[]>([]);
-  itemsRef.current = items;
+  itemsRef.current = openItems.concat(declinedItems);
+  const shown = list === 'declined' ? declinedItems : openItems;
 
   const userId = user?.id;
 
@@ -52,8 +55,10 @@ export default function EventsScreen() {
           userId,
           filter: 'feed',
           search,
+          inbox: true,
         });
-        setItems(data);
+        setOpenItems(data.open);
+        setDeclinedItems(data.declined);
         hasLoaded.current = true;
         loadedAt.current = Date.now();
         fetchedSearch.current = search;
@@ -94,18 +99,21 @@ export default function EventsScreen() {
   // Drop events from the list the moment they start (without waiting for focus)
   useEffect(() => {
     const now = Date.now();
-    const nextStart = items
+    const upcoming = openItems.concat(declinedItems);
+    const nextStart = upcoming
       .map((a) => new Date(a.starts_at).getTime())
       .filter((t) => t > now)
       .sort((a, b) => a - b)[0];
     if (nextStart == null) return;
     const delay = Math.min(Math.max(nextStart - now + 100, 100), 2_147_483_647);
     const timer = setTimeout(() => {
-      setItems((prev) => prev.filter((a) => new Date(a.starts_at).getTime() > Date.now()));
+      const stillAhead = (a: ActivityWithRelations) => new Date(a.starts_at).getTime() > Date.now();
+      setOpenItems((prev) => prev.filter(stillAhead));
+      setDeclinedItems((prev) => prev.filter(stillAhead));
       void load({ silent: true });
     }, delay);
     return () => clearTimeout(timer);
-  }, [items, load]);
+  }, [openItems, declinedItems, load]);
 
   useFocusEffect(
     useCallback(() => {
@@ -192,11 +200,25 @@ export default function EventsScreen() {
       ) : error ? (
         <EmptyState title={error} subtitle={t.common.retry} />
       ) : (
+        <View style={styles.listWrap}>
+        <View style={styles.tabs}>
+          <Chip label={t.events.openList} active={list === 'open'} onPress={() => setList('open')} />
+          <Chip
+            label={
+              declinedItems.length > 0 ? `${t.events.decline} · ${declinedItems.length}` : t.events.decline
+            }
+            active={list === 'declined'}
+            onPress={() => setList('declined')}
+          />
+        </View>
         <FlatList
-          data={items}
+          data={shown}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={{ paddingBottom: 96, paddingTop: 4 }}
-          ListEmptyComponent={<EmptyState title={t.events.empty} />}
+          style={styles.list}
+          contentContainerStyle={{ paddingBottom: 96, paddingTop: 4, flexGrow: 1 }}
+          ListEmptyComponent={
+            <EmptyState title={list === 'declined' ? t.events.declinedEmpty : t.events.empty} />
+          }
           renderItem={({ item }) => {
             const isOrganizer = item.created_by === user?.id;
             const joined = Boolean(item.is_joined);
@@ -276,6 +298,7 @@ export default function EventsScreen() {
             );
           }}
         />
+        </View>
       )}
       <View style={styles.fabWrap} pointerEvents="box-none">
         <Pressable
@@ -291,6 +314,18 @@ export default function EventsScreen() {
 }
 
 const styles = StyleSheet.create({
+  listWrap: {
+    flex: 1,
+  },
+  list: {
+    flex: 1,
+  },
+  tabs: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
   fabWrap: {
     position: 'absolute',
     left: 0,

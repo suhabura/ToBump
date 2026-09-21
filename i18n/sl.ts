@@ -56,6 +56,8 @@ export const sl = {
     joined: 'Pridružen',
     joinedCount: 'Prijavljeni',
     decline: 'Ne pridem',
+    openList: 'Odprti',
+    declinedEmpty: 'Ni dogodkov, kjer si označil, da ne prideš.',
     declinedYou: 'Ne prideš',
     declineCount: 'Ne pridejo',
     declineDbFix:
