@@ -55,6 +55,11 @@ export const en = {
     friend: 'Friend',
     joined: 'Joined',
     joinedCount: 'Signed up',
+    decline: "Can't come",
+    declinedYou: "You can't come",
+    declineCount: 'Not coming',
+    declineDbFix:
+      "Can't-come replies are not enabled in the database yet. Run supabase/activity_declines.sql in the Supabase SQL editor, then try again.",
     full: 'Full',
     eventFull: 'This event just filled up. Try another one.',
     privacy: 'Privacy',

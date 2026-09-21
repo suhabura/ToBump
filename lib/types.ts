@@ -325,7 +325,9 @@ export type ActivityWithRelations = Activity & {
   enterprises?: Pick<Enterprise, 'id' | 'name' | 'address' | 'provider_kind' | 'latitude' | 'longitude'> | null;
   activity_joins?: { count: number }[] | ActivityJoin[];
   join_count?: number;
+  decline_count?: number;
   is_joined?: boolean;
+  is_declined?: boolean;
   is_invited?: boolean;
   is_from_friend?: boolean;
   /** FoF / friends-privacy event visible to you without a formal invite */

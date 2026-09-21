@@ -10,6 +10,8 @@ import { ActivityFinancePanel } from '@/components/ActivityFinancePanel';
 import { ActivityGuestsPanel } from '@/components/ActivityGuestsPanel';
 import { useAuth } from '@/contexts/AuthContext';
 import {
+  clearActivityDecline,
+  declineActivity,
   deleteActivity,
   joinActivity,
   leaveActivity,
@@ -39,6 +41,8 @@ export default function ActivityDetailScreen() {
   const router = useRouter();
   const [activity, setActivity] = useState<ActivityWithRelations | null>(null);
   const [participants, setParticipants] = useState<Profile[]>([]);
+  const [decliners, setDecliners] = useState<Profile[]>([]);
+  const [declined, setDeclined] = useState(false);
   const [guests, setGuests] = useState<GuestAttendanceWithGuest[]>([]);
   const [joined, setJoined] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
@@ -132,11 +136,30 @@ export default function ActivityDetailScreen() {
 
     const { data: joins } = await supabase.from('activity_joins').select('user_id').eq('activity_id', id);
     const ids = (joins ?? []).map((j: { user_id: string }) => j.user_id);
-    setJoined(ids.includes(user.id));
+    const joinedNow = ids.includes(user.id);
+    setJoined(joinedNow);
     if (ids.length) {
       const { data: people } = await supabase.from('profiles').select('*').in('id', ids);
       setParticipants((people as Profile[]) ?? []);
     } else setParticipants([]);
+
+    const { data: declineRows, error: declineErr } = await supabase
+      .from('activity_declines')
+      .select('user_id')
+      .eq('activity_id', id);
+    if (declineErr) {
+      setDecliners([]);
+      setDeclined(false);
+    } else {
+      const declineIds = (declineRows ?? [])
+        .map((d: { user_id: string }) => d.user_id)
+        .filter((uid: string) => !ids.includes(uid));
+      setDeclined(!joinedNow && declineIds.includes(user.id));
+      if (declineIds.length) {
+        const { data: people } = await supabase.from('profiles').select('*').in('id', declineIds);
+        setDecliners((people as Profile[]) ?? []);
+      } else setDecliners([]);
+    }
 
     try {
       setGuests(await fetchActivityGuests(id));
@@ -177,6 +200,19 @@ export default function ActivityDetailScreen() {
             reloadTimer.current = setTimeout(() => void load({ silent: true }), 200);
           }
         )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'activity_declines',
+            filter: `activity_id=eq.${id}`,
+          },
+          () => {
+            if (reloadTimer.current) clearTimeout(reloadTimer.current);
+            reloadTimer.current = setTimeout(() => void load({ silent: true }), 200);
+          }
+        )
         .subscribe();
 
       return () => {
@@ -200,8 +236,25 @@ export default function ActivityDetailScreen() {
 
   async function onLeave() {
     if (!user || !activity) return;
-    await leaveActivity(activity.id, user.id);
-    load();
+    try {
+      await leaveActivity(activity.id, user.id);
+      void load({ silent: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : t.common.error;
+      Alert.alert(t.common.error, msg === 'DECLINES_DB' ? t.events.declineDbFix : msg);
+    }
+  }
+
+  async function onDeclineToggle() {
+    if (!user || !activity || user.id === activity.created_by) return;
+    try {
+      if (declined) await clearActivityDecline(activity.id, user.id);
+      else await declineActivity(activity.id, user.id);
+      void load({ silent: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : t.common.error;
+      Alert.alert(t.common.error, msg === 'DECLINES_DB' ? t.events.declineDbFix : msg);
+    }
   }
 
   async function onDelete() {
@@ -381,6 +434,11 @@ export default function ActivityDetailScreen() {
         <Muted>
           {t.events.joinedCount}: {participantCount}
         </Muted>
+        {decliners.length > 0 ? (
+          <Muted>
+            {t.events.declineCount}: {decliners.length}
+          </Muted>
+        ) : null}
         {capRange ? (
           <Muted>
             {t.events.capacity}: {capRange}
@@ -408,12 +466,22 @@ export default function ActivityDetailScreen() {
               </View>
             </View>
           ) : (
-            <Button
-              label={full ? t.events.full : t.events.join}
-              icon="check"
-              onPress={onJoin}
-              disabled={full}
-            />
+            <>
+              <Button
+                label={full ? t.events.full : t.events.join}
+                icon="check"
+                onPress={onJoin}
+                disabled={full}
+              />
+              {!isOwner ? (
+                <Text
+                  style={[styles.declineLink, declined ? styles.declineOn : null]}
+                  onPress={() => void onDeclineToggle()}
+                >
+                  {declined ? t.events.declinedYou : t.events.decline}
+                </Text>
+              ) : null}
+            </>
           )}
           {canEdit ? (
             <Button
@@ -473,6 +541,17 @@ export default function ActivityDetailScreen() {
             );
           })}
         </View>
+
+        {decliners.length > 0 ? (
+          <View style={{ marginTop: 24 }}>
+            <Subtitle>{t.events.declineCount}</Subtitle>
+            {decliners.map((p) => (
+              <Text key={p.id} style={styles.participant}>
+                {displayName(p)}
+              </Text>
+            ))}
+          </View>
+        ) : null}
 
         <ActivityGuestsPanel
           activity={activity}
@@ -566,6 +645,16 @@ const styles = StyleSheet.create({
     color: theme.colors.primary,
     fontWeight: '600',
     marginTop: 4,
+  },
+  declineLink: {
+    textAlign: 'center',
+    color: theme.colors.textMuted,
+    fontSize: 15,
+    fontWeight: '600',
+    paddingVertical: 4,
+  },
+  declineOn: {
+    color: theme.colors.primaryDark,
   },
   tabRow: {
     flexDirection: 'row',

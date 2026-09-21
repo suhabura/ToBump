@@ -337,8 +337,13 @@ export default function PlannerScreen() {
 
   async function onLeave(id: string) {
     if (!user) return;
-    await leaveActivity(id, user.id);
-    await load({ silent: true });
+    try {
+      await leaveActivity(id, user.id);
+      await load({ silent: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : t.common.error;
+      showAlert(t.common.error, msg === 'DECLINES_DB' ? t.events.declineDbFix : msg);
+    }
   }
 
   async function onJoinSlot(item: PlannerItem) {

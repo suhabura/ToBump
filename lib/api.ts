@@ -137,7 +137,8 @@ export async function fetchActivities(opts: {
   activities = activities.filter((a) => new Date(a.starts_at).getTime() > nowMs);
   activities = await hydrateCategoryParents(activities);
 
-  const [{ data: joins }, { data: invites }, { data: friendships }] = await Promise.all([
+  const activityIds = activities.map((a) => a.id);
+  const [{ data: joins }, { data: invites }, { data: friendships }, declinesRes] = await Promise.all([
     supabase.from('activity_joins').select('activity_id').eq('user_id', opts.userId),
     supabase.from('activity_invites').select('activity_id').eq('user_id', opts.userId),
     supabase
@@ -145,7 +146,19 @@ export async function fetchActivities(opts: {
       .select('from_user_id, to_user_id')
       .eq('status', 'accepted')
       .or(`from_user_id.eq.${opts.userId},to_user_id.eq.${opts.userId}`),
+    activityIds.length
+      ? supabase.from('activity_declines').select('activity_id, user_id').in('activity_id', activityIds)
+      : Promise.resolve({ data: [] as { activity_id: string; user_id: string }[], error: null }),
   ]);
+
+  const declineCountByActivity = new Map<string, number>();
+  const declinedIds = new Set<string>();
+  if (!declinesRes.error) {
+    for (const row of declinesRes.data ?? []) {
+      declineCountByActivity.set(row.activity_id, (declineCountByActivity.get(row.activity_id) ?? 0) + 1);
+      if (row.user_id === opts.userId) declinedIds.add(row.activity_id);
+    }
+  }
 
   const joinedIds = new Set((joins ?? []).map((j) => j.activity_id));
   const invitedIds = new Set((invites ?? []).map((i) => i.activity_id));
@@ -190,7 +203,9 @@ export async function fetchActivities(opts: {
       join_count:
         nestedCount((a as { activity_joins?: unknown }).activity_joins) +
         nestedCount((a as { activity_guest_attendances?: unknown }).activity_guest_attendances),
+      decline_count: declineCountByActivity.get(a.id) ?? 0,
       is_joined: joinedIds.has(a.id),
+      is_declined: declinedIds.has(a.id) && !joinedIds.has(a.id),
       is_invited,
       is_from_friend,
       is_open_to_you,
@@ -481,6 +496,8 @@ export async function joinActivity(activityId: string, userId: string, creatorId
     });
   }
 
+  await clearActivityDecline(activityId, userId);
+
   // Create per-person fee on first attendance (if eligible)
   try {
     const { fetchSeriesFinanceSettings, seriesKey, syncAttendeeFundingFees } = await import(
@@ -506,8 +523,36 @@ export async function joinActivity(activityId: string, userId: string, creatorId
   }
 }
 
+function declinesTableMissing(message: string) {
+  return /activity_declines|schema cache|does not exist|could not find the table/i.test(message);
+}
+
+/** Drop an explicit "can't come" so the person is back to no answer, or can join. */
+export async function clearActivityDecline(activityId: string, userId: string) {
+  const { error } = await supabase
+    .from('activity_declines')
+    .delete()
+    .eq('activity_id', activityId)
+    .eq('user_id', userId);
+  if (error && !declinesTableMissing(error.message ?? '')) throw error;
+}
+
+/** This occurrence only. Does not change other dates in the series. */
+export async function declineActivity(activityId: string, userId: string) {
+  const { error } = await supabase.from('activity_declines').upsert(
+    { activity_id: activityId, user_id: userId },
+    { onConflict: 'activity_id,user_id' }
+  );
+  if (error) {
+    if (declinesTableMissing(error.message ?? '')) throw new Error('DECLINES_DB');
+    throw error;
+  }
+}
+
 export async function leaveActivity(activityId: string, userId: string) {
-  // Drop per-event fee debt before removing the join
+  // Record the decline first so a missing table does not drop the join or the fee.
+  await declineActivity(activityId, userId);
+
   try {
     const { clearAttendanceFundingFee } = await import('@/lib/finance');
     await clearAttendanceFundingFee({ activityId, userId });

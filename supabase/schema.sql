@@ -108,6 +108,13 @@ create table if not exists public.activity_joins (
   unique (activity_id, user_id)
 );
 
+create table if not exists public.activity_declines (
+  activity_id uuid not null references public.activities(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (activity_id, user_id)
+);
+
 create table if not exists public.series_follows (
   series_id uuid not null references public.activities(id) on delete cascade,
   user_id uuid not null references public.profiles(id) on delete cascade,
@@ -326,6 +333,17 @@ create policy "joins_delete" on public.activity_joins for delete to authenticate
   using (user_id = auth.uid() or exists (
     select 1 from public.activities a where a.id = activity_id and a.created_by = auth.uid()
   ));
+
+alter table public.activity_declines enable row level security;
+create policy "declines_select" on public.activity_declines for select to authenticated
+  using (exists (select 1 from public.activities a where a.id = activity_id and public.can_view_activity(a)));
+create policy "declines_insert" on public.activity_declines for insert to authenticated
+  with check (
+    user_id = auth.uid()
+    and exists (select 1 from public.activities a where a.id = activity_id and public.can_view_activity(a))
+  );
+create policy "declines_delete" on public.activity_declines for delete to authenticated
+  using (user_id = auth.uid());
 
 -- Invites
 create policy "invites_select" on public.activity_invites for select to authenticated

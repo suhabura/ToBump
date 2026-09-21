@@ -7,7 +7,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Button, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEventsHeader } from '@/contexts/EventsHeaderContext';
-import { fetchActivities, joinActivity, leaveActivity } from '@/lib/api';
+import { fetchActivities, clearActivityDecline, declineActivity, joinActivity, leaveActivity } from '@/lib/api';
 import { formatDistance } from '@/lib/geo';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
@@ -115,6 +115,11 @@ export default function EventsScreen() {
         )
         .on(
           'postgres_changes',
+          { event: '*', schema: 'public', table: 'activity_declines' },
+          () => scheduleLiveReload()
+        )
+        .on(
+          'postgres_changes',
           { event: '*', schema: 'public', table: 'activity_guest_attendances' },
           () => scheduleLiveReload()
         )
@@ -149,6 +154,21 @@ export default function EventsScreen() {
     }
   }
 
+  async function onDecline(item: ActivityWithRelations) {
+    if (!user || item.created_by === user.id) return;
+    setBusyId(item.id);
+    try {
+      if (item.is_declined) await clearActivityDecline(item.id, user.id);
+      else await declineActivity(item.id, user.id);
+      await load({ silent: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : t.common.error;
+      Alert.alert(t.common.error, msg === 'DECLINES_DB' ? t.events.declineDbFix : msg);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
   async function onLeave(item: ActivityWithRelations) {
     if (!user) return;
     setBusyId(item.id);
@@ -156,7 +176,7 @@ export default function EventsScreen() {
       await leaveActivity(item.id, user.id);
       await load({ silent: true });
     } catch (e) {
-      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+      Alert.alert(t.common.error, e instanceof Error && e.message === 'DECLINES_DB' ? t.events.declineDbFix : e instanceof Error ? e.message : t.common.error);
     } finally {
       setBusyId(null);
     }
@@ -206,6 +226,7 @@ export default function EventsScreen() {
                     : host
                       ? { label: host, style: styles.roleQuiet }
                       : null;
+            const declined = Boolean(item.is_declined);
             return (
               <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
                 <View style={styles.cardMain}>
@@ -235,6 +256,11 @@ export default function EventsScreen() {
                       {t.events.joinedCount}: {item.join_count ?? 0}
                       {capRange ? ` · ${t.events.capacity}: ${capRange}` : ''}
                     </Text>
+                    {(item.decline_count ?? 0) > 0 ? (
+                      <Text style={styles.metaLine}>
+                        {t.events.declineCount}: {item.decline_count}
+                      </Text>
+                    ) : null}
                   </Pressable>
                 </View>
 
@@ -258,14 +284,24 @@ export default function EventsScreen() {
                       />
                     </>
                   ) : (
-                    <Button
-                      label={full ? t.events.full : t.events.join}
-                      disabled={full}
-                      loading={busy}
-                      size="sm"
-                      icon="check"
-                      onPress={() => void onJoin(item)}
-                    />
+                    <>
+                      <Button
+                        label={full ? t.events.full : t.events.join}
+                        disabled={full}
+                        loading={busy}
+                        size="sm"
+                        icon="check"
+                        onPress={() => void onJoin(item)}
+                      />
+                      {!isOrganizer ? (
+                        <Text
+                          style={[styles.declineLink, declined ? styles.declineOn : null]}
+                          onPress={() => void onDecline(item)}
+                        >
+                          {declined ? t.events.declinedYou : t.events.decline}
+                        </Text>
+                      ) : null}
+                    </>
                   )}
                 </View>
               </View>
@@ -370,5 +406,15 @@ const styles = StyleSheet.create({
     borderLeftWidth: StyleSheet.hairlineWidth,
     borderLeftColor: theme.colors.border,
     backgroundColor: theme.colors.surfaceElevated,
+  },
+  declineLink: {
+    textAlign: 'center',
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '600',
+    paddingVertical: 4,
+  },
+  declineOn: {
+    color: theme.colors.primaryDark,
   },
 });

@@ -55,6 +55,11 @@ export const sl = {
     friend: 'Prijatelj',
     joined: 'Pridružen',
     joinedCount: 'Prijavljeni',
+    decline: 'Ne pridem',
+    declinedYou: 'Ne prideš',
+    declineCount: 'Ne pridejo',
+    declineDbFix:
+      'Odgovori »ne pridem« v bazi še niso vklopljeni. V urejevalniku SQL v Supabase zaženi supabase/activity_declines.sql in poskusi znova.',
     full: 'Polno',
     eventFull: 'Dogodek se je ravnokar zapolnil. Poskusi drugega.',
     privacy: 'Zasebnost',
