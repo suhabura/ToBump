@@ -97,6 +97,11 @@ export const sl = {
     extraInviteOpen: 'Odpri',
     extraInviteHint:
       'Odpri ta termin še za dodatne ljudi. Ne spremeni, kdo je povabljen na prihodnje termine v seriji.',
+    extraInviteFofHint:
+      'Prvotno povabljeni se še vedno lahko prijavijo. Ta termin se odpre še prijateljem udeležencev. Prihodnji termini v seriji ostanejo, kot so bili.',
+    extraInviteFofApply: 'Odpri za prijatelje udeležencev',
+    extraInviteFofClose: 'Samo prvotni krog',
+    extraInviteFofOn: 'Ta termin je odprt tudi za prijatelje udeležencev.',
     extraInviteApply: 'Pošlji povabila',
     extraInviteDone: 'Povabila za ta dogodek so posodobljena.',
     seriesInviteEditHint:

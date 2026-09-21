@@ -136,7 +136,10 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     if (min != null && max != null && min !== max) return String(max);
     return '';
   });
-  const [privacy, setPrivacy] = useState<Privacy>(initial?.privacy ?? 'invite');
+  const [privacy, setPrivacy] = useState<Privacy>(() => {
+    const p = initial?.privacy ?? 'invite';
+    return p === 'friends_of_friends' ? 'invite' : p;
+  });
   const [enterpriseId, setEnterpriseId] = useState<string | null>(initial?.enterprise_id ?? null);
   const [venueText, setVenueText] = useState(initial?.venue_text ?? '');
   const [venueLatitude, setVenueLatitude] = useState<number | null>(initial?.venue_latitude ?? null);
@@ -332,26 +335,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     };
   }, [selectedGroupId, userId]);
 
-  /** Expand a friend group into individual invite selections (shown as people, not the group name). */
-  async function applyGroupAsInvitees(groupId: string) {
-    const { data } = await supabase
-      .from('friend_group_members')
-      .select('user_id')
-      .eq('group_id', groupId);
-    const ids = Array.from(
-      new Set((data ?? []).map((m: { user_id: string }) => m.user_id).filter((id) => id !== userId))
-    );
-    const missing = ids.filter((id) => !friends.some((f) => f.id === id));
-    if (missing.length) {
-      const { data: profiles } = await supabase.from('profiles').select('*').in('id', missing);
-      if (profiles?.length) {
-        setFriends((prev) => dedupeProfilesByEmail([...prev, ...(profiles as Profile[])]));
-      }
-    }
-    setInviteIds((prev) => Array.from(new Set([...prev, ...ids])));
-    setSelectedGroupId(null);
-  }
-
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -508,10 +491,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     }
     if (privacy === 'invite' && inviteIds.length === 0) {
       setFormError(t.form.needInviteFriends);
-      return;
-    }
-    if (privacy === 'friends_of_friends' && inviteIds.length === 0 && !selectedGroupId) {
-      setFormError(t.form.fofNeedInviteOrGroup);
       return;
     }
 
@@ -748,7 +727,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             { key: 'invite' as const, label: t.events.inviteOnly },
             { key: 'group' as const, label: t.events.group },
             { key: 'friends' as const, label: t.events.friendsOnly },
-            { key: 'friends_of_friends' as const, label: t.events.friendsOfFriends },
           ] as const
         ).map((p) => (
           <Chip
@@ -808,41 +786,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           ) : selectedGroupId ? (
             <Muted>{t.form.groupEmpty}</Muted>
           ) : null}
-          {!activityId ? (
-            <Button label={t.form.manageGroups} variant="secondary" onPress={() => router.push('/groups')} />
-          ) : null}
-        </View>
-      ) : null}
-
-      {privacy === 'friends_of_friends' ? (
-        <View>
-          <Muted>{t.form.fofHint}</Muted>
-          <Text style={styles.section}>{req(t.form.selectFriends)}</Text>
-          {friends.length === 0 ? <Muted>{t.form.acceptFriendsHint}</Muted> : null}
-          <FriendPicker
-            friends={friends}
-            selectedIds={inviteIds}
-            onChange={setInviteIds}
-            label={t.form.selectFriends}
-            placeholder={t.form.searchFriends}
-            emptyHint={t.form.noFriends}
-          />
-          <Text style={styles.section}>{t.form.orSelectGroup}</Text>
-          {groups.length === 0 ? (
-            <Muted>{t.form.noGroups}</Muted>
-          ) : (
-            <View style={styles.rowWrap}>
-              {groups.map((g) => (
-                <Chip
-                  key={g.id}
-                  label={g.name}
-                  active={false}
-                  onPress={() => void applyGroupAsInvitees(g.id)}
-                />
-              ))}
-            </View>
-          )}
-          <Muted>{t.form.groupExpandsToPeople}</Muted>
           {!activityId ? (
             <Button label={t.form.manageGroups} variant="secondary" onPress={() => router.push('/groups')} />
           ) : null}

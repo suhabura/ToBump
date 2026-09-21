@@ -878,7 +878,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     }
     const { data: existing, error: loadError } = await supabase
       .from('activities')
-      .select('created_by, series_id, is_recurring, starts_at, recurrence_dates')
+      .select('created_by, series_id, is_recurring, starts_at, recurrence_dates, privacy')
       .eq('id', activityId)
       .maybeSingle();
     if (loadError) throw loadError;
@@ -886,6 +886,11 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
 
     // created_by must stay the original creator
     delete payload.created_by;
+
+    const keepFof =
+      (existing as { privacy?: Privacy }).privacy === 'friends_of_friends' &&
+      input.privacy !== 'friends_of_friends';
+    if (keepFof) payload.privacy = 'friends_of_friends';
 
     const seriesGroupId = input.privacy === 'group' ? input.group_id || null : null;
     if (existing.is_recurring || input.is_recurring) {
@@ -932,7 +937,8 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
         })
         .eq('series_id', sid)
         .eq('status', 'active')
-        .gte('starts_at', fromStarts);
+        .gte('starts_at', fromStarts)
+        .neq('id', activityId);
 
       const { data: futureActs } = await supabase
         .from('activities')

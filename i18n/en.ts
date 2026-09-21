@@ -97,6 +97,11 @@ export const en = {
     extraInviteOpen: 'Open',
     extraInviteHint:
       'Open this occurrence to more people. Does not change who is invited to future events in the series.',
+    extraInviteFofHint:
+      'Original invitees can still join. This date also becomes visible to friends of people who already signed up. Later dates in the series stay as they were.',
+    extraInviteFofApply: 'Open to participants’ friends',
+    extraInviteFofClose: 'Limit to original circle',
+    extraInviteFofOn: 'This date is also open to friends of participants.',
     extraInviteApply: 'Send invites',
     extraInviteDone: 'Invites updated for this event.',
     seriesInviteEditHint:
