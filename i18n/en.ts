@@ -55,7 +55,7 @@ export const en = {
     friend: 'Friend',
     joined: 'Joined',
     joinedCount: 'Signed up',
-    decline: "Can't come",
+    decline: 'Not going',
     declinedYou: "You can't come",
     declineCount: 'Not coming',
     declineDbFix:

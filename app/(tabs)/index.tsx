@@ -237,51 +237,37 @@ export default function EventsScreen() {
             const declined = Boolean(item.is_declined);
             return (
               <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
-                <View style={styles.cardMain}>
-                  <Pressable
-                    style={styles.cardBody}
-                    onPress={() => router.push(`/activity/${item.id}`)}
-                  >
-                    {role ? (
-                      <Text style={[styles.overline, role.style]} numberOfLines={1}>
-                        {role.label}
-                      </Text>
-                    ) : null}
-                    <Subtitle>{cat}</Subtitle>
-                    <Text style={styles.when}>
-                      {format(new Date(item.starts_at), 'EEE, d MMM · HH:mm', { locale: dfLocale })}
+                <Pressable
+                  style={styles.cardBody}
+                  onPress={() => router.push(`/activity/${item.id}`)}
+                >
+                  {role ? (
+                    <Text style={[styles.overline, role.style]} numberOfLines={1}>
+                      {role.label}
                     </Text>
-                    {location ? (
-                      <Text style={styles.metaLine} numberOfLines={1}>
-                        <FontAwesome name="map-marker" size={12} color={theme.colors.textMuted} />{' '}
-                        {location}
-                        {item.distance_m != null ? ` · ${formatDistance(item.distance_m)}` : ''}
-                      </Text>
-                    ) : null}
-                    <Text style={styles.metaLine}>{activityPriceLabel(item, t.common)}</Text>
-                    <Text style={styles.metaLine}>
-                      <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
-                      {t.events.joinedCount}: {item.join_count ?? 0}
-                      {capRange ? ` · ${t.events.capacity}: ${capRange}` : ''}
+                  ) : null}
+                  <Subtitle>{cat}</Subtitle>
+                  <Text style={styles.when}>
+                    {format(new Date(item.starts_at), 'EEE, d MMM · HH:mm', { locale: dfLocale })}
+                  </Text>
+                  {location ? (
+                    <Text style={styles.metaLine} numberOfLines={1}>
+                      <FontAwesome name="map-marker" size={12} color={theme.colors.textMuted} />{' '}
+                      {location}
+                      {item.distance_m != null ? ` · ${formatDistance(item.distance_m)}` : ''}
                     </Text>
-                    {(item.decline_count ?? 0) > 0 ? (
-                      <Text style={styles.metaLine}>
-                        {t.events.declineCount}: {item.decline_count}
-                      </Text>
-                    ) : null}
-                  </Pressable>
-                </View>
+                  ) : null}
+                  <Text style={styles.metaLine}>{activityPriceLabel(item, t.common)}</Text>
+                  <Text style={styles.metaLine}>
+                    <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
+                    {t.events.joinedCount}: {item.join_count ?? 0}
+                    {capRange ? ` · ${t.events.capacity}: ${capRange}` : ''}
+                  </Text>
+                </Pressable>
 
                 <View style={styles.actions} onStartShouldSetResponder={() => true}>
-                  {joined ? (
-                    <>
-                      <Button
-                        label={t.events.chat}
-                        variant="secondary"
-                        size="sm"
-                        icon="comments"
-                        onPress={() => router.push(`/chat/${item.id}`)}
-                      />
+                  <View>
+                    {joined ? (
                       <Button
                         label={t.events.leave}
                         variant="dangerOutline"
@@ -290,9 +276,7 @@ export default function EventsScreen() {
                         loading={busy}
                         onPress={() => void onLeave(item)}
                       />
-                    </>
-                  ) : (
-                    <>
+                    ) : (
                       <Button
                         label={full ? t.events.full : t.events.join}
                         disabled={full}
@@ -301,13 +285,15 @@ export default function EventsScreen() {
                         icon="check"
                         onPress={() => void onJoin(item)}
                       />
-                      <Text
-                        style={[styles.declineLink, declined ? styles.declineOn : null]}
-                        onPress={() => void onDecline(item)}
-                      >
-                        {declined ? t.events.declinedYou : t.events.decline}
-                      </Text>
-                    </>
+                    )}
+                  </View>
+                  {joined ? null : (
+                    <Text
+                      style={[styles.declineLink, declined ? styles.declineOn : null]}
+                      onPress={() => void onDecline(item)}
+                    >
+                      {t.events.decline}
+                    </Text>
                   )}
                 </View>
               </View>
@@ -351,9 +337,6 @@ const styles = StyleSheet.create({
   },
   card: {
     width: '100%',
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    flexWrap: 'nowrap',
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
     borderWidth: 1,
@@ -366,15 +349,9 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.primaryMuted,
     backgroundColor: theme.colors.primarySoft,
   },
-  cardMain: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 0,
-    minWidth: 0,
-  },
   cardBody: {
-    flexGrow: 1,
     padding: theme.space.md,
+    paddingBottom: 10,
   },
   overline: {
     fontSize: 11,
@@ -398,29 +375,25 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   actions: {
-    flexGrow: 0,
-    flexShrink: 0,
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'stretch',
-    gap: 6,
-    width: 148,
-    minWidth: 148,
-    maxWidth: 148,
-    paddingVertical: theme.space.md,
-    paddingHorizontal: 10,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceElevated,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    paddingHorizontal: theme.space.md,
+    paddingBottom: theme.space.md,
   },
   declineLink: {
-    textAlign: 'center',
     color: theme.colors.textMuted,
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: '600',
-    paddingVertical: 4,
+    paddingVertical: 8,
+    paddingHorizontal: 4,
   },
   declineOn: {
     color: theme.colors.primaryDark,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.sm,
+    paddingHorizontal: 10,
+    overflow: 'hidden',
   },
 });

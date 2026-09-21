@@ -474,7 +474,7 @@ export default function ActivityDetailScreen() {
                 style={[styles.declineLink, declined ? styles.declineOn : null]}
                 onPress={() => void onDeclineToggle()}
               >
-                {declined ? t.events.declinedYou : t.events.decline}
+                {t.events.decline}
               </Text>
             </>
           )}
