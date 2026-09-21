@@ -190,8 +190,10 @@ create table if not exists public.activity_reports (
 -- Indexes
 create index if not exists idx_activities_starts on public.activities(starts_at);
 create index if not exists idx_activities_created_by on public.activities(created_by);
+create index if not exists idx_activities_creator_status_starts on public.activities(created_by, status, starts_at);
 create index if not exists idx_joins_user on public.activity_joins(user_id);
 create index if not exists idx_joins_activity on public.activity_joins(activity_id);
+create index if not exists idx_invites_user on public.activity_invites(user_id);
 create index if not exists idx_chat_activity on public.chat_messages(activity_id, created_at);
 create index if not exists idx_notifications_user on public.notifications(user_id, created_at desc);
 create index if not exists idx_friendships_to on public.friendships(to_user_id, status);

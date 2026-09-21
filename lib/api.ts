@@ -82,6 +82,30 @@ export async function createNotification(
   }
 }
 
+async function attachDeclineCounts(
+  activities: ActivityWithRelations[],
+  userId: string
+): Promise<ActivityWithRelations[]> {
+  const activityIds = activities.map((a) => a.id);
+  if (!activityIds.length) return activities;
+  const { data, error } = await supabase
+    .from('activity_declines')
+    .select('activity_id, user_id')
+    .in('activity_id', activityIds);
+  if (error || !data) return activities;
+  const counts = new Map<string, number>();
+  const mine = new Set<string>();
+  for (const row of data as { activity_id: string; user_id: string }[]) {
+    counts.set(row.activity_id, (counts.get(row.activity_id) ?? 0) + 1);
+    if (row.user_id === userId) mine.add(row.activity_id);
+  }
+  return activities.map((a) => ({
+    ...a,
+    decline_count: counts.get(a.id) ?? 0,
+    is_declined: mine.has(a.id) && !a.is_joined,
+  }));
+}
+
 export async function fetchActivities(opts: {
   userId: string;
   filter?: 'all' | 'mine' | 'invited' | 'commercial' | 'feed';
@@ -94,17 +118,14 @@ export async function fetchActivities(opts: {
   /** Commercial: max price inclusive; 0 = free only; null/undefined = any */
   maxPrice?: number | null;
 }): Promise<ActivityWithRelations[]> {
-  // Počisti začete dogodke; pri ponavljajočih odpri naslednji termin
-  try {
-    await processDueRecurringActivities();
-  } catch {
-    // RPC morda še ni v bazi – ignoriraj
-  }
+  void ensureDueRecurringActivities();
 
+  const nowIso = new Date().toISOString();
   let query = supabase
     .from('activities')
     .select(ACTIVITIES_SELECT_WITH_PARENT)
     .eq('status', 'active')
+    .gt('starts_at', nowIso)
     .order('starts_at', { ascending: true });
 
   if (opts.filter === 'mine') {
@@ -122,6 +143,7 @@ export async function fetchActivities(opts: {
       .from('activities')
       .select(ACTIVITIES_SELECT_BASIC)
       .eq('status', 'active')
+      .gt('starts_at', nowIso)
       .order('starts_at', { ascending: true });
     if (opts.filter === 'mine') fallback = fallback.eq('created_by', opts.userId);
     if (opts.search?.trim()) fallback = fallback.ilike('title', `%${opts.search.trim()}%`);
@@ -137,8 +159,7 @@ export async function fetchActivities(opts: {
   activities = activities.filter((a) => new Date(a.starts_at).getTime() > nowMs);
   activities = await hydrateCategoryParents(activities);
 
-  const activityIds = activities.map((a) => a.id);
-  const [{ data: joins }, { data: invites }, { data: friendships }, declinesRes] = await Promise.all([
+  const [{ data: joins }, { data: invites }, { data: friendships }] = await Promise.all([
     supabase.from('activity_joins').select('activity_id').eq('user_id', opts.userId),
     supabase.from('activity_invites').select('activity_id').eq('user_id', opts.userId),
     supabase
@@ -146,19 +167,7 @@ export async function fetchActivities(opts: {
       .select('from_user_id, to_user_id')
       .eq('status', 'accepted')
       .or(`from_user_id.eq.${opts.userId},to_user_id.eq.${opts.userId}`),
-    activityIds.length
-      ? supabase.from('activity_declines').select('activity_id, user_id').in('activity_id', activityIds)
-      : Promise.resolve({ data: [] as { activity_id: string; user_id: string }[], error: null }),
   ]);
-
-  const declineCountByActivity = new Map<string, number>();
-  const declinedIds = new Set<string>();
-  if (!declinesRes.error) {
-    for (const row of declinesRes.data ?? []) {
-      declineCountByActivity.set(row.activity_id, (declineCountByActivity.get(row.activity_id) ?? 0) + 1);
-      if (row.user_id === opts.userId) declinedIds.add(row.activity_id);
-    }
-  }
 
   const joinedIds = new Set((joins ?? []).map((j) => j.activity_id));
   const invitedIds = new Set((invites ?? []).map((i) => i.activity_id));
@@ -203,9 +212,9 @@ export async function fetchActivities(opts: {
       join_count:
         nestedCount((a as { activity_joins?: unknown }).activity_joins) +
         nestedCount((a as { activity_guest_attendances?: unknown }).activity_guest_attendances),
-      decline_count: declineCountByActivity.get(a.id) ?? 0,
+      decline_count: 0,
       is_joined: joinedIds.has(a.id),
-      is_declined: declinedIds.has(a.id) && !joinedIds.has(a.id),
+      is_declined: false,
       is_invited,
       is_from_friend,
       is_open_to_you,
@@ -276,7 +285,7 @@ export async function fetchActivities(opts: {
       result = result.filter((a) => a.distance_m != null && a.distance_m <= maxM);
       result = hideFullEventsExceptInvolved(result, opts.userId);
       result.sort((a, b) => (a.distance_m ?? 0) - (b.distance_m ?? 0));
-      return oneActivityPerSeries(result);
+      return attachDeclineCounts(oneActivityPerSeries(result), opts.userId);
     }
   }
 
@@ -289,7 +298,7 @@ export async function fetchActivities(opts: {
     return new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime();
   });
 
-  return oneActivityPerSeries(result);
+  return attachDeclineCounts(oneActivityPerSeries(result), opts.userId);
 }
 
 function hideFullEventsExceptInvolved(
@@ -615,6 +624,18 @@ export async function userCanEditActivity(activityId: string, userId: string) {
     .eq('user_id', userId)
     .maybeSingle();
   return { canEdit: Boolean(ed), isCreator: false };
+}
+
+let dueRecurringOnce: Promise<void> | null = null;
+
+/** Open the next series date in the background, at most once per app session. */
+export function ensureDueRecurringActivities(): Promise<void> {
+  if (!dueRecurringOnce) {
+    dueRecurringOnce = processDueRecurringActivities().catch(() => {
+      dueRecurringOnce = null;
+    });
+  }
+  return dueRecurringOnce;
 }
 
 export async function processDueRecurringActivities() {

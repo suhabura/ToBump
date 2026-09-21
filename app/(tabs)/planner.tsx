@@ -4,6 +4,7 @@ import {
   differenceInCalendarDays,
   endOfMonth,
   endOfWeek,
+  endOfDay,
   format,
   isSameDay,
   isSameMonth,
@@ -18,7 +19,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button, EmptyState, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
-import { leaveActivity, processDueRecurringActivities } from '@/lib/api';
+import { ensureDueRecurringActivities, leaveActivity } from '@/lib/api';
 import { seriesKey } from '@/lib/finance';
 import {
   expandSeriesSlots,
@@ -121,45 +122,89 @@ async function hydrateParents(rows: ActivityWithRelations[]): Promise<ActivityWi
   }) as ActivityWithRelations[];
 }
 
+const PLANNER_PAST_DAYS = 90;
+
 async function fetchMineAndJoined(
   userId: string,
-  joinIds: string[]
+  joinIds: string[],
+  windowStart: Date,
+  windowEnd: Date
 ): Promise<ActivityWithRelations[]> {
   const selectWithParent =
     '*, enterprises(id, name, address), categories(id, name, icon, parent_id)';
   const selectBasic = '*, enterprises(id, name, address), categories(id, name, icon)';
+  const pastFrom = new Date();
+  pastFrom.setDate(pastFrom.getDate() - PLANNER_PAST_DAYS);
+  const windowFromIso = windowStart.toISOString();
+  const windowToIso = endOfDay(windowEnd).toISOString();
+  const pastFromIso = pastFrom.toISOString();
+  const nowIso = new Date().toISOString();
+  const fromDay = localDayKey(windowStart);
 
   async function load(select: string) {
-    const created = await supabase
-      .from('activities')
-      .select(select)
-      .eq('created_by', userId)
+    const created = () => supabase.from('activities').select(select).eq('created_by', userId);
+    const joined = () => supabase.from('activities').select(select).in('id', joinIds);
+    const templateFilter = (query: ReturnType<typeof created>) =>
+      query
+        .eq('status', 'active')
+        .eq('is_recurring', true)
+        .lte('starts_at', windowToIso)
+        .or(`recurrence_until.is.null,recurrence_until.gte.${fromDay}`);
+
+    const createdWindow = created()
       .in('status', ['active', 'completed'])
+      .gte('starts_at', windowFromIso)
+      .lte('starts_at', windowToIso)
       .order('starts_at', { ascending: true });
-    const joined =
-      joinIds.length > 0
-        ? await supabase
-            .from('activities')
-            .select(select)
-            .in('id', joinIds)
-            .in('status', ['active', 'completed'])
-            .order('starts_at', { ascending: true })
-        : { data: [] as ActivityWithRelations[], error: null };
-    return { created, joined };
+    const createdPast = created()
+      .in('status', ['active', 'completed'])
+      .gte('starts_at', pastFromIso)
+      .lte('starts_at', nowIso)
+      .order('starts_at', { ascending: true });
+    const createdTemplates = templateFilter(created());
+
+    const empty = Promise.resolve({ data: [] as ActivityWithRelations[], error: null });
+    const joinedWindow = joinIds.length
+      ? joined()
+          .in('status', ['active', 'completed'])
+          .gte('starts_at', windowFromIso)
+          .lte('starts_at', windowToIso)
+          .order('starts_at', { ascending: true })
+      : empty;
+    const joinedPast = joinIds.length
+      ? joined()
+          .in('status', ['active', 'completed'])
+          .gte('starts_at', pastFromIso)
+          .lte('starts_at', nowIso)
+          .order('starts_at', { ascending: true })
+      : empty;
+    const joinedTemplates = joinIds.length ? templateFilter(joined()) : empty;
+
+    const [cw, cp, ct, jw, jp, jt] = await Promise.all([
+      createdWindow,
+      createdPast,
+      createdTemplates,
+      joinedWindow,
+      joinedPast,
+      joinedTemplates,
+    ]);
+    const error = cw.error || cp.error || ct.error || jw.error || jp.error || jt.error;
+    const data = [cw.data, cp.data, ct.data, jw.data, jp.data, jt.data].flatMap(
+      (rows) => (rows as ActivityWithRelations[]) ?? []
+    );
+    return { data, error };
   }
 
-  let { created, joined } = await load(selectWithParent);
-  if (created.error || joined.error) {
+  let { data, error } = await load(selectWithParent);
+  if (error) {
     const retry = await load(selectBasic);
-    created = retry.created;
-    joined = retry.joined;
+    data = retry.data;
+    error = retry.error;
   }
+  if (error) throw error;
 
   const byId = new Map<string, ActivityWithRelations>();
-  for (const row of [
-    ...((created.data as ActivityWithRelations[]) ?? []),
-    ...((joined.data as ActivityWithRelations[]) ?? []),
-  ]) {
+  for (const row of data) {
     if (row?.id) byId.set(row.id, row);
   }
   return hydrateParents(Array.from(byId.values()));
@@ -191,20 +236,17 @@ export default function PlannerScreen() {
         setLoading(true);
       }
       try {
-        if (!opts?.silent) {
-          try {
-            await processDueRecurringActivities();
-          } catch {
-            /* optional */
-          }
-        }
+        void ensureDueRecurringActivities();
+        const grid = buildCalendarDays(month);
+        const windowStart = grid[0] ?? startOfMonth(month);
+        const windowEnd = grid[grid.length - 1] ?? endOfMonth(month);
         const { data: joins } = await supabase
           .from('activity_joins')
           .select('activity_id')
           .eq('user_id', user.id);
         const ids = (joins ?? []).map((j) => j.activity_id);
         setJoinedIds(new Set(ids));
-        const rows = await fetchMineAndJoined(user.id, ids);
+        const rows = await fetchMineAndJoined(user.id, ids, windowStart, windowEnd);
         setItems(rows);
         const seriesIds = Array.from(new Set(rows.map((a) => seriesKey(a))));
         const [followSet, skipped] = await Promise.all([
@@ -218,12 +260,12 @@ export default function PlannerScreen() {
         setLoading(false);
       }
     },
-    [user?.id]
+    [user?.id, month]
   );
 
   useFocusEffect(
     useCallback(() => {
-      void load();
+      void load({ silent: hasLoaded.current });
     }, [load])
   );
 

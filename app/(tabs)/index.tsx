@@ -30,6 +30,10 @@ export default function EventsScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoaded = useRef(false);
+  const loadedAt = useRef(0);
+  const fetchedSearch = useRef<string | null>(null);
+  const itemsRef = useRef<ActivityWithRelations[]>([]);
+  itemsRef.current = items;
 
   const userId = user?.id;
 
@@ -51,6 +55,8 @@ export default function EventsScreen() {
         });
         setItems(data);
         hasLoaded.current = true;
+        loadedAt.current = Date.now();
+        fetchedSearch.current = search;
       } catch (e) {
         setError(e instanceof Error ? e.message : t.common.error);
       } finally {
@@ -103,38 +109,40 @@ export default function EventsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void load();
+      const stale = Date.now() - loadedAt.current > 15_000;
+      const searchChanged = fetchedSearch.current !== search;
+      if (!hasLoaded.current || stale || searchChanged) void load();
       if (!userId || !configured) return;
+
+      const touchesFeed = (row: { activity_id?: string; id?: string; series_id?: string; created_by?: string } | null) => {
+        if (!row) return false;
+        if (row.created_by && row.created_by === userId) return true;
+        const activityId = row.activity_id ?? row.id;
+        if (!activityId) return false;
+        return itemsRef.current.some(
+          (a) => a.id === activityId || a.series_id === activityId || a.id === row.series_id
+        );
+      };
+
+      const onChange = (payload: { new?: Record<string, string | null>; old?: Record<string, string | null> }) => {
+        const next = payload.new && (payload.new.id || payload.new.activity_id) ? payload.new : payload.old;
+        if (!touchesFeed(next)) return;
+        scheduleLiveReload();
+      };
 
       const channel = supabase
         .channel(`events-live-${userId}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'activity_joins' },
-          () => scheduleLiveReload()
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'activity_declines' },
-          () => scheduleLiveReload()
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'activity_guest_attendances' },
-          () => scheduleLiveReload()
-        )
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'activities' },
-          () => scheduleLiveReload()
-        )
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_joins' }, onChange)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_declines' }, onChange)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_guest_attendances' }, onChange)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, onChange)
         .subscribe();
 
       return () => {
         if (reloadTimer.current) clearTimeout(reloadTimer.current);
         supabase.removeChannel(channel);
       };
-    }, [load, userId, configured, scheduleLiveReload])
+    }, [load, search, userId, configured, scheduleLiveReload])
   );
 
   async function onJoin(item: ActivityWithRelations) {

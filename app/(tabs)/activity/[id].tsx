@@ -12,10 +12,10 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   clearActivityDecline,
   declineActivity,
+  ensureDueRecurringActivities,
   deleteActivity,
   joinActivity,
   leaveActivity,
-  processDueRecurringActivities,
   userCanEditActivity,
   type DeleteActivityMode,
 } from '@/lib/api';
@@ -67,11 +67,7 @@ export default function ActivityDetailScreen() {
     if (!opts?.silent || !hasLoaded.current) {
       setLoading(true);
     }
-    try {
-      await processDueRecurringActivities();
-    } catch {
-      /* RPC morda še ni nameščen */
-    }
+    void ensureDueRecurringActivities();
 
     // Če je ta instance že zaključena in obstaja naslednja, preusmeri
     const { data: next } = await supabase
