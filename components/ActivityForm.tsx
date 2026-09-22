@@ -187,6 +187,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     return weekly ? Array.from(new Set(initial?.recurrence_dates ?? [])).sort() : [];
   });
   const [financeEnabled, setFinanceEnabled] = useState(Boolean(initial?.finance_enabled));
+  const [showWeather, setShowWeather] = useState(Boolean(initial?.show_weather));
   const [fundingMode, setFundingMode] = useState<FundingMode>(() => {
     const raw = initial?.funding_mode;
     if (raw === 'annual' || raw === 'fixed') return 'fixed';
@@ -584,6 +585,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           editor_user_ids: isCreator ? editorIds : undefined,
           is_recurring: isRecurring,
           finance_enabled: financeEnabled,
+          show_weather: showWeather,
           recurrence_rules: recurrenceMode === 'weekly' ? normalized : [],
           recurrence_until: recurrenceMode === 'weekly' && recurrenceUntil ? formatDay(recurrenceUntil) : null,
           recurrence_dates:
@@ -696,6 +698,13 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           placeholder={t.form.venuePlaceholder}
         />
       )}
+
+      <Text style={styles.section}>{t.form.weather}</Text>
+      <Muted>{t.form.weatherHint}</Muted>
+      <View style={styles.row}>
+        <Chip label={t.form.weatherOff} active={!showWeather} onPress={() => setShowWeather(false)} />
+        <Chip label={t.form.weatherOn} active={showWeather} onPress={() => setShowWeather(true)} />
+      </View>
 
       <Text style={styles.section}>{t.events.capacity}</Text>
       <View style={styles.row}>

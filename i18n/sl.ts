@@ -337,6 +337,10 @@ export const sl = {
     needInviteFriends: 'Izberite vsaj enega prijatelja za povabilo.',
     needPrice: 'Cena je obvezna (za brezplačno vnesite 0).',
     addEditors: 'Uredniki dogodka',
+    weather: 'Vreme',
+    weatherHint: 'V desnem zgornjem kotu pokaže napoved za uro začetka. Kraj mora imeti točko na zemljevidu.',
+    weatherOn: 'Prikaži vreme',
+    weatherOff: 'Brez vremena',
     finance: 'Skupni stroški (Finance)',
     financeHint:
       'Prispevki gredo v budget dogodka, vpiši dejanske stroške in poravnaj bilance med udeleženci.',

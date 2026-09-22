@@ -229,6 +229,8 @@ export type Activity = {
   status: ActivityStatus;
   is_recurring: boolean;
   finance_enabled?: boolean;
+  /** Show the start-time forecast in the top-right corner */
+  show_weather?: boolean;
   recurrence_weekdays: number[];
   recurrence_rules: { weekday: number; hour: number; minute: number; duration_minutes: number }[];
   duration_minutes: number | null;

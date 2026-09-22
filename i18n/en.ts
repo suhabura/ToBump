@@ -336,6 +336,10 @@ export const en = {
     needInviteFriends: 'Select at least one friend to invite.',
     needPrice: 'Price is required (use 0 for free).',
     addEditors: 'Event editors',
+    weather: 'Weather',
+    weatherHint: 'Shows the forecast for the start time in the top-right corner. The place needs a map point.',
+    weatherOn: 'Show weather',
+    weatherOff: 'No weather',
     finance: 'Shared expenses (Finance)',
     financeHint:
       'Track fees into the event budget, record actual costs, and settle balances among participants.',

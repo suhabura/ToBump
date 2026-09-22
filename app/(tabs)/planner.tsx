@@ -17,6 +17,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { WeatherBadge } from '@/components/WeatherBadge';
 import { Button, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureDueRecurringActivities } from '@/lib/api';
@@ -36,6 +37,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
 import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName } from '@/lib/types';
+import { eventWeatherPoint } from '@/lib/weather';
 import { showAlert } from '@/lib/dialog';
 import { useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
@@ -127,9 +129,9 @@ async function hydrateParents(rows: ActivityWithRelations[]): Promise<ActivityWi
 
 const PLANNER_PAST_DAYS = 90;
 const PLANNER_SELECT_WITH_PARENT =
-  '*, profiles:created_by(id, first_name, last_name), enterprises(id, name, address), categories(id, name, icon, parent_id), activity_joins(count), activity_guest_attendances(count)';
+    '*, profiles:created_by(id, first_name, last_name), enterprises(id, name, address, latitude, longitude), categories(id, name, icon, parent_id), activity_joins(count), activity_guest_attendances(count)';
 const PLANNER_SELECT_BASIC =
-  '*, profiles:created_by(id, first_name, last_name), enterprises(id, name, address), categories(id, name, icon), activity_joins(count), activity_guest_attendances(count)';
+  '*, profiles:created_by(id, first_name, last_name), enterprises(id, name, address, latitude, longitude), categories(id, name, icon), activity_joins(count), activity_guest_attendances(count)';
 
 async function fetchMineAndJoined(
   userId: string,
@@ -492,10 +494,11 @@ export default function PlannerScreen() {
     const cat = categoryLabel(item.categories) ?? item.title;
     const host = isMine ? '' : displayName(item.profiles);
     const capRange = activityCapacityRange(item);
+    const weather = eventWeatherPoint(item);
     const showJoin = future && !item.skipped && !isJoined;
     return (
       <View style={[styles.card, isMine ? styles.cardMine : null]}>
-        <Pressable style={styles.cardBody} onPress={() => void onOpenSlot(item)}>
+        <Pressable style={[styles.cardBody, weather ? styles.cardBodyWeather : null]} onPress={() => void onOpenSlot(item)}>
           <Text style={[styles.overline, isMine ? styles.roleOrganizing : styles.roleInvited]} numberOfLines={1}>
             {isMine ? t.events.organizing : host ? t.events.invitedBy(host) : t.events.invitedBadge}
           </Text>
@@ -519,6 +522,9 @@ export default function PlannerScreen() {
             {capRange ? ` · ${t.events.capacity}: ${capRange}` : ''}
           </Text>
         </Pressable>
+        {weather ? (
+          <WeatherBadge latitude={weather.latitude} longitude={weather.longitude} startsAt={item.starts_at} />
+        ) : null}
         <View style={styles.actions} onStartShouldSetResponder={() => true}>
           <Button
             label={t.events.chat}
@@ -748,6 +754,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     marginBottom: 12,
     overflow: 'hidden',
+    position: 'relative',
     ...theme.shadow.card,
   },
   cardMine: {
@@ -757,6 +764,9 @@ const styles = StyleSheet.create({
   cardBody: {
     padding: theme.space.md,
     paddingBottom: 8,
+  },
+  cardBodyWeather: {
+    paddingRight: 72,
   },
   cardTitle: {
     fontSize: 16,

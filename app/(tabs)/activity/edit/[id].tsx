@@ -33,6 +33,7 @@ export default function EditActivityScreen() {
     editor_user_ids?: string[];
     is_recurring?: boolean;
     finance_enabled?: boolean;
+    show_weather?: boolean;
     funding_mode?: FundingMode | null;
     who_pays?: import('@/lib/types').FinanceWhoPays | null;
     payer_group_id?: string | null;
@@ -121,6 +122,7 @@ export default function EditActivityScreen() {
         editor_user_ids: (editors ?? []).map((e: { user_id: string }) => e.user_id),
         is_recurring: act.is_recurring,
         finance_enabled: Boolean(act.finance_enabled),
+        show_weather: Boolean(act.show_weather),
         funding_mode: fundingMode,
         who_pays: whoPays,
         payer_group_id: payerGroupId,

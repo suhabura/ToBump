@@ -4,6 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { WeatherBadge } from '@/components/WeatherBadge';
 import { Button, Chip, EmptyState, Loading, Screen } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEventsHeader } from '@/contexts/EventsHeaderContext';
@@ -12,6 +13,7 @@ import { formatDistance } from '@/lib/geo';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
 import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName } from '@/lib/types';
+import { eventWeatherPoint } from '@/lib/weather';
 import { useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
@@ -231,6 +233,7 @@ export default function EventsScreen() {
             const cat = categoryLabel(item.categories) ?? item.title;
             const busy = busyId === item.id;
             const host = isOrganizer ? '' : displayName(item.profiles);
+            const weather = eventWeatherPoint(item);
             const role = isOrganizer
               ? { label: t.events.organizing, style: styles.roleOrganizing }
               : item.is_invited
@@ -248,7 +251,7 @@ export default function EventsScreen() {
             return (
               <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
                 <Pressable
-                  style={styles.cardBody}
+                  style={[styles.cardBody, weather ? styles.cardBodyWeather : null]}
                   onPress={() => router.push(`/activity/${item.id}`)}
                 >
                   {role ? (
@@ -278,6 +281,9 @@ export default function EventsScreen() {
                     {capRange ? ` · ${t.events.capacity}: ${capRange}` : ''}
                   </Text>
                 </Pressable>
+                {weather ? (
+                  <WeatherBadge latitude={weather.latitude} longitude={weather.longitude} startsAt={item.starts_at} />
+                ) : null}
 
                 {joined ? null : (
                   <View style={styles.actions} onStartShouldSetResponder={() => true}>
@@ -358,6 +364,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
     marginBottom: 12,
     overflow: 'hidden',
+    position: 'relative',
     ...theme.shadow.card,
   },
   cardMine: {
@@ -367,6 +374,9 @@ const styles = StyleSheet.create({
   cardBody: {
     padding: theme.space.md,
     paddingBottom: 8,
+  },
+  cardBodyWeather: {
+    paddingRight: 72,
   },
   cardTitle: {
     fontSize: 16,

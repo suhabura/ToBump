@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import { WeatherBadge } from '@/components/WeatherBadge';
 import { Button, Chip, EmptyState, Loading, Muted, Screen, Subtitle, Title } from '@/components/ui';
 import { ActivityExtraInvitePanel } from '@/components/ActivityExtraInvitePanel';
 import { ActivityFinancePanel } from '@/components/ActivityFinancePanel';
@@ -26,6 +27,7 @@ import { fetchSeriesFollows, setSeriesFollow } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations, Profile } from '@/lib/types';
 import { activityCapacityRange, activityLocationLabel, activityPriceLabel, activityVenuePoint, categoryLabel, displayName } from '@/lib/types';
+import { eventWeatherPoint } from '@/lib/weather';
 import { mapsUrl } from '@/lib/geo';
 import { useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
@@ -293,6 +295,7 @@ export default function ActivityDetailScreen() {
   const isOwner = user?.id === activity.created_by;
   const participantCount = participants.length + guests.length;
   const capRange = activityCapacityRange(activity);
+  const weather = eventWeatherPoint(activity);
   const full =
     activity.max_participants != null && participantCount >= activity.max_participants;
 
@@ -321,9 +324,21 @@ export default function ActivityDetailScreen() {
   return (
     <Screen>
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        <Title>
-          {categoryLabel(activity.categories) ?? activity.title}
-        </Title>
+        <View style={styles.titleRow}>
+          <View style={styles.titleMain}>
+            <Title>
+              {categoryLabel(activity.categories) ?? activity.title}
+            </Title>
+          </View>
+          {weather ? (
+            <WeatherBadge
+              inline
+              latitude={weather.latitude}
+              longitude={weather.longitude}
+              startsAt={activity.starts_at}
+            />
+          ) : null}
+        </View>
 
         {activity.finance_enabled ? (
           <View style={styles.tabRow}>
@@ -609,6 +624,14 @@ export default function ActivityDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  titleRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+  },
+  titleMain: {
+    flex: 1,
+  },
   when: {
     color: theme.colors.primaryDark,
     fontSize: 15,

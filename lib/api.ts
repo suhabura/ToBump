@@ -635,6 +635,8 @@ export type ActivityInput = {
   is_recurring?: boolean;
   /** Enable Tricount-style shared expenses for this event / series */
   finance_enabled?: boolean;
+  /** Show the start-time forecast on this event */
+  show_weather?: boolean;
   recurrence_rules?: RecurrenceRule[];
   /** Last calendar day for the series (YYYY-MM-DD), required when weekly */
   recurrence_until?: string | null;
@@ -816,6 +818,16 @@ async function assertOccurrenceRemoved(activityId: string) {
   }
 }
 
+async function syncSeriesShowWeather(seriesId: string, enabled: boolean) {
+  const patch = { show_weather: enabled };
+  const byId = await supabase.from('activities').update(patch).eq('id', seriesId);
+  if (byId.error && /show_weather/i.test(byId.error.message ?? '')) return;
+  if (byId.error) throw byId.error;
+  const bySeries = await supabase.from('activities').update(patch).eq('series_id', seriesId);
+  if (bySeries.error && /show_weather/i.test(bySeries.error.message ?? '')) return;
+  if (bySeries.error) throw bySeries.error;
+}
+
 export async function saveActivity(userId: string, input: ActivityInput, activityId?: string) {
   if (input.privacy === 'group' && !input.group_id) {
     throw new Error('Select a group.');
@@ -965,6 +977,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     created_by: userId,
     is_recurring: Boolean(input.is_recurring) || isDateSeries,
     finance_enabled: Boolean(input.finance_enabled),
+    show_weather: Boolean(input.show_weather),
     recurrence_weekdays: weekdays,
     recurrence_rules: rules,
     recurrence_until: isWeekly ? weeklyUntil : isDateSeries ? dateDays[dateDays.length - 1] : null,
@@ -1003,13 +1016,25 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     }
 
     const { error } = await supabase.from('activities').update(payload).eq('id', activityId);
-    if (error && /recurrence_dates/i.test(error.message ?? '')) {
+    if (error && /recurrence_dates|show_weather/i.test(error.message ?? '')) {
       const fallback = { ...payload };
-      delete fallback.recurrence_dates;
+      if (/recurrence_dates/i.test(error.message ?? '')) delete fallback.recurrence_dates;
+      if (/show_weather/i.test(error.message ?? '')) delete fallback.show_weather;
       const retry = await supabase.from('activities').update(fallback).eq('id', activityId);
-      if (retry.error) throw retry.error;
+      if (retry.error && /recurrence_dates|show_weather/i.test(retry.error.message ?? '')) {
+        delete fallback.recurrence_dates;
+        delete fallback.show_weather;
+        const again = await supabase.from('activities').update(fallback).eq('id', activityId);
+        if (again.error) throw again.error;
+      } else if (retry.error) {
+        throw retry.error;
+      }
     } else if (error) {
       throw error;
+    }
+
+    if (existing.is_recurring || isDateSeries || isWeekly) {
+      await syncSeriesShowWeather(existing.series_id ?? activityId, Boolean(input.show_weather));
     }
 
     if (isDateSeries || isWeekly) {
@@ -1092,15 +1117,26 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
       payload.series_invite_user_ids = [];
     }
     let { data, error } = await supabase.from('activities').insert(payload).select('id').single();
-    if (error && /recurrence_dates/i.test(error.message ?? '')) {
+    if (error && /recurrence_dates|show_weather/i.test(error.message ?? '')) {
       const fallback = { ...payload };
-      delete fallback.recurrence_dates;
+      if (/recurrence_dates/i.test(error.message ?? '')) delete fallback.recurrence_dates;
+      if (/show_weather/i.test(error.message ?? '')) delete fallback.show_weather;
       const retry = await supabase.from('activities').insert(fallback).select('id').single();
       data = retry.data;
       error = retry.error;
+      if (error && /recurrence_dates|show_weather/i.test(error.message ?? '')) {
+        delete fallback.recurrence_dates;
+        delete fallback.show_weather;
+        const again = await supabase.from('activities').insert(fallback).select('id').single();
+        data = again.data;
+        error = again.error;
+      }
     }
     if (error || !data?.id) throw error ?? new Error('Could not create the event.');
     id = data.id;
+    if (input.is_recurring || isDateSeries) {
+      await syncSeriesShowWeather(id, Boolean(input.show_weather));
+    }
     if (!newId) {
       await supabase.from('activities').update({ series_id: id }).eq('id', id);
     }
