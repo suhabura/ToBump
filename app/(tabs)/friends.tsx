@@ -315,7 +315,7 @@ export default function FriendsScreen() {
                 <Text style={styles.name}>{displayName(p)}</Text>
                 <Muted>{p.email}</Muted>
               </View>
-              <Button label={t.friends.add} onPress={() => sendRequest(p.id)} />
+              <Button label={t.friends.add} size="xs" onPress={() => sendRequest(p.id)} />
             </View>
           ))}
         </View>
@@ -327,8 +327,8 @@ export default function FriendsScreen() {
         {requests.map((r) => (
           <View key={r.id} style={styles.row}>
             <Text style={[styles.name, { flex: 1 }]}>{displayName(r.from)}</Text>
-            <Button label={t.friends.accept} onPress={() => respond(r.id, 'accepted', r.from_user_id)} />
-            <Button label={t.friends.reject} variant="ghost" onPress={() => respond(r.id, 'rejected', r.from_user_id)} />
+            <Button label={t.friends.accept} size="xs" onPress={() => respond(r.id, 'accepted', r.from_user_id)} />
+            <Button label={t.friends.reject} variant="ghost" size="xs" onPress={() => respond(r.id, 'rejected', r.from_user_id)} />
           </View>
         ))}
       </View>
@@ -354,13 +354,13 @@ export default function FriendsScreen() {
                   <Button
                     label={t.common.cancel}
                     variant="ghost"
-                    size="sm"
+                    size="xs"
                     onPress={() => setPendingRemoveId(null)}
                   />
                   <Button
                     label={t.friends.remove}
                     variant="dangerOutline"
-                    size="sm"
+                    size="xs"
                     icon="user-times"
                     loading={removingId === item.id}
                     onPress={() => void removeFriend(item)}
@@ -370,7 +370,7 @@ export default function FriendsScreen() {
                 <Button
                   label={t.friends.remove}
                   variant="dangerOutline"
-                  size="sm"
+                  size="xs"
                   icon="user-times"
                   onPress={() => setPendingRemoveId(item.id)}
                 />
@@ -394,6 +394,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     marginBottom: 8,
+    ...theme.shadow.card,
   },
   name: { fontWeight: '700', color: theme.colors.text, fontSize: 16 },
 });

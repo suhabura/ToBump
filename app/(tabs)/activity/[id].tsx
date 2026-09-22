@@ -349,12 +349,12 @@ export default function ActivityDetailScreen() {
           />
         ) : (
           <>
-        <Muted>
+        <Text style={styles.when}>
           {format(new Date(activity.starts_at), 'EEEE, d MMMM yyyy · HH:mm', { locale: dfLocale })}
           {activity.ends_at
             ? ` – ${format(new Date(activity.ends_at), 'HH:mm', { locale: dfLocale })}`
             : ''}
-        </Muted>
+        </Text>
         {(activity.recurrence_dates?.length ?? 0) >= 2 ? (
           <Muted>
             {t.events.dates}: {formatRecurrenceDates(activity.recurrence_dates ?? [], locale)}
@@ -609,6 +609,13 @@ export default function ActivityDetailScreen() {
 }
 
 const styles = StyleSheet.create({
+  when: {
+    color: theme.colors.primaryDark,
+    fontSize: 15,
+    fontWeight: '600',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
   participant: {
     paddingVertical: 8,
     borderBottomWidth: 1,

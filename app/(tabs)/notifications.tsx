@@ -78,6 +78,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     marginBottom: 8,
+    ...theme.shadow.card,
   },
   unread: {
     borderColor: theme.colors.primary,

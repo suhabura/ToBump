@@ -193,7 +193,7 @@ export default function GroupsScreen() {
                 .map((id) => displayName(friends.find((f) => f.id === id) ?? null))
                 .join(', ') || '—'}
             </Muted>
-            <Button label={t.groups.delete} variant="ghost" onPress={() => deleteGroup(item.id, item.name)} />
+            <Button label={t.groups.delete} variant="ghost" size="xs" onPress={() => deleteGroup(item.id, item.name)} />
           </View>
         )}
       />
@@ -210,6 +210,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: theme.colors.border,
     marginBottom: 8,
+    ...theme.shadow.card,
   },
   name: { fontWeight: '700', fontSize: 16, color: theme.colors.text, marginBottom: 4 },
   errorBox: { marginBottom: 12, gap: 8 },

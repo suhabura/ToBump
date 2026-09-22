@@ -184,14 +184,14 @@ const styles = StyleSheet.create({
     ...theme.shadow.card,
   },
   title: {
-    fontSize: 28,
+    fontSize: 22,
     fontWeight: '700',
     color: theme.colors.text,
-    marginBottom: theme.space.sm,
+    marginBottom: theme.space.xs,
     letterSpacing: -0.3,
   },
   subtitle: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: '700',
     color: theme.colors.text,
     marginBottom: theme.space.xs,
