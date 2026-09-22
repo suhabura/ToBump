@@ -1,13 +1,22 @@
 import { activityVenuePoint } from '@/lib/types';
 
 export type WeatherForecast = { temp: number; code: number };
+export type DailyForecast = { day: string; code: number; max: number; min: number };
 
 const cache = new Map<string, Promise<WeatherForecast | null>>();
+const dailyCache = new Map<string, Promise<DailyForecast[]>>();
 
-export function weatherIcon(code: number): 'sun-o' | 'cloud' | 'umbrella' {
-  if (code <= 1) return 'sun-o';
-  if (code >= 51) return 'umbrella';
-  return 'cloud';
+export function weatherMark(code: number): string {
+  if (code === 0) return '☀️';
+  if (code === 1) return '🌤️';
+  if (code === 2) return '⛅';
+  if (code === 3) return '☁️';
+  if (code === 45 || code === 48) return '🌫️';
+  if (code >= 95) return '⛈️';
+  if ((code >= 71 && code <= 77) || (code >= 85 && code <= 86)) return '❄️';
+  if (code >= 51 && code <= 57) return '🌦️';
+  if (code >= 61) return '🌧️';
+  return '☁️';
 }
 
 export function eventWeatherPoint(
@@ -54,6 +63,44 @@ async function fetchForecast(lat: number, lon: number, start: Date): Promise<Wea
   const code = codes[best];
   if (temp == null || code == null) return null;
   return { temp: Math.round(temp), code };
+}
+
+export function forecastDays(lat: number, lon: number): Promise<DailyForecast[]> {
+  const key = `${lat.toFixed(2)}:${lon.toFixed(2)}:7d`;
+  const hit = dailyCache.get(key);
+  if (hit) return hit;
+  const job = fetchDaily(lat, lon).catch(() => []);
+  dailyCache.set(key, job);
+  return job;
+}
+
+async function fetchDaily(lat: number, lon: number): Promise<DailyForecast[]> {
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    `&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=7&timezone=auto`;
+  const res = await fetch(url);
+  if (!res.ok) return [];
+  const json = (await res.json()) as {
+    daily?: {
+      time?: string[];
+      weather_code?: Array<number | null>;
+      temperature_2m_max?: Array<number | null>;
+      temperature_2m_min?: Array<number | null>;
+    };
+  };
+  const days = json.daily?.time ?? [];
+  const codes = json.daily?.weather_code ?? [];
+  const highs = json.daily?.temperature_2m_max ?? [];
+  const lows = json.daily?.temperature_2m_min ?? [];
+  const out: DailyForecast[] = [];
+  for (let i = 0; i < days.length; i++) {
+    const code = codes[i];
+    const max = highs[i];
+    const min = lows[i];
+    if (!days[i] || code == null || max == null || min == null) continue;
+    out.push({ day: days[i].slice(0, 10), code, max: Math.round(max), min: Math.round(min) });
+  }
+  return out;
 }
 
 export function forecastAt(lat: number, lon: number, startsAt: string): Promise<WeatherForecast | null> {

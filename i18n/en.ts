@@ -337,7 +337,7 @@ export const en = {
     needPrice: 'Price is required (use 0 for free).',
     addEditors: 'Event editors',
     weather: 'Weather',
-    weatherHint: 'Shows the forecast for the start time in the top-right corner. The place needs a map point.',
+    weatherHint: 'The start-time forecast appears in the top-right corner.',
     weatherOn: 'Show weather',
     weatherOff: 'No weather',
     finance: 'Shared expenses (Finance)',

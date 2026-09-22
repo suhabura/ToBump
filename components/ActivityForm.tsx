@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button, Chip, Input, Muted } from '@/components/ui';
+import { WeatherWeek } from '@/components/WeatherBadge';
 import { DateTimeField } from '@/components/DateTimeField';
 import { DateMultiField } from '@/components/DateMultiField';
 import { LocationField } from '@/components/LocationField';
@@ -275,6 +276,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     setVenueText('');
     setVenueLatitude(null);
     setVenueLongitude(null);
+    setShowWeather(false);
   }
 
   useEffect(() => {
@@ -385,6 +387,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       setEnterpriseId(null);
       setVenueLatitude(null);
       setVenueLongitude(null);
+      setShowWeather(false);
     }
   }
 
@@ -585,7 +588,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           editor_user_ids: isCreator ? editorIds : undefined,
           is_recurring: isRecurring,
           finance_enabled: financeEnabled,
-          show_weather: showWeather,
+          show_weather: geoLocation && venueLatitude != null && venueLongitude != null && showWeather,
           recurrence_rules: recurrenceMode === 'weekly' ? normalized : [],
           recurrence_until: recurrenceMode === 'weekly' && recurrenceUntil ? formatDay(recurrenceUntil) : null,
           recurrence_dates:
@@ -699,12 +702,24 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         />
       )}
 
-      <Text style={styles.section}>{t.form.weather}</Text>
-      <Muted>{t.form.weatherHint}</Muted>
-      <View style={styles.row}>
-        <Chip label={t.form.weatherOff} active={!showWeather} onPress={() => setShowWeather(false)} />
-        <Chip label={t.form.weatherOn} active={showWeather} onPress={() => setShowWeather(true)} />
-      </View>
+      {geoLocation && venueLatitude != null && venueLongitude != null ? (
+        <>
+          <Text style={styles.section}>{t.form.weather}</Text>
+          <Muted>{t.form.weatherHint}</Muted>
+          <View style={styles.row}>
+            <Chip label={t.form.weatherOff} active={!showWeather} onPress={() => setShowWeather(false)} />
+            <Chip label={t.form.weatherOn} active={showWeather} onPress={() => setShowWeather(true)} />
+          </View>
+          {showWeather ? (
+            <WeatherWeek
+              latitude={venueLatitude}
+              longitude={venueLongitude}
+              locale={locale}
+              eventDay={startsAt ? formatDay(startsAt) : null}
+            />
+          ) : null}
+        </>
+      ) : null}
 
       <Text style={styles.section}>{t.events.capacity}</Text>
       <View style={styles.row}>

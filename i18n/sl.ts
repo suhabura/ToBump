@@ -338,7 +338,7 @@ export const sl = {
     needPrice: 'Cena je obvezna (za brezplačno vnesite 0).',
     addEditors: 'Uredniki dogodka',
     weather: 'Vreme',
-    weatherHint: 'V desnem zgornjem kotu pokaže napoved za uro začetka. Kraj mora imeti točko na zemljevidu.',
+    weatherHint: 'V desnem zgornjem kotu se pokaže vreme za uro začetka.',
     weatherOn: 'Prikaži vreme',
     weatherOff: 'Brez vremena',
     finance: 'Skupni stroški (Finance)',
