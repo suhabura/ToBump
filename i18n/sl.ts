@@ -115,7 +115,7 @@ export const sl = {
   },
   planner: {
     title: 'Planer',
-    empty: 'Nimate prihajajočih dogodkov, ki jih organizirate ali se jim pridružujete.',
+    empty: 'Nimate prihajajočih dogodkov, na katere ste prijavljeni.',
     emptyPast: 'Še nimate preteklih dogodkov, na katerih ste bili.',
     upcoming: 'Prihajajoči',
     past: 'Pretekli',

@@ -126,6 +126,10 @@ async function hydrateParents(rows: ActivityWithRelations[]): Promise<ActivityWi
 }
 
 const PLANNER_PAST_DAYS = 90;
+const PLANNER_SELECT_WITH_PARENT =
+  '*, profiles:created_by(id, first_name, last_name), enterprises(id, name, address), categories(id, name, icon, parent_id), activity_joins(count), activity_guest_attendances(count)';
+const PLANNER_SELECT_BASIC =
+  '*, profiles:created_by(id, first_name, last_name), enterprises(id, name, address), categories(id, name, icon), activity_joins(count), activity_guest_attendances(count)';
 
 async function fetchMineAndJoined(
   userId: string,
@@ -133,10 +137,6 @@ async function fetchMineAndJoined(
   windowStart: Date,
   windowEnd: Date
 ): Promise<ActivityWithRelations[]> {
-  const selectWithParent =
-    '*, profiles:created_by(id, first_name, last_name), enterprises(id, name, address), categories(id, name, icon, parent_id), activity_joins(count), activity_guest_attendances(count)';
-  const selectBasic =
-    '*, profiles:created_by(id, first_name, last_name), enterprises(id, name, address), categories(id, name, icon), activity_joins(count), activity_guest_attendances(count)';
   const pastFrom = new Date();
   pastFrom.setDate(pastFrom.getDate() - PLANNER_PAST_DAYS);
   const windowFromIso = windowStart.toISOString();
@@ -194,9 +194,39 @@ async function fetchMineAndJoined(
     return { data, error };
   }
 
-  let { data, error } = await load(selectWithParent);
+  let { data, error } = await load(PLANNER_SELECT_WITH_PARENT);
   if (error) {
-    const retry = await load(selectBasic);
+    const retry = await load(PLANNER_SELECT_BASIC);
+    data = retry.data;
+    error = retry.error;
+  }
+  if (error) throw error;
+
+  const byId = new Map<string, ActivityWithRelations>();
+  for (const row of data) {
+    if (row?.id) byId.set(row.id, row);
+  }
+  return hydrateParents(Array.from(byId.values()));
+}
+
+async function fetchFutureJoins(joinIds: string[]): Promise<ActivityWithRelations[]> {
+  if (!joinIds.length) return [];
+  const nowIso = new Date().toISOString();
+
+  async function load(select: string) {
+    const { data, error } = await supabase
+      .from('activities')
+      .select(select)
+      .in('id', joinIds)
+      .eq('status', 'active')
+      .gte('starts_at', nowIso)
+      .order('starts_at', { ascending: true });
+    return { data: (data as ActivityWithRelations[]) ?? [], error };
+  }
+
+  let { data, error } = await load(PLANNER_SELECT_WITH_PARENT);
+  if (error) {
+    const retry = await load(PLANNER_SELECT_BASIC);
     data = retry.data;
     error = retry.error;
   }
@@ -216,6 +246,7 @@ export default function PlannerScreen() {
   const { user } = useAuth();
   const router = useRouter();
   const [items, setItems] = useState<ActivityWithRelations[]>([]);
+  const [joinedFuture, setJoinedFuture] = useState<ActivityWithRelations[]>([]);
   const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
   const [follows, setFollows] = useState<Set<string>>(new Set());
   const [skippedBySeries, setSkippedBySeries] = useState<Map<string, Set<string>>>(new Map());
@@ -245,9 +276,13 @@ export default function PlannerScreen() {
           .eq('user_id', user.id);
         const ids = (joins ?? []).map((j) => j.activity_id);
         setJoinedIds(new Set(ids));
-        const rows = await fetchMineAndJoined(user.id, ids, windowStart, windowEnd);
+        const [rows, futureJoins] = await Promise.all([
+          fetchMineAndJoined(user.id, ids, windowStart, windowEnd),
+          fetchFutureJoins(ids),
+        ]);
         setItems(rows);
-        const seriesIds = Array.from(new Set(rows.map((a) => seriesKey(a))));
+        setJoinedFuture(futureJoins);
+        const seriesIds = Array.from(new Set(rows.concat(futureJoins).map((a) => seriesKey(a))));
         const [followSet, skipped] = await Promise.all([
           fetchSeriesFollows(user.id),
           fetchSkippedDays(seriesIds),
@@ -391,10 +426,24 @@ export default function PlannerScreen() {
 
   const upcoming = useMemo(() => {
     const now = Date.now();
-    return plannerItems
-      .filter((a) => !a.virtual && !a.skipped && a.status === 'active' && new Date(a.starts_at).getTime() >= now)
-      .sort((a, b) => a.starts_at.localeCompare(b.starts_at));
-  }, [plannerItems]);
+    const byKey = new Map<string, PlannerItem>();
+    for (const a of joinedFuture) {
+      if (a.status !== 'active') continue;
+      const starts = new Date(a.starts_at);
+      if (Number.isNaN(starts.getTime()) || starts.getTime() < now) continue;
+      const sid = seriesKey(a);
+      const day = localDayKey(starts);
+      if (skippedBySeries.get(sid)?.has(day)) continue;
+      byKey.set(a.id, {
+        ...a,
+        join_count: signupCount(a),
+        slotKey: a.id,
+        virtual: false,
+        skipped: false,
+      });
+    }
+    return Array.from(byKey.values()).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  }, [joinedFuture, skippedBySeries]);
 
   const weekLabels = useMemo(
     () => days.slice(0, 7).map((d) => format(d, 'EEEEEE', { locale: dfLocale })),
