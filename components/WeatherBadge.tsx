@@ -97,10 +97,17 @@ export function WeatherWeek({
     <View style={weekStyles.row}>
       {days.map((day) => {
         const marked = eventDay != null && day.day === eventDay;
-        const label = format(new Date(`${day.day}T12:00:00`), 'EEE', { locale: dfLocale });
+        const when = new Date(`${day.day}T12:00:00`);
+        const label = format(when, 'EEE', { locale: dfLocale });
+        const dateLabel = format(when, 'd. MMM', { locale: dfLocale });
         return (
           <View key={day.day} style={[weekStyles.day, marked ? weekStyles.dayMarked : null]}>
-            <Text style={[weekStyles.label, marked ? weekStyles.labelMarked : null]}>{label}</Text>
+            <Text style={[weekStyles.label, marked ? weekStyles.labelMarked : null]} numberOfLines={1}>
+              {label}
+            </Text>
+            <Text style={[weekStyles.date, marked ? weekStyles.labelMarked : null]} numberOfLines={1}>
+              {dateLabel}
+            </Text>
             <Text style={weekStyles.mark}>{weatherMark(day.code)}</Text>
             <Text style={weekStyles.high}>{day.max}°</Text>
             <Text style={weekStyles.low}>{day.min}°</Text>
@@ -136,6 +143,11 @@ const weekStyles = StyleSheet.create({
     fontWeight: '700',
     color: theme.colors.textMuted,
     textTransform: 'capitalize',
+  },
+  date: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: theme.colors.textMuted,
   },
   labelMarked: {
     color: theme.colors.primaryDark,
