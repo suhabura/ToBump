@@ -1,7 +1,6 @@
 import {
   addDays,
   addMonths,
-  differenceInCalendarDays,
   endOfMonth,
   endOfWeek,
   endOfDay,
@@ -17,9 +16,10 @@ import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import { Button, EmptyState, Loading, Muted, Screen, Subtitle } from '@/components/ui';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
+import { Button, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
-import { ensureDueRecurringActivities, leaveActivity } from '@/lib/api';
+import { ensureDueRecurringActivities } from '@/lib/api';
 import { seriesKey } from '@/lib/finance';
 import {
   expandSeriesSlots,
@@ -35,9 +35,9 @@ import {
 } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
-import { activityLocationLabel, categoryLabel } from '@/lib/types';
+import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName } from '@/lib/types';
 import { showAlert } from '@/lib/dialog';
-import { useLocale, useT, type Translations } from '@/i18n';
+import { useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
 type PlannerItem = ActivityWithRelations & {
@@ -46,12 +46,14 @@ type PlannerItem = ActivityWithRelations & {
   skipped?: boolean;
 };
 
-function relativeDayLabel(startsAt: Date, t: Translations, now = new Date()): string {
-  const days = differenceInCalendarDays(startOfDay(startsAt), startOfDay(now));
-  if (days <= 0) return t.planner.today;
-  if (days === 1) return t.planner.tomorrow;
-  if (days === 2) return t.planner.dayAfterTomorrow;
-  return t.planner.inDays(days);
+function signupCount(row: { activity_joins?: unknown; activity_guest_attendances?: unknown }): number {
+  const nested = (rel: unknown) => {
+    if (Array.isArray(rel) && rel[0] && typeof rel[0] === 'object' && 'count' in (rel[0] as object)) {
+      return Number((rel[0] as { count: number }).count) || 0;
+    }
+    return 0;
+  };
+  return nested(row.activity_joins) + nested(row.activity_guest_attendances);
 }
 
 function dayKey(d: Date): string {
@@ -132,8 +134,9 @@ async function fetchMineAndJoined(
   windowEnd: Date
 ): Promise<ActivityWithRelations[]> {
   const selectWithParent =
-    '*, enterprises(id, name, address), categories(id, name, icon, parent_id)';
-  const selectBasic = '*, enterprises(id, name, address), categories(id, name, icon)';
+    '*, profiles:created_by(id, first_name, last_name), enterprises(id, name, address), categories(id, name, icon, parent_id), activity_joins(count), activity_guest_attendances(count)';
+  const selectBasic =
+    '*, profiles:created_by(id, first_name, last_name), enterprises(id, name, address), categories(id, name, icon), activity_joins(count), activity_guest_attendances(count)';
   const pastFrom = new Date();
   pastFrom.setDate(pastFrom.getDate() - PLANNER_PAST_DAYS);
   const windowFromIso = windowStart.toISOString();
@@ -304,6 +307,7 @@ export default function PlannerScreen() {
       if (skippedBySeries.get(sid)?.has(day)) continue;
       byKey.set(`${sid}:${day}`, {
         ...a,
+        join_count: signupCount(a),
         slotKey: `${sid}:${day}`,
         virtual: false,
         skipped: false,
@@ -340,6 +344,7 @@ export default function PlannerScreen() {
         const durationMs = slot.durationMinutes * 60_000;
         byKey.set(mapKey, {
           ...template,
+          join_count: 0,
           starts_at: slot.startsAt.toISOString(),
           ends_at: new Date(slot.startsAt.getTime() + durationMs).toISOString(),
           duration_minutes: slot.durationMinutes,
@@ -402,18 +407,6 @@ export default function PlannerScreen() {
     ? t.planner.todayHeading
     : format(selectedDay, 'EEEE, d. M. yyyy', { locale: dfLocale });
 
-  async function onLeave(id: string) {
-    if (!user) return;
-    try {
-      await leaveActivity(id, user.id);
-      await load({ silent: true });
-    } catch (e) {
-      await load({ silent: true });
-      const msg = e instanceof Error ? e.message : t.common.error;
-      showAlert(t.common.error, msg === 'DECLINES_DB' ? t.events.declineDbFix : msg);
-    }
-  }
-
   async function onJoinSlot(item: PlannerItem) {
     if (!user) return;
     setBusyKey(item.slotKey);
@@ -440,73 +433,57 @@ export default function PlannerScreen() {
     }
   }
 
-  function renderEventCard(item: PlannerItem, opts: { showRelative: boolean; allowActions: boolean }) {
+  function renderEventCard(item: PlannerItem) {
     const starts = new Date(item.starts_at);
     const location = activityLocationLabel(item);
     const future = starts.getTime() >= Date.now();
     const isMine = item.created_by === user?.id;
     const isJoined = !item.virtual && joinedIds.has(item.id);
-    const showActions = opts.allowActions && future;
     const busy = busyKey === item.slotKey;
+    const cat = categoryLabel(item.categories) ?? item.title;
+    const host = isMine ? '' : displayName(item.profiles);
+    const capRange = activityCapacityRange(item);
+    const showJoin = future && !item.skipped && !isJoined;
     return (
       <View style={[styles.card, isMine ? styles.cardMine : null]}>
-        <View style={styles.cardBody}>
-          {isMine ? (
-            <Text style={styles.overline} numberOfLines={1}>
-              {t.events.organizing}
+        <Pressable style={styles.cardBody} onPress={() => void onOpenSlot(item)}>
+          <Text style={[styles.overline, isMine ? styles.roleOrganizing : styles.roleInvited]} numberOfLines={1}>
+            {isMine ? t.events.organizing : host ? t.events.invitedBy(host) : t.events.invitedBadge}
+          </Text>
+          <Subtitle>{cat}</Subtitle>
+          <Text style={styles.when}>
+            {format(starts, 'EEE, d MMM · HH:mm', { locale: dfLocale })}
+          </Text>
+          {location ? (
+            <Text style={styles.metaLine} numberOfLines={1}>
+              <FontAwesome name="map-marker" size={12} color={theme.colors.textMuted} /> {location}
             </Text>
           ) : null}
-          <View style={styles.cardTop}>
-            <Pressable style={styles.cardTitle} onPress={() => onOpenSlot(item)}>
-              <Subtitle>{categoryLabel(item.categories) ?? item.title}</Subtitle>
-            </Pressable>
-            {item.virtual ? (
-              <Text style={styles.tagMuted}>{t.planner.upcomingSlot}</Text>
-            ) : null}
-          </View>
-          <Pressable onPress={() => onOpenSlot(item)}>
-            <Muted>
-              {format(starts, 'EEE, d MMM · HH:mm', { locale: dfLocale })}
-              {opts.showRelative ? ` · ${relativeDayLabel(starts, t)}` : ''}
-            </Muted>
-            {location ? (
-              <Muted>
-                {t.events.location}: {location}
-              </Muted>
-            ) : null}
-          </Pressable>
+          <Text style={styles.metaLine}>{activityPriceLabel(item, t.common)}</Text>
+          <Text style={styles.metaLine}>
+            <FontAwesome name="users" size={11} color={theme.colors.textMuted} /> {t.events.joinedCount}:{' '}
+            {item.join_count ?? 0}
+            {capRange ? ` · ${t.events.capacity}: ${capRange}` : ''}
+          </Text>
+        </Pressable>
+        <View style={styles.actions} onStartShouldSetResponder={() => true}>
+          <Button
+            label={t.events.chat}
+            variant="outline"
+            size="sm"
+            icon="comments"
+            onPress={() => router.push(`/chat/${item.id}`)}
+          />
+          {showJoin ? (
+            <Button
+              label={t.events.join}
+              size="sm"
+              icon="check"
+              loading={busy}
+              onPress={() => void onJoinSlot(item)}
+            />
+          ) : null}
         </View>
-        {showActions ? (
-          <View style={styles.actions} onStartShouldSetResponder={() => true}>
-            {!item.skipped && (isJoined || (!item.virtual && isMine)) ? (
-              <Button
-                label={t.events.chat}
-                variant="secondary"
-                size="sm"
-                icon="comments"
-                onPress={() => router.push(`/chat/${item.id}`)}
-              />
-            ) : null}
-            {showActions && !item.skipped && !isJoined ? (
-              <Button
-                label={t.events.join}
-                size="sm"
-                icon="check"
-                loading={busy}
-                onPress={() => onJoinSlot(item)}
-              />
-            ) : null}
-            {showActions && isJoined ? (
-              <Button
-                label={t.events.leave}
-                variant="dangerOutline"
-                size="sm"
-                icon="sign-out"
-                onPress={() => onLeave(item.id)}
-              />
-            ) : null}
-          </View>
-        ) : null}
       </View>
     );
   }
@@ -590,10 +567,7 @@ export default function PlannerScreen() {
                   <Subtitle>{selectedHeading}</Subtitle>
                   {selectedDayEvents.map((item) => (
                     <View key={`day-${item.slotKey}`}>
-                      {renderEventCard(item, {
-                        showRelative: false,
-                        allowActions: new Date(item.starts_at).getTime() >= Date.now(),
-                      })}
+                      {renderEventCard(item)}
                     </View>
                   ))}
                 </View>
@@ -606,7 +580,7 @@ export default function PlannerScreen() {
           }
           ListEmptyComponent={<EmptyState title={t.planner.empty} />}
           renderItem={({ item }) =>
-            renderEventCard(item, { showRelative: true, allowActions: true })
+            renderEventCard(item)
           }
         />
       )}
@@ -715,14 +689,11 @@ const styles = StyleSheet.create({
   section: { marginBottom: theme.space.sm },
   card: {
     width: '100%',
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    flexWrap: 'nowrap',
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    marginBottom: theme.space.sm,
+    marginBottom: 12,
     overflow: 'hidden',
     ...theme.shadow.card,
   },
@@ -731,52 +702,35 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.primarySoft,
   },
   cardBody: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 0,
-    minWidth: 0,
     padding: theme.space.md,
+    paddingBottom: 10,
   },
-  cardTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-    marginBottom: 4,
-  },
-  cardTitle: { flex: 1, flexShrink: 1, minWidth: 0 },
   overline: {
     fontSize: 11,
     fontWeight: '700',
     lineHeight: 14,
     marginBottom: 4,
-    color: theme.colors.primaryDark,
   },
-  tagMuted: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 999,
-    overflow: 'hidden',
-    fontSize: 11,
-    fontWeight: '700',
-    backgroundColor: theme.colors.surfaceElevated,
+  roleOrganizing: { color: theme.colors.primaryDark },
+  roleInvited: { color: theme.colors.warning },
+  when: {
+    color: theme.colors.primaryDark,
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  metaLine: {
     color: theme.colors.textMuted,
-    flexShrink: 0,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
   },
   actions: {
-    flexGrow: 0,
-    flexShrink: 0,
-    flexDirection: 'column',
-    justifyContent: 'center',
-    alignItems: 'stretch',
-    gap: 6,
-    width: 148,
-    minWidth: 148,
-    maxWidth: 148,
-    paddingVertical: theme.space.md,
-    paddingHorizontal: 10,
-    borderLeftWidth: StyleSheet.hairlineWidth,
-    borderLeftColor: theme.colors.border,
-    backgroundColor: theme.colors.surfaceElevated,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 8,
+    paddingHorizontal: theme.space.md,
+    paddingBottom: theme.space.md,
   },
 });
