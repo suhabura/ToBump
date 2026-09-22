@@ -450,7 +450,9 @@ export default function PlannerScreen() {
           <Text style={[styles.overline, isMine ? styles.roleOrganizing : styles.roleInvited]} numberOfLines={1}>
             {isMine ? t.events.organizing : host ? t.events.invitedBy(host) : t.events.invitedBadge}
           </Text>
-          <Subtitle>{cat}</Subtitle>
+          <Text style={styles.cardTitle} numberOfLines={2}>
+            {cat}
+          </Text>
           <Text style={styles.when}>
             {format(starts, 'EEE, d MMM · HH:mm', { locale: dfLocale })}
           </Text>
@@ -459,7 +461,9 @@ export default function PlannerScreen() {
               <FontAwesome name="map-marker" size={12} color={theme.colors.textMuted} /> {location}
             </Text>
           ) : null}
-          <Text style={styles.metaLine}>{activityPriceLabel(item, t.common)}</Text>
+          {item.finance_enabled ? (
+            <Text style={styles.metaLine}>{activityPriceLabel(item, t.common)}</Text>
+          ) : null}
           <Text style={styles.metaLine}>
             <FontAwesome name="users" size={11} color={theme.colors.textMuted} /> {t.events.joinedCount}:{' '}
             {item.join_count ?? 0}
@@ -470,14 +474,14 @@ export default function PlannerScreen() {
           <Button
             label={t.events.chat}
             variant="outline"
-            size="sm"
+            size="xs"
             icon="comments"
             onPress={() => router.push(`/chat/${item.id}`)}
           />
           {showJoin ? (
             <Button
               label={t.events.join}
-              size="sm"
+              size="xs"
               icon="check"
               loading={busy}
               onPress={() => void onJoinSlot(item)}
@@ -703,7 +707,14 @@ const styles = StyleSheet.create({
   },
   cardBody: {
     padding: theme.space.md,
-    paddingBottom: 10,
+    paddingBottom: 8,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: theme.colors.text,
+    letterSpacing: -0.2,
+    lineHeight: 20,
   },
   overline: {
     fontSize: 11,
@@ -715,15 +726,17 @@ const styles = StyleSheet.create({
   roleInvited: { color: theme.colors.warning },
   when: {
     color: theme.colors.primaryDark,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    marginBottom: 4,
+    lineHeight: 18,
+    marginTop: 1,
+    marginBottom: 2,
   },
   metaLine: {
     color: theme.colors.textMuted,
     fontSize: 13,
     lineHeight: 18,
-    marginTop: 2,
+    marginTop: 1,
   },
   actions: {
     flexDirection: 'row',
@@ -731,6 +744,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 8,
     paddingHorizontal: theme.space.md,
-    paddingBottom: theme.space.md,
+    paddingBottom: 10,
   },
 });

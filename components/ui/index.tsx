@@ -47,7 +47,7 @@ export function Button({
   variant?: 'primary' | 'secondary' | 'danger' | 'dangerOutline' | 'ghost' | 'outline';
   disabled?: boolean;
   loading?: boolean;
-  size?: 'md' | 'sm';
+  size?: 'md' | 'sm' | 'xs';
   icon?: React.ComponentProps<typeof FontAwesome>['name'];
   selected?: boolean;
 }) {
@@ -72,6 +72,7 @@ export function Button({
       style={({ pressed }) => [
         styles.btn,
         size === 'sm' && styles.btnSm,
+        size === 'xs' && styles.btnXs,
         variant === 'primary' && styles.btnPrimary,
         variant === 'secondary' && styles.btnSecondary,
         variant === 'danger' && styles.btnDanger,
@@ -86,11 +87,18 @@ export function Button({
         <ActivityIndicator color={iconColor} />
       ) : (
         <View style={styles.btnInner}>
-          {icon ? <FontAwesome name={icon} size={size === 'sm' ? 13 : 15} color={iconColor} /> : null}
+          {icon ? (
+            <FontAwesome
+              name={icon}
+              size={size === 'xs' ? 12 : size === 'sm' ? 13 : 15}
+              color={iconColor}
+            />
+          ) : null}
           <Text
             style={[
               styles.btnText,
               size === 'sm' && styles.btnTextSm,
+              size === 'xs' && styles.btnTextXs,
               (variant === 'secondary' || variant === 'ghost') && { color: theme.colors.primary },
               variant === 'outline' && { color: selected ? theme.colors.primaryDark : theme.colors.text },
               variant === 'dangerOutline' && { color: theme.colors.danger },
@@ -233,6 +241,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     minHeight: 42,
   },
+  btnXs: {
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    minHeight: 34,
+  },
   btnInner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -274,6 +287,9 @@ const styles = StyleSheet.create({
   },
   btnTextSm: {
     fontSize: 14,
+  },
+  btnTextXs: {
+    fontSize: 13,
   },
   empty: {
     paddingVertical: 48,

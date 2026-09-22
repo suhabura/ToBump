@@ -4,7 +4,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
-import { Button, Chip, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
+import { Button, Chip, EmptyState, Loading, Screen } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEventsHeader } from '@/contexts/EventsHeaderContext';
 import { fetchActivities, clearActivityDecline, declineActivity, joinActivity } from '@/lib/api';
@@ -256,7 +256,9 @@ export default function EventsScreen() {
                       {role.label}
                     </Text>
                   ) : null}
-                  <Subtitle>{cat}</Subtitle>
+                  <Text style={styles.cardTitle} numberOfLines={2}>
+                    {cat}
+                  </Text>
                   <Text style={styles.when}>
                     {format(new Date(item.starts_at), 'EEE, d MMM · HH:mm', { locale: dfLocale })}
                   </Text>
@@ -267,7 +269,9 @@ export default function EventsScreen() {
                       {item.distance_m != null ? ` · ${formatDistance(item.distance_m)}` : ''}
                     </Text>
                   ) : null}
-                  <Text style={styles.metaLine}>{activityPriceLabel(item, t.common)}</Text>
+                  {item.finance_enabled ? (
+                    <Text style={styles.metaLine}>{activityPriceLabel(item, t.common)}</Text>
+                  ) : null}
                   <Text style={styles.metaLine}>
                     <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
                     {t.events.joinedCount}: {item.join_count ?? 0}
@@ -280,7 +284,7 @@ export default function EventsScreen() {
                     <Button
                       label={list === 'declined' ? t.events.revert : t.events.decline}
                       variant="outline"
-                      size="sm"
+                      size="xs"
                       disabled={busy}
                       onPress={() => void onDecline(item)}
                     />
@@ -288,7 +292,7 @@ export default function EventsScreen() {
                       label={full ? t.events.full : t.events.join}
                       disabled={full || busy}
                       loading={busy}
-                      size="sm"
+                      size="xs"
                       icon="check"
                       onPress={() => void onJoin(item)}
                     />
@@ -362,7 +366,14 @@ const styles = StyleSheet.create({
   },
   cardBody: {
     padding: theme.space.md,
-    paddingBottom: 10,
+    paddingBottom: 8,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: theme.colors.text,
+    letterSpacing: -0.2,
+    lineHeight: 20,
   },
   overline: {
     fontSize: 11,
@@ -375,15 +386,17 @@ const styles = StyleSheet.create({
   roleQuiet: { color: theme.colors.textMuted },
   when: {
     color: theme.colors.primaryDark,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '600',
-    marginBottom: 4,
+    lineHeight: 18,
+    marginTop: 1,
+    marginBottom: 2,
   },
   metaLine: {
     color: theme.colors.textMuted,
     fontSize: 13,
     lineHeight: 18,
-    marginTop: 2,
+    marginTop: 1,
   },
   actions: {
     flexDirection: 'row',
@@ -391,6 +404,6 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     gap: 8,
     paddingHorizontal: theme.space.md,
-    paddingBottom: theme.space.md,
+    paddingBottom: 10,
   },
 });
