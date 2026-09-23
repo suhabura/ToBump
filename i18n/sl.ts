@@ -60,6 +60,7 @@ export const sl = {
       'Prijatelji udeležencev se lahko pridružijo šele, ko se nekdo prijavi. Organizator se ne šteje kot prijava.',
     fofOpenNotice: (name: string, title: string) =>
       `${name} je na dogodku ${title}. Odprt je tudi zate.`,
+    fofCloseNotice: (title: string) => `Dogodek ${title} ni več odprt zate.`,
     openToYou: 'Odprto zate',
     commercial: 'Komercialni',
     commercialRadius: 'Razdalja',

@@ -60,6 +60,7 @@ export const en = {
       'Friends of participants can join only after someone signs up. The organizer does not count as a signup.',
     fofOpenNotice: (name: string, title: string) =>
       `${name} is at ${title}. It's open to you too.`,
+    fofCloseNotice: (title: string) => `${title} is no longer open to you.`,
     openToYou: 'Open to you',
     commercial: 'Commercial',
     commercialRadius: 'Distance',

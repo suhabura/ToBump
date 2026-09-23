@@ -87,7 +87,7 @@ export function ActivityExtraInvitePanel({ activity, userId, hasSignup = false, 
         throw error;
       }
       if (!data) throw new Error(t.common.error);
-      if (on) await notifyFriendsOfJoiners();
+      await notifyFriendsOfJoiners(on);
       onChanged?.();
     } catch (e) {
       Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
@@ -96,7 +96,7 @@ export function ActivityExtraInvitePanel({ activity, userId, hasSignup = false, 
     }
   }
 
-  async function notifyFriendsOfJoiners() {
+  async function notifyFriendsOfJoiners(opened: boolean) {
     const { data, error } = await supabase.rpc('fof_open_recipients', { p_activity_id: activity.id });
     if (error) {
       if (/function|does not exist|schema cache/i.test(error.message ?? '')) return;
@@ -105,16 +105,23 @@ export function ActivityExtraInvitePanel({ activity, userId, hasSignup = false, 
     const rows = (data ?? []) as { recipient_id: string; joiner_id: string }[];
     if (!rows.length) return;
     const names = new Map<string, string>();
-    await Promise.all(
-      Array.from(new Set(rows.map((row) => row.joiner_id))).map(async (id) => {
-        names.set(id, await profileDisplayName(id));
-      })
-    );
+    if (opened) {
+      await Promise.all(
+        Array.from(new Set(rows.map((row) => row.joiner_id))).map(async (id) => {
+          names.set(id, await profileDisplayName(id));
+        })
+      );
+    }
     await Promise.all(
       rows.map((row) =>
-        createNotification(row.recipient_id, 'fof', t.events.fofOpenNotice(names.get(row.joiner_id) ?? '', activity.title), {
-          activity_id: activity.id,
-        })
+        createNotification(
+          row.recipient_id,
+          'fof',
+          opened
+            ? t.events.fofOpenNotice(names.get(row.joiner_id) ?? '', activity.title)
+            : t.events.fofCloseNotice(activity.title),
+          opened ? { activity_id: activity.id } : {}
+        )
       )
     );
   }
