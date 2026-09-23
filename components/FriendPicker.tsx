@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Chip, Input, Muted } from '@/components/ui';
 import type { Profile } from '@/lib/types';
@@ -30,6 +30,7 @@ export function FriendPicker({
 }: Props) {
   const [query, setQuery] = useState('');
   const picking = useRef(false);
+  const pickedAt = useRef(0);
   const locked = useMemo(() => new Set(lockedIds), [lockedIds]);
 
   const people = useMemo(() => {
@@ -66,16 +67,32 @@ export function FriendPicker({
     [people, selectedIds]
   );
 
-  function pick(friend: Profile) {
+  function pick(friend: Profile, source: string) {
     picking.current = true;
-    if (!selectedIds.includes(friend.id)) {
+    pickedAt.current = Date.now();
+    const already = selectedIds.includes(friend.id);
+    // #region agent log
+    fetch('http://127.0.0.1:7934/ingest/22b91ff0-7fd0-4a8e-9fd9-fb2a5a18cb92',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d24ac1'},body:JSON.stringify({sessionId:'d24ac1',runId:'pre-fix',hypothesisId:'A',location:'FriendPicker.tsx:pick',message:'pick called',data:{source,before:selectedIds.length,already,idTail:friend.id.slice(-6)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+    if (!already) {
       onChange([...selectedIds, friend.id]);
     }
     setQuery('');
   }
 
+  useEffect(() => {
+    const missing = selectedIds.filter((id) => !people.has(id)).length;
+    // #region agent log
+    fetch('http://127.0.0.1:7934/ingest/22b91ff0-7fd0-4a8e-9fd9-fb2a5a18cb92',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d24ac1'},body:JSON.stringify({sessionId:'d24ac1',runId:'pre-fix',hypothesisId:'C',location:'FriendPicker.tsx:selection',message:'selection render',data:{requested:selectedIds.length,resolved:selected.length,missing,queryLen:query.trim().length,matchCount:matches.length},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
+  }, [selectedIds, selected.length, people, query, matches.length]);
+
   function remove(id: string) {
+    // #region agent log
+    fetch('http://127.0.0.1:7934/ingest/22b91ff0-7fd0-4a8e-9fd9-fb2a5a18cb92',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d24ac1'},body:JSON.stringify({sessionId:'d24ac1',runId:'pre-fix',hypothesisId:'D',location:'FriendPicker.tsx:remove',message:'remove called',data:{idTail:id.slice(-6),before:selectedIds.length,picking:picking.current,locked:locked.has(id)},timestamp:Date.now()})}).catch(()=>{});
+    // #endregion
     if (locked.has(id)) return;
+    if (Date.now() - pickedAt.current < 500) return;
     onChange(selectedIds.filter((x) => x !== id));
   }
 
@@ -105,12 +122,20 @@ export function FriendPicker({
               <Pressable
                 key={f.id}
                 style={styles.item}
-                onPressIn={() => pick(f)}
+                onPressIn={() => {
+                  // #region agent log
+                  fetch('http://127.0.0.1:7934/ingest/22b91ff0-7fd0-4a8e-9fd9-fb2a5a18cb92',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d24ac1'},body:JSON.stringify({sessionId:'d24ac1',runId:'pre-fix',hypothesisId:'A',location:'FriendPicker.tsx:onPressIn',message:'press in',data:{idTail:f.id.slice(-6)},timestamp:Date.now()})}).catch(()=>{});
+                  // #endregion
+                  pick(f, 'pressIn');
+                }}
                 {...(Platform.OS === 'web'
                   ? {
                       onMouseDown: (e: { preventDefault?: () => void }) => {
+                        // #region agent log
+                        fetch('http://127.0.0.1:7934/ingest/22b91ff0-7fd0-4a8e-9fd9-fb2a5a18cb92',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d24ac1'},body:JSON.stringify({sessionId:'d24ac1',runId:'pre-fix',hypothesisId:'A',location:'FriendPicker.tsx:onMouseDown',message:'mouse down',data:{idTail:f.id.slice(-6)},timestamp:Date.now()})}).catch(()=>{});
+                        // #endregion
                         e.preventDefault?.();
-                        pick(f);
+                        pick(f, 'mouseDown');
                       },
                     }
                   : {})}>

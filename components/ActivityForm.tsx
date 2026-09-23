@@ -765,7 +765,12 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           <FriendPicker
             friends={friends}
             selectedIds={inviteIds}
-            onChange={setInviteIds}
+            onChange={(ids) => {
+              // #region agent log
+              fetch('http://127.0.0.1:7934/ingest/22b91ff0-7fd0-4a8e-9fd9-fb2a5a18cb92',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'d24ac1'},body:JSON.stringify({sessionId:'d24ac1',runId:'pre-fix',hypothesisId:'B',location:'ActivityForm.tsx:invite',message:'invite onChange',data:{nextCount:ids.length,privacy},timestamp:Date.now()})}).catch(()=>{});
+              // #endregion
+              setInviteIds(ids);
+            }}
             label={t.form.selectFriends}
             placeholder={t.form.searchFriends}
             emptyHint={t.form.noFriends}
