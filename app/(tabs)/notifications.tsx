@@ -55,7 +55,8 @@ export default function NotificationsScreen() {
       (item.type === 'invite' ||
         item.type === 'message' ||
         item.type === 'activity_join' ||
-        item.type === 'editor')
+        item.type === 'editor' ||
+        item.type === 'fof')
     ) {
       router.push(`/activity/${activityId}`);
     }

@@ -443,12 +443,14 @@ export default function ActivityDetailScreen() {
               disabled={full}
             />
           )}
-          <Button
-            label={t.events.decline}
-            variant={declined && !joined ? 'dangerOutline' : 'secondary'}
-            icon="times"
-            onPress={() => void onNotGoing()}
-          />
+          {joined || !declined ? (
+            <Button
+              label={t.events.decline}
+              variant="secondary"
+              icon="times"
+              onPress={() => void onNotGoing()}
+            />
+          ) : null}
           {canEdit ? (
             <Button
               label={t.events.edit}

@@ -58,6 +58,8 @@ export const en = {
     editorNotice: (name: string, title: string) => `${name} let you edit ${title}.`,
     fofWaiting:
       'Friends of participants can join only after someone signs up. The organizer does not count as a signup.',
+    fofOpenNotice: (name: string, title: string) =>
+      `${name} is at ${title}. It's open to you too.`,
     openToYou: 'Open to you',
     commercial: 'Commercial',
     commercialRadius: 'Distance',

@@ -150,6 +150,11 @@ export default function EventsScreen() {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_guest_attendances' }, onAttendance)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_declines' }, reloadOnly)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, reloadOnly)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+          reloadOnly
+        )
         .subscribe();
 
       return () => {
@@ -291,13 +296,15 @@ export default function EventsScreen() {
 
                 {joined ? null : (
                   <View style={styles.actions} onStartShouldSetResponder={() => true}>
-                    <Button
-                      label={list === 'declined' ? t.events.revert : t.events.decline}
-                      variant="outline"
-                      size="xs"
-                      disabled={busy}
-                      onPress={() => void onDecline(item)}
-                    />
+                    {item.is_declined ? null : (
+                      <Button
+                        label={t.events.decline}
+                        variant="outline"
+                        size="xs"
+                        disabled={busy}
+                        onPress={() => void onDecline(item)}
+                      />
+                    )}
                     <Button
                       label={full ? t.events.full : t.events.join}
                       disabled={full || busy}

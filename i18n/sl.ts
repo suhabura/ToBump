@@ -58,6 +58,8 @@ export const sl = {
     editorNotice: (name: string, title: string) => `${name} ti je dal pravico urejanja dogodka ${title}.`,
     fofWaiting:
       'Prijatelji udeležencev se lahko pridružijo šele, ko se nekdo prijavi. Organizator se ne šteje kot prijava.',
+    fofOpenNotice: (name: string, title: string) =>
+      `${name} je na dogodku ${title}. Odprt je tudi zate.`,
     openToYou: 'Odprto zate',
     commercial: 'Komercialni',
     commercialRadius: 'Razdalja',

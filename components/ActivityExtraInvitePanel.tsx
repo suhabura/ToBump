@@ -87,12 +87,36 @@ export function ActivityExtraInvitePanel({ activity, userId, hasSignup = false, 
         throw error;
       }
       if (!data) throw new Error(t.common.error);
+      if (on) await notifyFriendsOfJoiners();
       onChanged?.();
     } catch (e) {
       Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
     } finally {
       setFofBusy(false);
     }
+  }
+
+  async function notifyFriendsOfJoiners() {
+    const { data, error } = await supabase.rpc('fof_open_recipients', { p_activity_id: activity.id });
+    if (error) {
+      if (/function|does not exist|schema cache/i.test(error.message ?? '')) return;
+      throw error;
+    }
+    const rows = (data ?? []) as { recipient_id: string; joiner_id: string }[];
+    if (!rows.length) return;
+    const names = new Map<string, string>();
+    await Promise.all(
+      Array.from(new Set(rows.map((row) => row.joiner_id))).map(async (id) => {
+        names.set(id, await profileDisplayName(id));
+      })
+    );
+    await Promise.all(
+      rows.map((row) =>
+        createNotification(row.recipient_id, 'fof', t.events.fofOpenNotice(names.get(row.joiner_id) ?? '', activity.title), {
+          activity_id: activity.id,
+        })
+      )
+    );
   }
 
   async function submit() {
