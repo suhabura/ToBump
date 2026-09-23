@@ -287,7 +287,7 @@ export default function ActivityDetailScreen() {
   if (!activity) {
     return (
       <Screen>
-        <EmptyState title="Event not found" />
+        <EmptyState title={t.events.notFound} />
       </Screen>
     );
   }

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { ActivityForm } from '@/components/ActivityForm';
 import { EmptyState, Loading, Screen } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
+import { useT } from '@/i18n';
 import { userCanEditActivity } from '@/lib/api';
 import { fetchSeriesFinanceSettings, seriesKey } from '@/lib/finance';
 import { hydrateRules, rulesFromLegacy, type RecurrenceRule } from '@/lib/recurrence';
@@ -11,6 +12,7 @@ import type { Activity, FundingMode, Privacy } from '@/lib/types';
 
 export default function EditActivityScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
+  const t = useT();
   const { user } = useAuth();
   const [forbidden, setForbidden] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -141,7 +143,7 @@ export default function EditActivityScreen() {
   if (notFound) {
     return (
       <Screen>
-        <EmptyState title="Event not found" />
+        <EmptyState title={t.events.notFound} />
       </Screen>
     );
   }
@@ -149,7 +151,7 @@ export default function EditActivityScreen() {
   if (forbidden) {
     return (
       <Screen>
-        <EmptyState title="You do not have permission to edit this event" />
+        <EmptyState title={t.events.editForbidden} />
       </Screen>
     );
   }

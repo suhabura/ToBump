@@ -23,6 +23,16 @@ export const en = {
     hasAccount: 'Already have an account?',
     logout: 'Log out',
     resetSent: 'If an account exists, we sent a password reset email.',
+    needEmailPassword: 'Enter email and password.',
+    wrongCredentials:
+      'Wrong email or password. If you don’t have an account yet, tap Sign up below.',
+    emailNotConfirmed:
+      'Email not confirmed yet. In Supabase → Authentication → Providers → Email turn off “Confirm email”, or confirm the message.',
+    needSignupFields: 'Fill in first name, email, and password (min. 6 characters).',
+    accountCreated:
+      'Account created. If email confirmation is required, check your inbox — or turn off Confirm email in Supabase. Then log in.',
+    forgotHint: 'Enter your account email and we’ll send a password reset link.',
+    passwordTooShort: 'Password must be at least 6 characters.',
   },
   events: {
     title: 'Events',
@@ -40,6 +50,11 @@ export const en = {
     organizing: 'Organizing',
     invitedBadge: 'Invited',
     invitedBy: (name: string) => `Invited by ${name}`,
+    notFound: 'Event not found',
+    editForbidden: 'You do not have permission to edit this event',
+    inviteNotice: (title: string) => `Invite to event: ${title}`,
+    joinedNotice: (title: string) => `Someone joined: ${title}`,
+    editorNotice: (title: string) => `You can edit the event: ${title}`,
     openToYou: 'Open to you',
     commercial: 'Commercial',
     commercialRadius: 'Distance',
@@ -116,6 +131,7 @@ export const en = {
   planner: {
     title: 'Planner',
     empty: 'No upcoming events you have joined.',
+    emptyDay: 'Nothing on this day.',
     emptyPast: 'No past events you attended yet.',
     upcoming: 'Upcoming',
     past: 'Past',
@@ -141,6 +157,7 @@ export const en = {
   friends: {
     title: 'Friends',
     search: 'Search users…',
+    searchHint: 'Type at least 2 characters.',
     searchAction: 'Search',
     results: 'Results',
     noMatches: 'No users match this search.',
@@ -586,6 +603,7 @@ export const en = {
     ok: 'OK',
     loading: 'Loading…',
     error: 'Something went wrong',
+    notConfigured: 'Supabase not configured',
     retry: 'Try again',
     free: 'Free',
     required: 'Required field',

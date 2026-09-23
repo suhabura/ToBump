@@ -107,7 +107,7 @@ export function ActivityExtraInvitePanel({ activity, userId, onChanged }: Props)
       if (invErr) throw invErr;
       void Promise.all(
         unique.map((uid) =>
-          createNotification(uid, 'invite', `Invite to event: ${activity.title}`, {
+          createNotification(uid, 'invite', t.events.inviteNotice(activity.title), {
             activity_id: activity.id,
           })
         )

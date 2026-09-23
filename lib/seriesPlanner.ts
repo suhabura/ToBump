@@ -1,3 +1,4 @@
+import { getT } from '@/i18n/runtime';
 import { createNotification, joinActivity } from '@/lib/api';
 import { seriesKey } from '@/lib/finance';
 import { supabase } from '@/lib/supabase';
@@ -86,7 +87,7 @@ export async function joinSeriesOccurrence(
   }
   const oid = (data as string) ?? activity.id;
   if (activity.created_by !== userId) {
-    void createNotification(activity.created_by, 'activity_join', `Someone joined: ${activity.title}`, {
+    void createNotification(activity.created_by, 'activity_join', getT().events.joinedNotice(activity.title), {
       activity_id: oid,
     });
   }

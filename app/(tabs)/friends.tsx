@@ -304,6 +304,9 @@ export default function FriendsScreen() {
         autoCorrect={false}
         autoCapitalize="none"
       />
+      {sanitizeSearch(search).length > 0 && sanitizeSearch(search).length < MIN_SEARCH ? (
+        <Muted>{t.friends.searchHint}</Muted>
+      ) : null}
 
       {sanitizeSearch(search).length >= MIN_SEARCH ? (
         <View style={{ marginTop: 12 }}>

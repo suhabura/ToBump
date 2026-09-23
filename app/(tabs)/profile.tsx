@@ -38,7 +38,7 @@ export default function ProfileScreen() {
 
   async function savePassword() {
     if (password.length < 6) {
-      Alert.alert(t.common.error, 'Password must be at least 6 characters.');
+      Alert.alert(t.common.error, t.auth.passwordTooShort);
       return;
     }
     setSavingPassword(true);
@@ -105,6 +105,8 @@ export default function ProfileScreen() {
           variant="secondary"
           onPress={() => router.push('/payments')}
         />
+        <View style={{ height: 8 }} />
+        <Button label={t.shop.title} variant="secondary" onPress={() => router.push('/shop')} />
 
         <View style={{ height: 16 }} />
         <Button label={t.auth.logout} variant="danger" onPress={() => signOut()} />

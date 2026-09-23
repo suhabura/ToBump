@@ -22,7 +22,7 @@ export default function ForgotScreen() {
   return (
     <View style={styles.wrap}>
       <Title>{t.auth.forgot}</Title>
-      <Muted>Enter your account email and we’ll send a password reset link.</Muted>
+      <Muted>{t.auth.forgotHint}</Muted>
       <View style={{ height: 16 }} />
       <Input label={t.auth.email} autoCapitalize="none" value={email} onChangeText={setEmail} />
       <Button label={t.auth.sendReset} onPress={onSubmit} loading={loading} />

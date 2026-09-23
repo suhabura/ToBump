@@ -190,7 +190,7 @@ export default function EventsScreen() {
   if (!configured) {
     return (
       <Screen>
-        <EmptyState title="Supabase not configured" subtitle={t.common.configureSupabase} />
+        <EmptyState title={t.common.notConfigured} subtitle={t.common.configureSupabase} />
       </Screen>
     );
   }

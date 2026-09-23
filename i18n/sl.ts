@@ -23,6 +23,16 @@ export const sl = {
     hasAccount: 'Že imate račun?',
     logout: 'Odjava',
     resetSent: 'Če račun obstaja, smo poslali e-pošto za ponastavitev gesla.',
+    needEmailPassword: 'Vnesite e-pošto in geslo.',
+    wrongCredentials:
+      'Napačna e-pošta ali geslo. Če računa še nimate, spodaj izberite Registracija.',
+    emailNotConfirmed:
+      'E-pošta še ni potrjena. V Supabase → Authentication → Providers → Email izklopite “Confirm email” ali potrdite sporočilo.',
+    needSignupFields: 'Izpolnite ime, e-pošto in geslo (vsaj 6 znakov).',
+    accountCreated:
+      'Račun je ustvarjen. Če je potrebna potrditev e-pošte, preverite predal — ali v Supabase izklopite Confirm email. Nato se prijavite.',
+    forgotHint: 'Vnesite e-pošto računa in poslali bomo povezavo za ponastavitev gesla.',
+    passwordTooShort: 'Geslo mora imeti vsaj 6 znakov.',
   },
   events: {
     title: 'Dogodki',
@@ -40,6 +50,11 @@ export const sl = {
     organizing: 'Organiziraš',
     invitedBadge: 'Povabljen',
     invitedBy: (name: string) => `Povabil ${name}`,
+    notFound: 'Dogodek ni najden',
+    editForbidden: 'Tega dogodka ne morete urejati',
+    inviteNotice: (title: string) => `Povabilo na dogodek: ${title}`,
+    joinedNotice: (title: string) => `Nekdo se je pridružil: ${title}`,
+    editorNotice: (title: string) => `Lahko urejaš dogodek: ${title}`,
     openToYou: 'Odprto zate',
     commercial: 'Komercialni',
     commercialRadius: 'Razdalja',
@@ -116,6 +131,7 @@ export const sl = {
   planner: {
     title: 'Planer',
     empty: 'Nimate prihajajočih dogodkov, na katere ste prijavljeni.',
+    emptyDay: 'Na ta dan ni dogodkov.',
     emptyPast: 'Še nimate preteklih dogodkov, na katerih ste bili.',
     upcoming: 'Prihajajoči',
     past: 'Pretekli',
@@ -141,6 +157,7 @@ export const sl = {
   friends: {
     title: 'Prijatelji',
     search: 'Išči uporabnike…',
+    searchHint: 'Vnesite vsaj 2 znaka.',
     searchAction: 'Išči',
     results: 'Rezultati',
     noMatches: 'Nihče ne ustreza iskanju.',
@@ -586,6 +603,7 @@ export const sl = {
     ok: 'V redu',
     loading: 'Nalaganje…',
     error: 'Nekaj je šlo narobe',
+    notConfigured: 'Supabase ni nastavljen',
     retry: 'Poskusi znova',
     free: 'Brezplačno',
     required: 'Obvezno polje',

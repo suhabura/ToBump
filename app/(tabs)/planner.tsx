@@ -18,7 +18,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { WeatherBadge } from '@/components/WeatherBadge';
-import { Button, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
+import { Button, EmptyState, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureDueRecurringActivities } from '@/lib/api';
 import { seriesKey } from '@/lib/finance';
@@ -621,16 +621,18 @@ export default function PlannerScreen() {
                 </View>
               </View>
 
-              {selectedDayEvents.length ? (
-                <View style={styles.section}>
-                  <Subtitle>{selectedHeading}</Subtitle>
-                  {selectedDayEvents.map((item) => (
+              <View style={styles.section}>
+                <Subtitle>{selectedHeading}</Subtitle>
+                {selectedDayEvents.length ? (
+                  selectedDayEvents.map((item) => (
                     <View key={`day-${item.slotKey}`}>
                       {renderEventCard(item)}
                     </View>
-                  ))}
-                </View>
-              ) : null}
+                  ))
+                ) : (
+                  <Muted>{t.planner.emptyDay}</Muted>
+                )}
+              </View>
 
               <View style={styles.section}>
                 <Subtitle>{t.planner.upcoming}</Subtitle>

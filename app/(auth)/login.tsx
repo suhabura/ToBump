@@ -21,7 +21,7 @@ export default function LoginScreen() {
       return;
     }
     if (!email.trim() || !password) {
-      setError('Enter email and password.');
+      setError(t.auth.needEmailPassword);
       return;
     }
     setLoading(true);
@@ -30,9 +30,9 @@ export default function LoginScreen() {
     if (err) {
       const tip =
         err.toLowerCase().includes('invalid') || err.toLowerCase().includes('credentials')
-          ? 'Wrong email or password. If you don’t have an account yet, tap Sign up below.'
+          ? t.auth.wrongCredentials
           : err.toLowerCase().includes('confirm') || err.toLowerCase().includes('verified')
-            ? 'Email not confirmed yet. In Supabase → Authentication → Providers → Email turn off “Confirm email”, or confirm the message.'
+            ? t.auth.emailNotConfirmed
             : err;
       setError(tip);
     }

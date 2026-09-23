@@ -22,7 +22,7 @@ export default function RegisterScreen() {
     setError(null);
     setInfo(null);
     if (!firstName.trim() || !email.trim() || password.length < 6) {
-      setError('Fill in first name, email, and password (min. 6 characters).');
+      setError(t.auth.needSignupFields);
       return;
     }
     setLoading(true);
@@ -32,7 +32,7 @@ export default function RegisterScreen() {
       setError(err);
       return;
     }
-    setInfo('Account created. If email confirmation is required, check your inbox — or turn off Confirm email in Supabase. Then log in.');
+    setInfo(t.auth.accountCreated);
     setTimeout(() => router.replace('/(auth)/login'), 1500);
   }
 

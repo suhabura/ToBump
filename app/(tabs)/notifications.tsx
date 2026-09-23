@@ -1,6 +1,6 @@
 import { format } from 'date-fns';
 import { enUS, sl as slLocale } from 'date-fns/locale';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button, EmptyState, Loading, Muted, Screen } from '@/components/ui';
@@ -12,6 +12,7 @@ import { theme } from '@/constants/theme';
 
 export default function NotificationsScreen() {
   const t = useT();
+  const router = useRouter();
   const { locale } = useLocale();
   const dfLocale = locale === 'sl' ? slLocale : enUS;
   const { user } = useAuth();
@@ -41,6 +42,25 @@ export default function NotificationsScreen() {
     load();
   }
 
+  async function openItem(item: Notification) {
+    await markRead(item.id);
+    const data = item.data ?? {};
+    const activityId = typeof data.activity_id === 'string' ? data.activity_id : null;
+    if (item.type === 'friend_request' || item.type === 'friend_accepted') {
+      router.push('/friends');
+      return;
+    }
+    if (
+      activityId &&
+      (item.type === 'invite' ||
+        item.type === 'message' ||
+        item.type === 'activity_join' ||
+        item.type === 'editor')
+    ) {
+      router.push(`/activity/${activityId}`);
+    }
+  }
+
   async function markAll() {
     if (!user) return;
     await supabase.from('notifications').update({ is_read: true }).eq('user_id', user.id).eq('is_read', false);
@@ -64,7 +84,7 @@ export default function NotificationsScreen() {
         keyExtractor={(i) => i.id}
         ListEmptyComponent={<EmptyState title={t.notifications.empty} />}
         renderItem={({ item }) => (
-          <Pressable style={styles.card} onPress={() => markRead(item.id)}>
+          <Pressable style={styles.card} onPress={() => openItem(item)}>
             <View style={styles.row}>
               {!item.is_read ? <View style={styles.dot} /> : <View style={styles.dotSpacer} />}
               <View style={{ flex: 1 }}>

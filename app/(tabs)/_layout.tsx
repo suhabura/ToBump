@@ -118,7 +118,7 @@ function TabAppHeader({
             <HeaderIcon
               name={unread > 0 ? 'bell' : 'bell-o'}
               onPress={() => router.push('/notifications')}
-              accessibilityLabel="Notifications"
+              accessibilityLabel={t.notifications.title}
               badge={unread}
             />
           </View>
@@ -129,6 +129,7 @@ function TabAppHeader({
 }
 
 function HeaderActions({ unread }: { unread: number }) {
+  const t = useT();
   const router = useRouter();
   return (
     <View style={styles.headerSide}>
@@ -136,7 +137,7 @@ function HeaderActions({ unread }: { unread: number }) {
         onPress={() => router.push('/notifications')}
         style={styles.bellHitModal}
         accessibilityRole="button"
-        accessibilityLabel="Notifications">
+        accessibilityLabel={t.notifications.title}>
         <View>
           <FontAwesome name={unread > 0 ? 'bell' : 'bell-o'} size={20} color={theme.colors.text} />
           {unread > 0 ? (
@@ -275,7 +276,7 @@ export default function TabLayout() {
         <Tabs.Screen name="shop" options={{ href: null, headerShown: false }} />
         <Tabs.Screen
           name="groups"
-          options={{ href: null, title: 'Groups', headerTitle: 'Groups', presentation: 'modal' }}
+          options={{ href: null, title: t.groups.title, headerTitle: t.groups.title, presentation: 'modal' }}
         />
         <Tabs.Screen
           name="payments"

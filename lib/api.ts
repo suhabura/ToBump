@@ -1,3 +1,4 @@
+import { getT } from '@/i18n/runtime';
 import { supabase } from '@/lib/supabase';
 import { distanceMeters } from '@/lib/geo';
 import { combineDayAndTime, firstOccurrence, isoWeekday, localDayKey, normalizeRules, seriesEndDay, type RecurrenceRule } from '@/lib/recurrence';
@@ -530,7 +531,7 @@ export async function joinActivity(activityId: string, userId: string, creatorId
   }
 
   if (creatorId !== userId) {
-    await createNotification(creatorId, 'activity_join', `Someone joined: ${title}`, {
+    await createNotification(creatorId, 'activity_join', getT().events.joinedNotice(title), {
       activity_id: activityId,
     });
   }
@@ -998,7 +999,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
       .eq('id', activityId)
       .maybeSingle();
     if (loadError) throw loadError;
-    if (!existing) throw new Error('Event not found.');
+    if (!existing) throw new Error(getT().events.notFound);
 
     // created_by must stay the original creator
     delete payload.created_by;
@@ -1154,7 +1155,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     // Notifications must not block returning to the event screen
     void Promise.all(
       unique.map((uid) =>
-        createNotification(uid, 'invite', `Invite to event: ${input.title}`, { activity_id: id })
+        createNotification(uid, 'invite', getT().events.inviteNotice(input.title), { activity_id: id })
       )
     );
   }
@@ -1192,7 +1193,7 @@ async function syncActivityEditors(
   if (newcomers.length) {
     void Promise.all(
       newcomers.map((uid) =>
-        createNotification(uid, 'editor', `You can edit the event: ${title}`, {
+        createNotification(uid, 'editor', getT().events.editorNotice(title), {
           activity_id: activityId,
         })
       )
