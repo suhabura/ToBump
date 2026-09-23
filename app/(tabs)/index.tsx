@@ -147,7 +147,6 @@ export default function EventsScreen() {
       const channel = supabase
         .channel(`events-live-${userId}`)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_joins' }, onAttendance)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_guest_attendances' }, onAttendance)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_declines' }, reloadOnly)
         .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, reloadOnly)
         .on(
@@ -162,9 +161,25 @@ export default function EventsScreen() {
         )
         .subscribe();
 
+      const noticeChannel = supabase
+        .channel(`events-notice-${userId}`)
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+          reloadOnly
+        )
+        .subscribe();
+
+      const activityChannel = supabase
+        .channel(`events-activity-${userId}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, reloadOnly)
+        .subscribe();
+
       return () => {
         if (reloadTimer.current) clearTimeout(reloadTimer.current);
         supabase.removeChannel(channel);
+        supabase.removeChannel(noticeChannel);
+        supabase.removeChannel(activityChannel);
       };
     }, [load, search, userId, configured, scheduleLiveReload])
   );

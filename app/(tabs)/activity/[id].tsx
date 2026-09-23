@@ -196,9 +196,22 @@ export default function ActivityDetailScreen() {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_declines' }, refreshIfMine)
         .subscribe();
 
+      const rowChannel = supabase
+        .channel(`activity-row-${id}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'activities', filter: `id=eq.${id}` },
+          () => {
+            if (reloadTimer.current) clearTimeout(reloadTimer.current);
+            reloadTimer.current = setTimeout(() => void load({ silent: true }), 200);
+          }
+        )
+        .subscribe();
+
       return () => {
         if (reloadTimer.current) clearTimeout(reloadTimer.current);
         supabase.removeChannel(channel);
+        supabase.removeChannel(rowChannel);
       };
     }, [load, id])
   );

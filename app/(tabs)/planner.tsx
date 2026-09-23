@@ -350,9 +350,19 @@ export default function PlannerScreen() {
         })
         .subscribe();
 
+      const reloadActivities = () => {
+        if (reloadTimer.current) clearTimeout(reloadTimer.current);
+        reloadTimer.current = setTimeout(() => void load({ silent: true }), 250);
+      };
+      const activityChannel = supabase
+        .channel(`planner-activity-${user.id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, reloadActivities)
+        .subscribe();
+
       return () => {
         if (reloadTimer.current) clearTimeout(reloadTimer.current);
         supabase.removeChannel(channel);
+        supabase.removeChannel(activityChannel);
       };
     }, [load, user?.id])
   );
