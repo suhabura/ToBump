@@ -1,5 +1,6 @@
 import { useCallback, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useFocusEffect } from 'expo-router';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { FriendPicker } from '@/components/FriendPicker';
@@ -8,7 +9,6 @@ import { confirmAction, showAlert } from '@/lib/dialog';
 import { supabase } from '@/lib/supabase';
 import { dedupeProfilesByEmail, friendshipOtherId } from '@/lib/friends';
 import type { FriendGroup, Profile } from '@/lib/types';
-import { displayName } from '@/lib/types';
 import { useT, type Translations } from '@/i18n';
 import { theme } from '@/constants/theme';
 
@@ -33,6 +33,7 @@ export default function GroupsScreen() {
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -132,6 +133,7 @@ export default function GroupsScreen() {
     }
     setName('');
     setSelectedMembers([]);
+    setCreating(false);
     load();
   }
 
@@ -165,20 +167,6 @@ export default function GroupsScreen() {
           <Button label={t.common.retry} variant="secondary" onPress={load} />
         </View>
       ) : null}
-      <Subtitle>{t.groups.newGroup}</Subtitle>
-      <Input label={t.groups.name} value={name} onChangeText={setName} placeholder={t.groups.namePlaceholder} />
-      <Muted>{t.groups.members}</Muted>
-      <FriendPicker
-        friends={friends}
-        selectedIds={selectedMembers}
-        onChange={setSelectedMembers}
-        label={t.groups.addMember}
-        placeholder={t.form.searchFriends}
-        emptyHint={t.form.noFriends}
-      />
-      <Button label={t.groups.create} onPress={createGroup} loading={saving} />
-
-      <View style={{ height: 24 }} />
       <Subtitle>{t.groups.myGroups}</Subtitle>
       <FlatList
         data={groups}
@@ -186,23 +174,46 @@ export default function GroupsScreen() {
         ListEmptyComponent={<EmptyState title={t.groups.empty} />}
         renderItem={({ item }) => (
           <View style={styles.card}>
-            <Text style={styles.name}>{item.name}</Text>
-            <Muted>
-              {t.groups.membersCount(item.memberIds.length)}{' '}
-              {item.memberIds
-                .map((id) => displayName(friends.find((f) => f.id === id) ?? null))
-                .join(', ') || '—'}
-            </Muted>
-            <Button label={t.groups.delete} variant="ghost" size="xs" onPress={() => deleteGroup(item.id, item.name)} />
+            <View style={styles.cardRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{item.name}</Text>
+                <Muted>{t.groups.membersCount(item.memberIds.length)}</Muted>
+              </View>
+              <Pressable
+                onPress={() => deleteGroup(item.id, item.name)}
+                accessibilityRole="button"
+                accessibilityLabel={t.groups.delete}
+                hitSlop={8}>
+                <FontAwesome name="trash-o" size={16} color={theme.colors.textMuted} />
+              </Pressable>
+            </View>
           </View>
         )}
       />
+
+      <Text style={styles.link} onPress={() => setCreating((open) => !open)}>
+        {creating ? t.common.cancel : t.groups.newGroup}
+      </Text>
+      {creating ? (
+        <View style={{ marginTop: 12 }}>
+          <Input label={t.groups.name} value={name} onChangeText={setName} placeholder={t.groups.namePlaceholder} />
+          <Muted>{t.groups.members}</Muted>
+          <FriendPicker
+            friends={friends}
+            selectedIds={selectedMembers}
+            onChange={setSelectedMembers}
+            label={t.groups.addMember}
+            placeholder={t.form.searchFriends}
+            emptyHint={t.form.noFriends}
+          />
+          <Button label={t.groups.create} onPress={createGroup} loading={saving} />
+        </View>
+      ) : null}
     </Screen>
   );
 }
 
 const styles = StyleSheet.create({
-  rowWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginVertical: 8 },
   card: {
     backgroundColor: theme.colors.surface,
     borderRadius: theme.radius.md,
@@ -212,7 +223,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     ...theme.shadow.card,
   },
-  name: { fontWeight: '700', fontSize: 16, color: theme.colors.text, marginBottom: 4 },
+  name: { fontWeight: '700', fontSize: 16, color: theme.colors.text },
+  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  link: {
+    color: theme.colors.primary,
+    fontWeight: '600',
+    fontSize: 15,
+    marginTop: 4,
+  },
   errorBox: { marginBottom: 12, gap: 8 },
   error: {
     color: theme.colors.danger,

@@ -216,7 +216,7 @@ export const en = {
     empty: "You don't have any groups yet.",
     delete: 'Delete',
     deleteConfirm: (name: string) => `Delete group “${name}”?`,
-    membersCount: (n: number) => `${n} members:`,
+    membersCount: (n: number) => `${n} members`,
     needName: 'Enter a group name.',
     needMember: 'Add at least one member.',
     createFailed: "Couldn't create the group.",
@@ -340,6 +340,9 @@ export const en = {
     weatherHint: 'The start-time forecast appears in the top-right corner.',
     weatherOn: 'Show weather',
     weatherOff: 'No weather',
+    more: 'More',
+    moreHide: 'Hide more',
+    when: 'When',
     finance: 'Shared expenses (Finance)',
     financeHint:
       'Track fees into the event budget, record actual costs, and settle balances among participants.',

@@ -49,20 +49,29 @@ export default function NotificationsScreen() {
 
   if (loading) return <Loading />;
 
+  const unread = items.some((item) => !item.is_read);
+
   return (
     <Screen>
-      <Button label={t.notifications.markAllRead} variant="secondary" onPress={markAll} />
-      <View style={{ height: 12 }} />
+      {unread ? (
+        <>
+          <Button label={t.notifications.markAllRead} variant="secondary" onPress={markAll} />
+          <View style={{ height: 12 }} />
+        </>
+      ) : null}
       <FlatList
         data={items}
         keyExtractor={(i) => i.id}
         ListEmptyComponent={<EmptyState title={t.notifications.empty} />}
         renderItem={({ item }) => (
-          <Pressable
-            style={[styles.card, !item.is_read && styles.unread]}
-            onPress={() => markRead(item.id)}>
-            <Text style={styles.msg}>{item.message}</Text>
-            <Muted>{format(new Date(item.created_at), 'd MMM yyyy HH:mm', { locale: dfLocale })}</Muted>
+          <Pressable style={styles.card} onPress={() => markRead(item.id)}>
+            <View style={styles.row}>
+              {!item.is_read ? <View style={styles.dot} /> : <View style={styles.dotSpacer} />}
+              <View style={{ flex: 1 }}>
+                <Text style={styles.msg}>{item.message}</Text>
+                <Muted>{format(new Date(item.created_at), 'd MMM yyyy HH:mm', { locale: dfLocale })}</Muted>
+              </View>
+            </View>
           </Pressable>
         )}
       />
@@ -80,9 +89,14 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     ...theme.shadow.card,
   },
-  unread: {
-    borderColor: theme.colors.primary,
-    backgroundColor: theme.colors.primarySoft,
+  row: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  dot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginTop: 6,
+    backgroundColor: theme.colors.primary,
   },
+  dotSpacer: { width: 8 },
   msg: { fontWeight: '600', color: theme.colors.text, marginBottom: 4 },
 });

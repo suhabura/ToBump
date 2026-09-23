@@ -1,6 +1,7 @@
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { createNotification } from '@/lib/api';
@@ -321,22 +322,20 @@ export default function FriendsScreen() {
         </View>
       ) : null}
 
-      <View style={{ marginTop: 16 }}>
-        <Subtitle>{t.friends.requests}</Subtitle>
-        {requests.length === 0 ? <Muted>{t.friends.noRequests}</Muted> : null}
-        {requests.map((r) => (
-          <View key={r.id} style={styles.row}>
-            <Text style={[styles.name, { flex: 1 }]}>{displayName(r.from)}</Text>
-            <Button label={t.friends.accept} size="xs" onPress={() => respond(r.id, 'accepted', r.from_user_id)} />
-            <Button label={t.friends.reject} variant="ghost" size="xs" onPress={() => respond(r.id, 'rejected', r.from_user_id)} />
-          </View>
-        ))}
-      </View>
+      {requests.length > 0 ? (
+        <View style={{ marginTop: 16 }}>
+          <Subtitle>{t.friends.requests}</Subtitle>
+          {requests.map((r) => (
+            <View key={r.id} style={styles.row}>
+              <Text style={[styles.name, { flex: 1 }]}>{displayName(r.from)}</Text>
+              <Button label={t.friends.accept} size="xs" onPress={() => respond(r.id, 'accepted', r.from_user_id)} />
+              <Button label={t.friends.reject} variant="ghost" size="xs" onPress={() => respond(r.id, 'rejected', r.from_user_id)} />
+            </View>
+          ))}
+        </View>
+      ) : null}
 
-      <View style={{ marginTop: 16, marginBottom: 8 }}>
-        <Button label={t.friends.manageGroups} variant="secondary" onPress={() => router.push('/groups')} />
-      </View>
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, marginTop: 16 }}>
         <Subtitle>{t.friends.title}</Subtitle>
         <FlatList
           data={friends}
@@ -345,10 +344,7 @@ export default function FriendsScreen() {
           ListEmptyComponent={<EmptyState title={t.friends.empty} />}
           renderItem={({ item }) => (
             <View style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{displayName(item.other)}</Text>
-                <Muted>{item.other?.email}</Muted>
-              </View>
+              <Text style={[styles.name, { flex: 1 }]}>{displayName(item.other)}</Text>
               {pendingRemoveId === item.id ? (
                 <>
                   <Button
@@ -367,17 +363,20 @@ export default function FriendsScreen() {
                   />
                 </>
               ) : (
-                <Button
-                  label={t.friends.remove}
-                  variant="dangerOutline"
-                  size="xs"
-                  icon="user-times"
+                <Pressable
                   onPress={() => setPendingRemoveId(item.id)}
-                />
+                  accessibilityRole="button"
+                  accessibilityLabel={t.friends.remove}
+                  hitSlop={8}>
+                  <FontAwesome name="user-times" size={16} color={theme.colors.textMuted} />
+                </Pressable>
               )}
             </View>
           )}
         />
+        <Text style={styles.link} onPress={() => router.push('/groups')}>
+          {t.friends.manageGroups}
+        </Text>
       </View>
     </Screen>
   );
@@ -397,4 +396,10 @@ const styles = StyleSheet.create({
     ...theme.shadow.card,
   },
   name: { fontWeight: '700', color: theme.colors.text, fontSize: 16 },
+  link: {
+    color: theme.colors.primary,
+    fontWeight: '600',
+    fontSize: 15,
+    marginTop: 8,
+  },
 });

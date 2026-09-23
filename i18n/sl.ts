@@ -215,7 +215,7 @@ export const sl = {
     empty: 'Še nimate skupin.',
     delete: 'Izbriši',
     deleteConfirm: (name: string) => `Izbrisati skupino »${name}«?`,
-    membersCount: (n: number) => `${n} članov:`,
+    membersCount: (n: number) => `${n} članov`,
     needName: 'Vnesite ime skupine.',
     needMember: 'Dodajte vsaj enega člana.',
     createFailed: 'Skupine ni bilo mogoče ustvariti.',
@@ -341,6 +341,9 @@ export const sl = {
     weatherHint: 'V desnem zgornjem kotu se pokaže vreme za uro začetka.',
     weatherOn: 'Prikaži vreme',
     weatherOff: 'Brez vremena',
+    more: 'Dodatno',
+    moreHide: 'Skrij dodatno',
+    when: 'Kdaj',
     finance: 'Skupni stroški (Finance)',
     financeHint:
       'Prispevki gredo v budget dogodka, vpiši dejanske stroške in poravnaj bilance med udeleženci.',

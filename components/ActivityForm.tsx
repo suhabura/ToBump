@@ -189,6 +189,16 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   });
   const [financeEnabled, setFinanceEnabled] = useState(Boolean(initial?.finance_enabled));
   const [showWeather, setShowWeather] = useState(Boolean(initial?.show_weather));
+  const [moreOpen, setMoreOpen] = useState(
+    () =>
+      Boolean(initial?.is_recurring) ||
+      (initial?.recurrence_dates?.length ?? 0) >= 2 ||
+      Boolean(initial?.finance_enabled) ||
+      Boolean(initial?.show_weather) ||
+      initial?.min_participants != null ||
+      initial?.max_participants != null ||
+      Boolean(initial?.editor_user_ids?.length)
+  );
   const [fundingMode, setFundingMode] = useState<FundingMode>(() => {
     const raw = initial?.funding_mode;
     if (raw === 'annual' || raw === 'fixed') return 'fixed';
@@ -423,6 +433,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
   function setRecurringMode(mode: 'once' | 'weekly' | 'dates') {
     setRecurrenceMode(mode);
+    if (mode !== 'once') setMoreOpen(true);
     if (mode === 'once') {
       setRules([]);
       setRecurrenceUntil(null);
@@ -702,61 +713,31 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         />
       )}
 
-      {geoLocation && venueLatitude != null && venueLongitude != null ? (
-        <>
-          <Text style={styles.section}>{t.form.weather}</Text>
-          <Muted>{t.form.weatherHint}</Muted>
-          <View style={styles.row}>
-            <Chip label={t.form.weatherOff} active={!showWeather} onPress={() => setShowWeather(false)} />
-            <Chip label={t.form.weatherOn} active={showWeather} onPress={() => setShowWeather(true)} />
-          </View>
-          {showWeather ? (
-            <WeatherWeek
-              latitude={venueLatitude}
-              longitude={venueLongitude}
-              locale={locale}
-              eventDay={startsAt ? formatDay(startsAt) : null}
-            />
-          ) : null}
-        </>
-      ) : null}
-
-      <Text style={styles.section}>{t.events.capacity}</Text>
-      <View style={styles.row}>
-        <Chip label={t.form.capacityExact} active={!capacityRange} onPress={() => setCapacityMode(false)} />
-        <Chip label={t.form.capacityRangeToggle} active={capacityRange} onPress={() => setCapacityMode(true)} />
-      </View>
-      {capacityRange ? (
-        <View style={styles.capacityRow}>
-          <View style={{ flex: 1 }}>
-            <Input
-              label={t.form.minCapacity}
-              value={minCapacity}
-              onChangeText={(v) => setMinCapacity(v.replace(/[^\d]/g, ''))}
-              keyboardType="number-pad"
-              placeholder="—"
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Input
-              label={t.form.maxCapacity}
-              value={maxCapacity}
-              onChangeText={(v) => setMaxCapacity(v.replace(/[^\d]/g, ''))}
-              keyboardType="number-pad"
-              placeholder="—"
-            />
+      {recurrenceMode === 'once' ? (
+        <View>
+          <Text style={styles.section}>{req(t.form.when)}</Text>
+          <DateTimeField
+            label={req(t.events.starts)}
+            value={startsAt}
+            onChange={setStartsAt}
+            minimumDate={new Date()}
+          />
+          <View style={{ marginBottom: theme.space.md }}>
+            <Text style={styles.durationLabel}>{req(t.form.duration)}</Text>
+            <View style={styles.durationRow}>
+              <View style={styles.durationBlock}>
+                <Chip label="−1h" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 60))} />
+                <Chip label="−30m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 30))} />
+                <Chip label="−15m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 15))} />
+                <Text style={styles.durationValue}>{formatDuration(durationMinutes)}</Text>
+                <Chip label="+15m" active={false} onPress={() => setDurationMinutes((m) => m + 15)} />
+                <Chip label="+30m" active={false} onPress={() => setDurationMinutes((m) => m + 30)} />
+                <Chip label="+1h" active={false} onPress={() => setDurationMinutes((m) => m + 60)} />
+              </View>
+            </View>
           </View>
         </View>
-      ) : (
-        <Input
-          label={t.form.desiredCapacity}
-          value={desiredCapacity}
-          onChangeText={(v) => setDesiredCapacity(v.replace(/[^\d]/g, ''))}
-          keyboardType="number-pad"
-          placeholder="—"
-        />
-      )}
-      <Muted>{t.form.capacityHint}</Muted>
+      ) : null}
 
       <Text style={styles.section}>{req(t.form.whoInvite)}</Text>
       {activityId && isRecurring ? <Muted>{t.events.seriesInviteEditHint}</Muted> : null}
@@ -831,6 +812,12 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         </View>
       ) : null}
 
+      <Text style={[styles.link, { marginTop: 8, marginBottom: 8 }]} onPress={() => setMoreOpen((open) => !open)}>
+        {moreOpen ? t.form.moreHide : t.form.more}
+      </Text>
+
+      {moreOpen ? (
+      <View>
       <Text style={styles.section}>{req(t.form.recurrence)}</Text>
       {activityId ? (
         <Muted>
@@ -996,33 +983,66 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             </View>
           ) : null}
         </View>
-      ) : (
-        <View>
-          <DateTimeField
-            label={req(t.events.starts)}
-            value={startsAt}
-            onChange={setStartsAt}
-            minimumDate={new Date()}
-          />
-          <View style={{ marginBottom: theme.space.md }}>
-            <Text style={styles.durationLabel}>{req(t.form.duration)}</Text>
-            <View style={styles.durationRow}>
-              <View style={styles.durationBlock}>
-                <Chip label="−1h" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 60))} />
-                <Chip label="−30m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 30))} />
-                <Chip label="−15m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 15))} />
-                <Text style={styles.durationValue}>{formatDuration(durationMinutes)}</Text>
-                <Chip label="+15m" active={false} onPress={() => setDurationMinutes((m) => m + 15)} />
-                <Chip label="+30m" active={false} onPress={() => setDurationMinutes((m) => m + 30)} />
-                <Chip label="+1h" active={false} onPress={() => setDurationMinutes((m) => m + 60)} />
-              </View>
-            </View>
+      ) : null}
+
+      <Text style={styles.section}>{t.events.capacity}</Text>
+      <View style={styles.row}>
+        <Chip label={t.form.capacityExact} active={!capacityRange} onPress={() => setCapacityMode(false)} />
+        <Chip label={t.form.capacityRangeToggle} active={capacityRange} onPress={() => setCapacityMode(true)} />
+      </View>
+      {capacityRange ? (
+        <View style={styles.capacityRow}>
+          <View style={{ flex: 1 }}>
+            <Input
+              label={t.form.minCapacity}
+              value={minCapacity}
+              onChangeText={(v) => setMinCapacity(v.replace(/[^\d]/g, ''))}
+              keyboardType="number-pad"
+              placeholder="—"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Input
+              label={t.form.maxCapacity}
+              value={maxCapacity}
+              onChangeText={(v) => setMaxCapacity(v.replace(/[^\d]/g, ''))}
+              keyboardType="number-pad"
+              placeholder="—"
+            />
           </View>
         </View>
+      ) : (
+        <Input
+          label={t.form.desiredCapacity}
+          value={desiredCapacity}
+          onChangeText={(v) => setDesiredCapacity(v.replace(/[^\d]/g, ''))}
+          keyboardType="number-pad"
+          placeholder="—"
+        />
       )}
+      <Muted>{t.form.capacityHint}</Muted>
+
+      {geoLocation && venueLatitude != null && venueLongitude != null ? (
+        <>
+          <Text style={styles.section}>{t.form.weather}</Text>
+          <Muted>{t.form.weatherHint}</Muted>
+          <View style={styles.row}>
+            <Chip label={t.form.weatherOff} active={!showWeather} onPress={() => setShowWeather(false)} />
+            <Chip label={t.form.weatherOn} active={showWeather} onPress={() => setShowWeather(true)} />
+          </View>
+          {showWeather ? (
+            <WeatherWeek
+              latitude={venueLatitude}
+              longitude={venueLongitude}
+              locale={locale}
+              eventDay={startsAt ? formatDay(startsAt) : null}
+            />
+          ) : null}
+        </>
+      ) : null}
 
       <Text style={styles.section}>{t.form.finance}</Text>
-      <Muted>{t.form.financeHint}</Muted>
+      {financeEnabled ? <Muted>{t.form.financeHint}</Muted> : null}
       <View style={styles.row}>
         <Chip
           label={t.form.financeOff}
@@ -1070,9 +1090,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           </Muted>
           <Muted>{t.form.payersAreAttendees}</Muted>
         </View>
-      ) : (
-        <Muted>{t.form.financeOffHint}</Muted>
-      )}
+      ) : null}
 
       {isCreator ? (
         <View style={{ marginTop: 16 }}>
@@ -1103,6 +1121,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             </View>
           )}
         </View>
+      ) : null}
+      </View>
       ) : null}
 
       <View style={{ height: 16 }} />
