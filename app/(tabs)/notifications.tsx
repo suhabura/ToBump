@@ -5,6 +5,7 @@ import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { Button, EmptyState, Loading, Muted, Screen } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
+import { notificationSinceIso, pruneOldNotifications } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 import type { Notification } from '@/lib/types';
 import { useLocale, useT } from '@/i18n';
@@ -22,10 +23,12 @@ export default function NotificationsScreen() {
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
+    void pruneOldNotifications();
     const { data } = await supabase
       .from('notifications')
       .select('*')
       .eq('user_id', user.id)
+      .gte('created_at', notificationSinceIso())
       .order('created_at', { ascending: false });
     setItems((data as Notification[]) ?? []);
     setLoading(false);

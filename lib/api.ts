@@ -83,6 +83,19 @@ export async function createNotification(
   }
 }
 
+const NOTIFICATION_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Inbox and the bell only show notices from this instant onward. */
+export function notificationSinceIso(now = Date.now()): string {
+  return new Date(now - NOTIFICATION_KEEP_MS).toISOString();
+}
+
+/** Drop the signed-in user's notices older than 7 days. Missing RPC is ignored. */
+export async function pruneOldNotifications(): Promise<void> {
+  const { error } = await supabase.rpc('prune_my_notifications');
+  if (error && /function|does not exist|schema cache/i.test(error.message ?? '')) return;
+}
+
 export async function profileDisplayName(userId: string): Promise<string> {
   const { data } = await supabase
     .from('profiles')

@@ -7,6 +7,7 @@ import { theme } from '@/constants/theme';
 import { useAuth } from '@/contexts/AuthContext';
 import { EventsHeaderProvider, useEventsHeader } from '@/contexts/EventsHeaderContext';
 import { useT } from '@/i18n';
+import { notificationSinceIso, pruneOldNotifications } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
 function TabIcon({ name, color }: { name: React.ComponentProps<typeof FontAwesome>['name']; color: string }) {
@@ -173,7 +174,8 @@ export default function TabLayout() {
           .from('notifications')
           .select('*', { count: 'exact', head: true })
           .eq('user_id', user!.id)
-          .eq('is_read', false),
+          .eq('is_read', false)
+          .gte('created_at', notificationSinceIso()),
         supabase
           .from('friendships')
           .select('*', { count: 'exact', head: true })
@@ -185,6 +187,7 @@ export default function TabLayout() {
       setPendingFriends(friendCount ?? 0);
     }
 
+    void pruneOldNotifications();
     refresh();
 
     const notifChannel = supabase
