@@ -182,6 +182,7 @@ export function LocationField({
 
   return (
     <View style={styles.wrap}>
+      <View style={styles.fieldWrap}>
       <Input
         label={required ? `${label} *` : label}
         value={query}
@@ -224,7 +225,7 @@ export function LocationField({
           {!searching && results.length === 0 ? (
             <Text style={styles.hint}>{t.location.noResults}</Text>
           ) : null}
-          {results.map((r) => (
+          {results.slice(0, 4).map((r) => (
             <Pressable
               key={`${r.latitude},${r.longitude},${r.label}`}
               style={styles.item}
@@ -237,11 +238,14 @@ export function LocationField({
                     },
                   }
                 : {})}>
-              <Text style={styles.itemText}>{r.label}</Text>
+              <Text style={styles.itemText} numberOfLines={2}>
+                {r.label}
+              </Text>
             </Pressable>
           ))}
         </View>
       ) : null}
+      </View>
 
       {showMyLocation ? (
         <View style={styles.actions}>
@@ -312,17 +316,21 @@ export function LocationField({
 }
 
 const styles = StyleSheet.create({
-  wrap: { zIndex: 20, marginBottom: theme.space.md, overflow: 'visible' },
+  wrap: { zIndex: 30, marginBottom: theme.space.md },
+  fieldWrap: { position: 'relative', zIndex: 30 },
   field: { minHeight: 48 },
   list: {
-    marginTop: -8,
-    marginBottom: 8,
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: '100%',
+    marginTop: 4,
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
     borderColor: theme.colors.border,
     borderRadius: theme.radius.sm,
     overflow: 'hidden',
-    maxHeight: 280,
+    maxHeight: 220,
     zIndex: 40,
     elevation: 8,
   },

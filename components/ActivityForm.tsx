@@ -1044,6 +1044,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
               longitude={venueLongitude}
               locale={locale}
               eventDay={startsAt ? formatDay(startsAt) : null}
+              startsAt={startsAt ? startsAt.toISOString() : null}
             />
           ) : null}
         </>

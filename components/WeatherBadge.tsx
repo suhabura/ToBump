@@ -71,14 +71,17 @@ export function WeatherWeek({
   latitude,
   longitude,
   eventDay,
+  startsAt,
   locale,
 }: {
   latitude: number;
   longitude: number;
   eventDay?: string | null;
+  startsAt?: string | null;
   locale: 'sl' | 'en';
 }) {
   const [days, setDays] = useState<DailyForecast[]>([]);
+  const [hour, setHour] = useState<WeatherForecast | null>(null);
   const dfLocale = locale === 'sl' ? slLocale : enUS;
 
   useEffect(() => {
@@ -91,12 +94,27 @@ export function WeatherWeek({
     };
   }, [latitude, longitude]);
 
+  useEffect(() => {
+    if (!startsAt) {
+      setHour(null);
+      return;
+    }
+    let live = true;
+    void forecastAt(latitude, longitude, startsAt).then((next) => {
+      if (live) setHour(next);
+    });
+    return () => {
+      live = false;
+    };
+  }, [latitude, longitude, startsAt]);
+
   if (!days.length) return null;
 
   return (
     <View style={weekStyles.row}>
       {days.map((day) => {
         const marked = eventDay != null && day.day === eventDay;
+        const atStart = marked && hour ? hour : null;
         const when = new Date(`${day.day}T12:00:00`);
         const label = format(when, 'EEE', { locale: dfLocale });
         const dateLabel = format(when, 'd. MMM', { locale: dfLocale });
@@ -108,9 +126,9 @@ export function WeatherWeek({
             <Text style={[weekStyles.date, marked ? weekStyles.labelMarked : null]} numberOfLines={1}>
               {dateLabel}
             </Text>
-            <Text style={weekStyles.mark}>{weatherMark(day.code)}</Text>
-            <Text style={weekStyles.high}>{day.max}°</Text>
-            <Text style={weekStyles.low}>{day.min}°</Text>
+            <Text style={weekStyles.mark}>{weatherMark(atStart ? atStart.code : day.code)}</Text>
+            <Text style={weekStyles.high}>{atStart ? atStart.temp : day.max}°</Text>
+            {atStart ? null : <Text style={weekStyles.low}>{day.min}°</Text>}
           </View>
         );
       })}

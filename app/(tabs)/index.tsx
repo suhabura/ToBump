@@ -155,6 +155,11 @@ export default function EventsScreen() {
           { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
           reloadOnly
         )
+        .on(
+          'postgres_changes',
+          { event: 'INSERT', schema: 'public', table: 'activity_invites', filter: `user_id=eq.${userId}` },
+          reloadOnly
+        )
         .subscribe();
 
       return () => {
