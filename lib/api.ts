@@ -2,7 +2,7 @@ import { getT } from '@/i18n/runtime';
 import { supabase } from '@/lib/supabase';
 import { distanceMeters } from '@/lib/geo';
 import { combineDayAndTime, firstOccurrence, isoWeekday, localDayKey, normalizeRules, seriesEndDay, type RecurrenceRule } from '@/lib/recurrence';
-import type { ActivityWithRelations, Category, Privacy } from '@/lib/types';
+import { displayName, type ActivityWithRelations, type Category, type Privacy } from '@/lib/types';
 import {
   DEFAULT_SUBCATEGORIES,
   MAIN_CATEGORY_NAMES,
@@ -81,6 +81,37 @@ export async function createNotification(
       data,
     });
   }
+}
+
+export async function profileDisplayName(userId: string): Promise<string> {
+  const { data } = await supabase
+    .from('profiles')
+    .select('first_name, last_name')
+    .eq('id', userId)
+    .maybeSingle();
+  return displayName(data);
+}
+
+export async function notifyActivityJoin(
+  creatorId: string,
+  joinerId: string,
+  activityId: string,
+  title: string
+) {
+  if (creatorId === joinerId) return;
+  const [{ count }, name] = await Promise.all([
+    supabase
+      .from('activity_joins')
+      .select('*', { count: 'exact', head: true })
+      .eq('activity_id', activityId),
+    profileDisplayName(joinerId),
+  ]);
+  await createNotification(
+    creatorId,
+    'activity_join',
+    getT().events.joinedNotice(name, title, count ?? 0),
+    { activity_id: activityId }
+  );
 }
 
 async function attachDeclineCounts(
@@ -531,9 +562,7 @@ export async function joinActivity(activityId: string, userId: string, creatorId
   }
 
   if (creatorId !== userId) {
-    await createNotification(creatorId, 'activity_join', getT().events.joinedNotice(title), {
-      activity_id: activityId,
-    });
+    await notifyActivityJoin(creatorId, userId, activityId, title);
   }
 
   await clearActivityDecline(activityId, userId);
@@ -908,6 +937,14 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     }
   }
 
+  const needed = input.min_participants;
+  if (needed != null) {
+    const others = new Set(inviteIds.filter((uid) => uid !== userId));
+    if (others.size + 1 < needed) {
+      throw new Error(getT().form.needMorePeople(needed - (others.size + 1)));
+    }
+  }
+
   const minCap = input.min_participants;
   if (minCap != null && (!Number.isFinite(minCap) || minCap < 1 || !Number.isInteger(minCap))) {
     throw new Error('Minimum capacity must be a positive whole number.');
@@ -1151,11 +1188,16 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
       user_id: uid,
       invited_by: userId,
     }));
-    await supabase.from('activity_invites').upsert(rows, { onConflict: 'activity_id,user_id' });
-    // Notifications must not block returning to the event screen
+    const { error: inviteError } = await supabase
+      .from('activity_invites')
+      .upsert(rows, { onConflict: 'activity_id,user_id' });
+    if (inviteError) throw inviteError;
+    const inviter = await profileDisplayName(userId);
     void Promise.all(
       unique.map((uid) =>
-        createNotification(uid, 'invite', getT().events.inviteNotice(input.title), { activity_id: id })
+        createNotification(uid, 'invite', getT().events.inviteNotice(inviter, input.title), {
+          activity_id: id,
+        })
       )
     );
   }
@@ -1191,9 +1233,10 @@ async function syncActivityEditors(
 
   const newcomers = unique.filter((uid) => !prevIds.has(uid));
   if (newcomers.length) {
+    const granter = await profileDisplayName(grantedBy);
     void Promise.all(
       newcomers.map((uid) =>
-        createNotification(uid, 'editor', getT().events.editorNotice(title), {
+        createNotification(uid, 'editor', getT().events.editorNotice(granter, title), {
           activity_id: activityId,
         })
       )

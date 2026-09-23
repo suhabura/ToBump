@@ -1,6 +1,5 @@
 import { useCallback, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
-import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { useFocusEffect } from 'expo-router';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { FriendPicker } from '@/components/FriendPicker';
@@ -34,6 +33,11 @@ export default function GroupsScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editMembers, setEditMembers] = useState<string[]>([]);
+  const [editExtras, setEditExtras] = useState<Profile[]>([]);
+  const [editSaving, setEditSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -148,13 +152,65 @@ export default function GroupsScreen() {
         void (async () => {
           const { error } = await supabase.from('friend_groups').delete().eq('id', id);
           if (error) {
-            showAlert(t.common.error, t.groups.deleteFailed);
+            showAlert(t.common.error, error.message || t.groups.deleteFailed);
             return;
           }
           load();
         })();
       },
     });
+  }
+
+  async function startEdit(item: GroupWithMembers) {
+    setCreating(false);
+    setEditingId(item.id);
+    setEditName(item.name);
+    setEditMembers(item.memberIds);
+    const known = new Set(friends.map((f) => f.id));
+    const missing = item.memberIds.filter((id) => !known.has(id));
+    if (!missing.length) {
+      setEditExtras([]);
+      return;
+    }
+    const { data } = await supabase.from('profiles').select('*').in('id', missing);
+    setEditExtras((data as Profile[]) ?? []);
+  }
+
+  async function saveEdit() {
+    if (!editingId || !editName.trim()) {
+      showAlert(t.common.error, t.groups.needName);
+      return;
+    }
+    if (editMembers.length === 0) {
+      showAlert(t.common.error, t.groups.needMember);
+      return;
+    }
+    setEditSaving(true);
+    const { error: nameErr } = await supabase
+      .from('friend_groups')
+      .update({ name: editName.trim() })
+      .eq('id', editingId);
+    if (nameErr) {
+      setEditSaving(false);
+      showAlert(t.common.error, errMessage(nameErr, t));
+      return;
+    }
+    const { error: delErr } = await supabase.from('friend_group_members').delete().eq('group_id', editingId);
+    if (delErr) {
+      setEditSaving(false);
+      showAlert(t.common.error, errMessage(delErr, t));
+      return;
+    }
+    const { error: insErr } = await supabase.from('friend_group_members').insert(
+      editMembers.map((uid) => ({ group_id: editingId, user_id: uid }))
+    );
+    setEditSaving(false);
+    if (insErr) {
+      showAlert(t.common.error, errMessage(insErr, t));
+      return;
+    }
+    setEditingId(null);
+    load();
   }
 
   if (loading) return <Loading />;
@@ -174,19 +230,39 @@ export default function GroupsScreen() {
         ListEmptyComponent={<EmptyState title={t.groups.empty} />}
         renderItem={({ item }) => (
           <View style={styles.card}>
-            <View style={styles.cardRow}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{item.name}</Text>
-                <Muted>{t.groups.membersCount(item.memberIds.length)}</Muted>
+            {editingId === item.id ? (
+              <View style={{ gap: 8 }}>
+                <Input label={t.groups.name} value={editName} onChangeText={setEditName} />
+                <Muted>{t.groups.members}</Muted>
+                <FriendPicker
+                  friends={friends}
+                  extraProfiles={editExtras}
+                  selectedIds={editMembers}
+                  onChange={setEditMembers}
+                  label={t.groups.addMember}
+                  placeholder={t.form.searchFriends}
+                  emptyHint={t.form.noFriends}
+                />
+                <Button label={t.groups.save} onPress={() => void saveEdit()} loading={editSaving} />
+                <Button label={t.common.cancel} variant="secondary" onPress={() => setEditingId(null)} />
               </View>
-              <Pressable
-                onPress={() => deleteGroup(item.id, item.name)}
-                accessibilityRole="button"
-                accessibilityLabel={t.groups.delete}
-                hitSlop={8}>
-                <FontAwesome name="trash-o" size={16} color={theme.colors.textMuted} />
-              </Pressable>
-            </View>
+            ) : (
+              <View style={{ gap: 10 }}>
+                <Pressable onPress={() => void startEdit(item)}>
+                  <Text style={styles.name}>{item.name}</Text>
+                  <Muted>{t.groups.membersCount(item.memberIds.length)}</Muted>
+                </Pressable>
+                <View style={styles.cardActions}>
+                  <Button label={t.groups.edit} variant="secondary" size="sm" onPress={() => void startEdit(item)} />
+                  <Button
+                    label={t.groups.delete}
+                    variant="dangerOutline"
+                    size="sm"
+                    onPress={() => deleteGroup(item.id, item.name)}
+                  />
+                </View>
+              </View>
+            )}
           </View>
         )}
       />
@@ -224,7 +300,7 @@ const styles = StyleSheet.create({
     ...theme.shadow.card,
   },
   name: { fontWeight: '700', fontSize: 16, color: theme.colors.text },
-  cardRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  cardActions: { flexDirection: 'row', gap: 8 },
   link: {
     color: theme.colors.primary,
     fontWeight: '600',

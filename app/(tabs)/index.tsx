@@ -36,8 +36,6 @@ export default function EventsScreen() {
   const hasLoaded = useRef(false);
   const loadedAt = useRef(0);
   const fetchedSearch = useRef<string | null>(null);
-  const itemsRef = useRef<ActivityWithRelations[]>([]);
-  itemsRef.current = openItems.concat(declinedItems);
   const shown = list === 'declined' ? declinedItems : openItems;
 
   const userId = user?.id;
@@ -124,28 +122,34 @@ export default function EventsScreen() {
       if (!hasLoaded.current || stale || searchChanged) void load();
       if (!userId || !configured) return;
 
-      const touchesFeed = (row: { activity_id?: string; id?: string; series_id?: string; created_by?: string } | null) => {
-        if (!row) return false;
-        if (row.created_by && row.created_by === userId) return true;
-        const activityId = row.activity_id ?? row.id;
-        if (!activityId) return false;
-        return itemsRef.current.some(
-          (a) => a.id === activityId || a.series_id === activityId || a.id === row.series_id
-        );
-      };
-
-      const onChange = (payload: { new?: Record<string, string | null>; old?: Record<string, string | null> }) => {
-        const next = payload.new && (payload.new.id || payload.new.activity_id) ? payload.new : payload.old;
-        if (!touchesFeed(next)) return;
+      const reloadOnly = () => scheduleLiveReload();
+      const onAttendance = (payload: {
+        eventType?: string;
+        new?: Record<string, string | null>;
+        old?: Record<string, string | null>;
+      }) => {
+        const next = payload.new?.activity_id ? payload.new : payload.old;
+        const activityId = next?.activity_id;
+        const delta = payload.eventType === 'INSERT' ? 1 : payload.eventType === 'DELETE' ? -1 : 0;
+        if (activityId && delta) {
+          const bump = (list: ActivityWithRelations[]) =>
+            list.map((a) =>
+              a.id === activityId
+                ? { ...a, join_count: Math.max(0, (a.join_count ?? 0) + delta) }
+                : a
+            );
+          setOpenItems(bump);
+          setDeclinedItems(bump);
+        }
         scheduleLiveReload();
       };
 
       const channel = supabase
         .channel(`events-live-${userId}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_joins' }, onChange)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_declines' }, onChange)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_guest_attendances' }, onChange)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, onChange)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_joins' }, onAttendance)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_guest_attendances' }, onAttendance)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_declines' }, reloadOnly)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, reloadOnly)
         .subscribe();
 
       return () => {
@@ -278,7 +282,7 @@ export default function EventsScreen() {
                   <Text style={styles.metaLine}>
                     <FontAwesome name="users" size={11} color={theme.colors.textMuted} />{' '}
                     {t.events.joinedCount}: {item.join_count ?? 0}
-                    {capRange ? ` · ${t.events.capacity}: ${capRange}` : ''}
+                    {capRange ? ` · ${t.events.needed}: ${capRange}` : ''}
                   </Text>
                 </Pressable>
                 {weather ? (

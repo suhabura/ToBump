@@ -101,7 +101,7 @@ function TabAppHeader({
           </View>
           <View style={styles.logoWrap} pointerEvents="none">
             <Image
-              source={require('../../assets/brand/logo-horizontal.png')}
+              source={require('../../assets/brand/logo-compact.png')}
               style={styles.brandLogo}
               resizeMode="contain"
               accessibilityLabel={t.appName}
@@ -359,8 +359,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   brandLogo: {
-    height: 68,
-    width: 224,
+    height: 28,
+    width: 112,
   },
   brandTab: {
     marginLeft: 12,

@@ -166,6 +166,16 @@ export default function FriendsScreen() {
     };
   }, [search, runSearch]);
 
+  async function myName() {
+    if (!user) return '';
+    const { data } = await supabase
+      .from('profiles')
+      .select('first_name, last_name')
+      .eq('id', user.id)
+      .maybeSingle();
+    return displayName(data);
+  }
+
   async function sendRequest(toUserId: string) {
     if (!user) return;
 
@@ -175,7 +185,7 @@ export default function FriendsScreen() {
 
     if (!rpcError) {
       if (rpcId) {
-        await createNotification(toUserId, 'friend_request', t.friends.newRequest, {
+        await createNotification(toUserId, 'friend_request', t.friends.newRequest(await myName()), {
           from_user_id: user.id,
         });
       }
@@ -223,7 +233,7 @@ export default function FriendsScreen() {
       showAlert(t.common.error, msg);
       return;
     }
-    await createNotification(toUserId, 'friend_request', t.friends.newRequest, {
+    await createNotification(toUserId, 'friend_request', t.friends.newRequest(await myName()), {
       from_user_id: user.id,
     });
     showAlert('OK', t.friends.requestSent);
@@ -253,7 +263,7 @@ export default function FriendsScreen() {
             `and(from_user_id.eq.${user.id},to_user_id.eq.${fromUserId}),and(from_user_id.eq.${fromUserId},to_user_id.eq.${user.id})`
           );
       }
-      await createNotification(fromUserId, 'friend_accepted', t.friends.requestAccepted, {
+      await createNotification(fromUserId, 'friend_accepted', t.friends.requestAccepted(await myName()), {
         user_id: user.id,
       });
     } else {
@@ -282,6 +292,11 @@ export default function FriendsScreen() {
     for (const oid of pairIds) {
       await supabase.from('friendships').delete().eq('from_user_id', user.id).eq('to_user_id', oid);
       await supabase.from('friendships').delete().eq('from_user_id', oid).eq('to_user_id', user.id);
+    }
+    const { data: mine } = await supabase.from('friend_groups').select('id').eq('created_by', user.id);
+    const groupIds = (mine ?? []).map((g: { id: string }) => g.id);
+    if (groupIds.length && pairIds.length) {
+      await supabase.from('friend_group_members').delete().in('group_id', groupIds).in('user_id', pairIds);
     }
     setFriends((prev) =>
       prev.filter((f) => f.id !== row.id && !pairIds.includes(friendshipOtherId(f, user.id)))

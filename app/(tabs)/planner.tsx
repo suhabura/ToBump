@@ -15,7 +15,7 @@ import {
 import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useMemo, useRef, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { WeatherBadge } from '@/components/WeatherBadge';
 import { Button, EmptyState, Loading, Muted, Screen, Subtitle } from '@/components/ui';
@@ -47,6 +47,15 @@ type PlannerItem = ActivityWithRelations & {
   virtual?: boolean;
   skipped?: boolean;
 };
+
+function bumpJoinCount<T extends { activity_joins?: unknown }>(row: T, delta: number): T {
+  const joins = row.activity_joins;
+  if (Array.isArray(joins) && joins[0] && typeof joins[0] === 'object' && joins[0] && 'count' in joins[0]) {
+    const count = Math.max(0, Number((joins[0] as { count: number }).count) + delta);
+    return { ...row, activity_joins: [{ ...(joins[0] as object), count }] };
+  }
+  return { ...row, activity_joins: [{ count: Math.max(0, delta) }] };
+}
 
 function signupCount(row: { activity_joins?: unknown; activity_guest_attendances?: unknown }): number {
   const nested = (rel: unknown) => {
@@ -257,6 +266,17 @@ export default function PlannerScreen() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const hasLoaded = useRef(false);
+  const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const monthSwipe = useRef(
+    PanResponder.create({
+      onMoveShouldSetPanResponder: (_, gesture) =>
+        Math.abs(gesture.dx) > 18 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2,
+      onPanResponderRelease: (_, gesture) => {
+        if (Math.abs(gesture.dx) < 48 || Math.abs(gesture.dx) < Math.abs(gesture.dy)) return;
+        setMonth((current) => (gesture.dx < 0 ? addMonths(current, 1) : subMonths(current, 1)));
+      },
+    })
+  ).current;
 
   const load = useCallback(
     async (opts?: { silent?: boolean }) => {
@@ -302,7 +322,39 @@ export default function PlannerScreen() {
   useFocusEffect(
     useCallback(() => {
       void load({ silent: hasLoaded.current });
-    }, [load])
+      if (!user?.id) return;
+
+      const onJoinChange = (payload: {
+        eventType?: string;
+        new?: { activity_id?: string };
+        old?: { activity_id?: string };
+      }) => {
+        const activityId = payload.new?.activity_id ?? payload.old?.activity_id;
+        const delta = payload.eventType === 'INSERT' ? 1 : payload.eventType === 'DELETE' ? -1 : 0;
+        if (activityId && delta) {
+          setItems((prev) => prev.map((row) => (row.id === activityId ? bumpJoinCount(row, delta) : row)));
+          setJoinedFuture((prev) =>
+            prev.map((row) => (row.id === activityId ? bumpJoinCount(row, delta) : row))
+          );
+        }
+        if (reloadTimer.current) clearTimeout(reloadTimer.current);
+        reloadTimer.current = setTimeout(() => void load({ silent: true }), 250);
+      };
+
+      const channel = supabase
+        .channel(`planner-live-${user.id}`)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_joins' }, onJoinChange)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_declines' }, () => {
+          if (reloadTimer.current) clearTimeout(reloadTimer.current);
+          reloadTimer.current = setTimeout(() => void load({ silent: true }), 250);
+        })
+        .subscribe();
+
+      return () => {
+        if (reloadTimer.current) clearTimeout(reloadTimer.current);
+        supabase.removeChannel(channel);
+      };
+    }, [load, user?.id])
   );
 
   const days = useMemo(() => buildCalendarDays(month), [month]);
@@ -519,7 +571,7 @@ export default function PlannerScreen() {
           <Text style={styles.metaLine}>
             <FontAwesome name="users" size={11} color={theme.colors.textMuted} /> {t.events.joinedCount}:{' '}
             {item.join_count ?? 0}
-            {capRange ? ` · ${t.events.capacity}: ${capRange}` : ''}
+            {capRange ? ` · ${t.events.needed}: ${capRange}` : ''}
           </Text>
         </Pressable>
         {weather ? (
@@ -578,7 +630,7 @@ export default function PlannerScreen() {
                     </Text>
                   ))}
                 </View>
-                <View style={styles.grid}>
+                <View style={styles.grid} {...monthSwipe.panHandlers}>
                   {days.map((day) => {
                     const inMonth = isSameMonth(day, month);
                     const selected = isSameDay(day, selectedDay);

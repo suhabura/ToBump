@@ -515,14 +515,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       setFormError(t.form.needGroup);
       return;
     }
-    if (privacy === 'friends' && friends.length === 0) {
-      setFormError(t.form.noFriends);
-      return;
-    }
-    if (privacy === 'invite' && inviteIds.length === 0) {
-      setFormError(t.form.needInviteFriends);
-      return;
-    }
 
     const priceTrim = financeEnabled ? price.trim() : '';
     if (financeEnabled) {
@@ -546,14 +538,30 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       minNum = parseOptionalCount(minCapacity);
       maxNum = parseOptionalCount(maxCapacity);
     } else {
-      maxNum = parseOptionalCount(desiredCapacity);
+      const exact = parseOptionalCount(desiredCapacity);
+      minNum = exact;
+      maxNum = exact;
     }
     if (minNum === 'invalid' || maxNum === 'invalid') {
       setFormError(t.form.needCapacity);
       return;
     }
-    if (minNum != null && maxNum != null && minNum > maxNum) {
+    if (minNum == null) {
+      setFormError(t.form.needPeople);
+      return;
+    }
+    if (maxNum != null && minNum > maxNum) {
       setFormError(t.form.capacityMinMax);
+      return;
+    }
+    const inviteeCount =
+      privacy === 'friends'
+        ? friends.filter((f) => f.id !== userId).length
+        : privacy === 'group'
+          ? groupMembers.filter((p) => p.id !== userId).length
+          : inviteIds.filter((id) => id !== userId).length;
+    if (inviteeCount + 1 < minNum) {
+      setFormError(t.form.needMorePeople(minNum - (inviteeCount + 1)));
       return;
     }
 
@@ -687,6 +695,43 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           return key ? categoryDisplayName(key, locale) : null;
         }}
       />
+
+      <Text style={styles.section}>{req(t.form.neededCount)}</Text>
+      <View style={styles.row}>
+        <Chip label={t.form.capacityExact} active={!capacityRange} onPress={() => setCapacityMode(false)} />
+        <Chip label={t.form.capacityRangeToggle} active={capacityRange} onPress={() => setCapacityMode(true)} />
+      </View>
+      {capacityRange ? (
+        <View style={styles.capacityRow}>
+          <View style={{ flex: 1 }}>
+            <Input
+              label={t.form.minCapacity}
+              value={minCapacity}
+              onChangeText={(v) => setMinCapacity(v.replace(/[^\d]/g, ''))}
+              keyboardType="number-pad"
+              placeholder="—"
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Input
+              label={t.form.maxCapacity}
+              value={maxCapacity}
+              onChangeText={(v) => setMaxCapacity(v.replace(/[^\d]/g, ''))}
+              keyboardType="number-pad"
+              placeholder="—"
+            />
+          </View>
+        </View>
+      ) : (
+        <Input
+          label={t.form.desiredCapacity}
+          value={desiredCapacity}
+          onChangeText={(v) => setDesiredCapacity(v.replace(/[^\d]/g, ''))}
+          keyboardType="number-pad"
+          placeholder="—"
+        />
+      )}
+      <Muted>{t.form.capacityHint}</Muted>
 
       <Text style={styles.section}>{req(t.events.venue)}</Text>
       <View style={styles.row}>
@@ -984,43 +1029,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           ) : null}
         </View>
       ) : null}
-
-      <Text style={styles.section}>{t.events.capacity}</Text>
-      <View style={styles.row}>
-        <Chip label={t.form.capacityExact} active={!capacityRange} onPress={() => setCapacityMode(false)} />
-        <Chip label={t.form.capacityRangeToggle} active={capacityRange} onPress={() => setCapacityMode(true)} />
-      </View>
-      {capacityRange ? (
-        <View style={styles.capacityRow}>
-          <View style={{ flex: 1 }}>
-            <Input
-              label={t.form.minCapacity}
-              value={minCapacity}
-              onChangeText={(v) => setMinCapacity(v.replace(/[^\d]/g, ''))}
-              keyboardType="number-pad"
-              placeholder="—"
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Input
-              label={t.form.maxCapacity}
-              value={maxCapacity}
-              onChangeText={(v) => setMaxCapacity(v.replace(/[^\d]/g, ''))}
-              keyboardType="number-pad"
-              placeholder="—"
-            />
-          </View>
-        </View>
-      ) : (
-        <Input
-          label={t.form.desiredCapacity}
-          value={desiredCapacity}
-          onChangeText={(v) => setDesiredCapacity(v.replace(/[^\d]/g, ''))}
-          keyboardType="number-pad"
-          placeholder="—"
-        />
-      )}
-      <Muted>{t.form.capacityHint}</Muted>
 
       {geoLocation && venueLatitude != null && venueLongitude != null ? (
         <>

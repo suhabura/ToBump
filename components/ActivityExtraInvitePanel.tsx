@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, StyleSheet, Switch, Text, View } from 'react-native';
 import { Button, Muted, Subtitle } from '@/components/ui';
 import { FriendPicker } from '@/components/FriendPicker';
-import { createNotification } from '@/lib/api';
+import { createNotification, profileDisplayName } from '@/lib/api';
 import { dedupeProfilesByEmail } from '@/lib/friends';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations, Privacy, Profile } from '@/lib/types';
@@ -12,6 +12,7 @@ import { theme } from '@/constants/theme';
 type Props = {
   activity: ActivityWithRelations;
   userId: string;
+  hasSignup?: boolean;
   onChanged?: () => void;
 };
 
@@ -24,7 +25,7 @@ function basePrivacy(activity: ActivityWithRelations): Privacy {
 }
 
 /** Organizer opens this occurrence to more people — does not change the series template. */
-export function ActivityExtraInvitePanel({ activity, userId, onChanged }: Props) {
+export function ActivityExtraInvitePanel({ activity, userId, hasSignup = false, onChanged }: Props) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const [friends, setFriends] = useState<Profile[]>([]);
@@ -73,13 +74,19 @@ export function ActivityExtraInvitePanel({ activity, userId, onChanged }: Props)
       } else {
         patch.privacy = basePrivacy(activity);
       }
-      const { error } = await supabase.from('activities').update(patch).eq('id', activity.id);
+      const { data, error } = await supabase
+        .from('activities')
+        .update(patch)
+        .eq('id', activity.id)
+        .select('id, privacy')
+        .maybeSingle();
       if (error) {
         if (/activities_privacy_check|friends_of_friends/i.test(error.message ?? '')) {
           throw new Error(t.form.fofDbFix);
         }
         throw error;
       }
+      if (!data) throw new Error(t.common.error);
       onChanged?.();
     } catch (e) {
       Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
@@ -105,9 +112,10 @@ export function ActivityExtraInvitePanel({ activity, userId, onChanged }: Props)
         .from('activity_invites')
         .upsert(rows, { onConflict: 'activity_id,user_id' });
       if (invErr) throw invErr;
+      const inviter = await profileDisplayName(userId);
       void Promise.all(
         unique.map((uid) =>
-          createNotification(uid, 'invite', t.events.inviteNotice(activity.title), {
+          createNotification(uid, 'invite', t.events.inviteNotice(inviter, activity.title), {
             activity_id: activity.id,
           })
         )
@@ -133,6 +141,7 @@ export function ActivityExtraInvitePanel({ activity, userId, onChanged }: Props)
         ) : null}
       </View>
       <Muted>{fofOn ? t.events.extraInviteFofOn : t.events.extraInviteStatusInvite}</Muted>
+      {!hasSignup ? <Muted>{t.events.fofWaiting}</Muted> : null}
       {!open ? (
         <Button
           label={t.events.extraInviteOpenDate}

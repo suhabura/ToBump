@@ -183,34 +183,17 @@ export default function ActivityDetailScreen() {
       void load();
       if (!id) return;
 
+      const refreshIfMine = (payload: { new?: Record<string, unknown>; old?: Record<string, unknown> }) => {
+        const row = payload.new?.activity_id ? payload.new : payload.old;
+        if (row?.activity_id !== id) return;
+        if (reloadTimer.current) clearTimeout(reloadTimer.current);
+        reloadTimer.current = setTimeout(() => void load({ silent: true }), 200);
+      };
+
       const channel = supabase
         .channel(`activity-live-${id}`)
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'activity_joins',
-            filter: `activity_id=eq.${id}`,
-          },
-          () => {
-            if (reloadTimer.current) clearTimeout(reloadTimer.current);
-            reloadTimer.current = setTimeout(() => void load({ silent: true }), 200);
-          }
-        )
-        .on(
-          'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'activity_declines',
-            filter: `activity_id=eq.${id}`,
-          },
-          () => {
-            if (reloadTimer.current) clearTimeout(reloadTimer.current);
-            reloadTimer.current = setTimeout(() => void load({ silent: true }), 200);
-          }
-        )
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_joins' }, refreshIfMine)
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'activity_declines' }, refreshIfMine)
         .subscribe();
 
       return () => {
@@ -232,25 +215,15 @@ export default function ActivityDetailScreen() {
     }
   }
 
-  async function onLeave() {
+  async function onNotGoing() {
     if (!user || !activity) return;
     try {
-      await leaveActivity(activity.id, user.id);
-      void load({ silent: true });
-    } catch (e) {
-      void load({ silent: true });
-      const msg = e instanceof Error ? e.message : t.common.error;
-      Alert.alert(t.common.error, msg === 'DECLINES_DB' ? t.events.declineDbFix : msg);
-    }
-  }
-
-  async function onDeclineToggle() {
-    if (!user || !activity) return;
-    try {
-      if (declined) await clearActivityDecline(activity.id, user.id);
+      if (joined) await leaveActivity(activity.id, user.id);
+      else if (declined) await clearActivityDecline(activity.id, user.id);
       else await declineActivity(activity.id, user.id);
       void load({ silent: true });
     } catch (e) {
+      void load({ silent: true });
       const msg = e instanceof Error ? e.message : t.common.error;
       Alert.alert(t.common.error, msg === 'DECLINES_DB' ? t.events.declineDbFix : msg);
     }
@@ -446,54 +419,36 @@ export default function ActivityDetailScreen() {
         </Muted>
         <Muted>
           {t.events.joinedCount}: {participantCount}
+          {capRange ? ` · ${t.events.needed}: ${capRange}` : ''}
         </Muted>
         {decliners.length > 0 ? (
           <Muted>
             {t.events.declineCount}: {decliners.length}
           </Muted>
         ) : null}
-        {capRange ? (
-          <Muted>
-            {t.events.capacity}: {capRange}
-          </Muted>
-        ) : null}
 
         <View style={{ marginTop: 20, gap: 10 }}>
           {joined ? (
-            <View style={styles.actionRow}>
-              <View style={styles.actionFlex}>
-                <Button
-                  label={t.events.chat}
-                  variant="secondary"
-                  icon="comments"
-                  onPress={() => router.push(`/chat/${activity.id}`)}
-                />
-              </View>
-              <View style={styles.actionFlex}>
-                <Button
-                  label={t.events.leave}
-                  variant="dangerOutline"
-                  icon="sign-out"
-                  onPress={onLeave}
-                />
-              </View>
-            </View>
+            <Button
+              label={t.events.chat}
+              variant="secondary"
+              icon="comments"
+              onPress={() => router.push(`/chat/${activity.id}`)}
+            />
           ) : (
-            <>
-              <Button
-                label={full ? t.events.full : t.events.join}
-                icon="check"
-                onPress={onJoin}
-                disabled={full}
-              />
-              <Text
-                style={[styles.declineLink, declined ? styles.declineOn : null]}
-                onPress={() => void onDeclineToggle()}
-              >
-                {t.events.decline}
-              </Text>
-            </>
+            <Button
+              label={full ? t.events.full : t.events.join}
+              icon="check"
+              onPress={onJoin}
+              disabled={full}
+            />
           )}
+          <Button
+            label={t.events.decline}
+            variant={declined && !joined ? 'dangerOutline' : 'secondary'}
+            icon="times"
+            onPress={() => void onNotGoing()}
+          />
           {canEdit ? (
             <Button
               label={t.events.edit}
@@ -575,6 +530,7 @@ export default function ActivityDetailScreen() {
           <ActivityExtraInvitePanel
             activity={activity}
             userId={user.id}
+            hasSignup={participants.length > 0}
             onChanged={() => void load({ silent: true })}
           />
         ) : null}
