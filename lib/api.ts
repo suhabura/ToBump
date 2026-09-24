@@ -1,7 +1,7 @@
 import { getT } from '@/i18n/runtime';
 import { supabase } from '@/lib/supabase';
 import { distanceMeters } from '@/lib/geo';
-import { combineDayAndTime, firstOccurrence, isoWeekday, localDayKey, normalizeRules, seriesEndDay, type RecurrenceRule } from '@/lib/recurrence';
+import { combineDayAndTime, firstOccurrence, isoWeekday, localDayKey, normalizeRules, seriesEndDay, type DateSlotRule, type RecurrenceRule } from '@/lib/recurrence';
 import { displayName, type ActivityWithRelations, type Category, type Privacy } from '@/lib/types';
 import {
   DEFAULT_SUBCATEGORIES,
@@ -680,7 +680,9 @@ export type ActivityInput = {
   finance_enabled?: boolean;
   /** Show the start-time forecast on this event */
   show_weather?: boolean;
-  recurrence_rules?: RecurrenceRule[];
+  recurrence_rules?: (RecurrenceRule | DateSlotRule)[];
+  /** Per-date start and optional end for a dated series. Stored in recurrence_rules. */
+  date_slots?: DateSlotRule[];
   /** Last calendar day for the series (YYYY-MM-DD), required when weekly */
   recurrence_until?: string | null;
   /** Picked calendar days (YYYY-MM-DD) for a dated series */
@@ -879,15 +881,19 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     throw new Error('Select at least one friend to invite.');
   }
   const dateDays = Array.from(new Set((input.recurrence_dates ?? []).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)))).sort();
-  const weeklyRules = normalizeRules(input.recurrence_rules ?? []);
+  const weeklyRules = normalizeRules(
+    (input.recurrence_rules ?? []).filter(
+      (rule): rule is RecurrenceRule => 'weekday' in rule && typeof rule.weekday === 'number'
+    )
+  );
   const isWeekly = Boolean(input.is_recurring) && weeklyRules.length > 0;
   const isDateSeries = dateDays.length >= 2 && !isWeekly;
   const rules = isWeekly ? weeklyRules : [];
+  const dateSlots = (input.date_slots ?? [])
+    .filter((slot) => /^\d{4}-\d{2}-\d{2}$/.test(slot.date))
+    .sort((a, b) => a.date.localeCompare(b.date));
   if (input.is_recurring && !isDateSeries && rules.length === 0) {
     throw new Error('Select at least one weekday for recurrence.');
-  }
-  if (isWeekly && rules.some((r) => !r.duration_minutes || r.duration_minutes < 15)) {
-    throw new Error('Set a duration for each day (at least 15 min).');
   }
   if (input.is_recurring && !isDateSeries && !isWeekly) {
     throw new Error('Select at least two dates, or pick weekdays.');
@@ -984,17 +990,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
   let durationMinutes: number | null = null;
   const weeklyUntil = isWeekly ? seriesEndDay(input.recurrence_until, dateDays) : null;
 
-  if (isDateSeries) {
-    const seed = startsAt ? new Date(startsAt) : new Date();
-    durationMinutes = Math.max(15, Math.round(input.duration_minutes || durationMinutes || 90));
-    if (activityId && startsAt) {
-      endsAt = new Date(seed.getTime() + durationMinutes * 60_000).toISOString();
-    } else {
-      const first = combineDayAndTime(dateDays[0], seed.getHours(), seed.getMinutes());
-      startsAt = first.toISOString();
-      endsAt = new Date(first.getTime() + durationMinutes * 60_000).toISOString();
-    }
-  } else if (isWeekly && startsAt) {
+  if (isWeekly && startsAt) {
     const from = new Date(startsAt);
     const until = weeklyUntil ? new Date(`${weeklyUntil}T23:59:59`) : null;
     const first = firstOccurrence(from, rules, { now: from, until });
@@ -1002,11 +998,15 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     const start = new Date(startsAt);
     const iso = isoWeekday(start);
     const rule = rules.find((r) => r.weekday === iso) ?? rules[0];
-    durationMinutes = rule.duration_minutes;
-    endsAt = new Date(start.getTime() + durationMinutes * 60_000).toISOString();
+    durationMinutes = rule.duration_minutes != null && rule.duration_minutes >= 15 ? rule.duration_minutes : null;
+    endsAt =
+      durationMinutes != null ? new Date(start.getTime() + durationMinutes * 60_000).toISOString() : null;
   } else if (input.duration_minutes && input.duration_minutes >= 15 && startsAt) {
     durationMinutes = Math.max(15, Math.round(input.duration_minutes));
     endsAt = new Date(new Date(startsAt).getTime() + durationMinutes * 60_000).toISOString();
+  } else {
+    durationMinutes = null;
+    endsAt = null;
   }
 
   const payload: Record<string, unknown> = {
@@ -1030,7 +1030,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     finance_enabled: Boolean(input.finance_enabled),
     show_weather: Boolean(input.show_weather),
     recurrence_weekdays: weekdays,
-    recurrence_rules: rules,
+    recurrence_rules: isDateSeries ? dateSlots : rules,
     recurrence_until: isWeekly ? weeklyUntil : isDateSeries ? dateDays[dateDays.length - 1] : null,
     recurrence_dates: isDateSeries ? dateDays : isWeekly ? weeklyExtraDates : [],
     duration_minutes: durationMinutes,
@@ -1094,6 +1094,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
       const seriesPatch = {
         recurrence_dates: storedDates,
         recurrence_until: payload.recurrence_until,
+        recurrence_rules: payload.recurrence_rules,
       };
       await supabase.from('activities').update(seriesPatch).eq('id', sid);
       await supabase.from('activities').update(seriesPatch).eq('series_id', sid);

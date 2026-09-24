@@ -1,7 +1,15 @@
+import { format } from 'date-fns';
+import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { Button, Chip, Input, Muted } from '@/components/ui';
+import {
+  EndChoiceField,
+  noEnd,
+  resolveEndMinutes,
+  type EndChoice,
+} from '@/components/EndChoiceField';
 import { WeatherWeek } from '@/components/WeatherBadge';
 import { DateTimeField } from '@/components/DateTimeField';
 import { DateMultiField } from '@/components/DateMultiField';
@@ -29,6 +37,7 @@ import {
   formatDuration,
   formatFirstOccurrence,
   formatRecurrence,
+  hasWeekdayRules,
   hydrateRules,
   isoWeekday,
   normalizeRules,
@@ -37,6 +46,7 @@ import {
   weekdayLong,
   weekdayShort,
   WEEKDAY_OPTIONS,
+  type DateSlotRule,
   type RecurrenceRule,
 } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
@@ -73,6 +83,103 @@ function formatDay(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
   return `${y}-${m}-${day}`;
+}
+
+type FormDateSlot = {
+  date: string;
+  hour: number;
+  minute: number;
+  end: EndChoice;
+};
+
+function endFromStored(
+  duration: number | null | undefined,
+  endHour: number | null | undefined,
+  endMinute: number | null | undefined,
+  startsAt?: string | null,
+  endsAt?: string | null
+): EndChoice {
+  if (endHour != null && endMinute != null) {
+    return { mode: 'clock', minutes: null, endHour, endMinute };
+  }
+  if (duration != null && duration > 0) {
+    return { mode: 'duration', minutes: duration, endHour: null, endMinute: null };
+  }
+  const start = parseInitialDate(startsAt);
+  const end = parseInitialDate(endsAt);
+  if (start && end && end > start) {
+    return { mode: 'clock', minutes: null, endHour: end.getHours(), endMinute: end.getMinutes() };
+  }
+  return noEnd();
+}
+
+function initialEnd(initial?: Props['initial']): EndChoice {
+  return endFromStored(initial?.duration_minutes, null, null, initial?.starts_at, initial?.ends_at);
+}
+
+function weeklyFromInitial(initial?: Props['initial']): boolean {
+  const weekdays = (initial as { recurrence_weekdays?: number[] } | undefined)?.recurrence_weekdays ?? [];
+  return Boolean(initial?.is_recurring) && (hasWeekdayRules(initial?.recurrence_rules) || weekdays.length > 0);
+}
+
+function initialDateSlots(initial?: Props['initial']): FormDateSlot[] {
+  const dates = Array.from(new Set(initial?.recurrence_dates ?? []))
+    .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day))
+    .sort();
+  const seed = parseInitialDate(initial?.starts_at);
+  const sharedEnd = endFromStored(initial?.duration_minutes, null, null, initial?.starts_at, initial?.ends_at);
+  const byDate = new Map<string, FormDateSlot>();
+  for (const raw of initial?.recurrence_rules ?? []) {
+    const slot = raw as DateSlotRule;
+    const date = slot.date?.slice(0, 10);
+    if (!date || hasWeekdayRules([raw as { weekday?: number; date?: string }])) continue;
+    byDate.set(date, {
+      date,
+      hour: Number.isFinite(Number(slot.hour)) ? Number(slot.hour) : (seed?.getHours() ?? 18),
+      minute: Number.isFinite(Number(slot.minute)) ? Number(slot.minute) : (seed?.getMinutes() ?? 0),
+      end: endFromStored(slot.duration_minutes, slot.end_hour, slot.end_minute),
+    });
+  }
+  let last: FormDateSlot = {
+    date: '',
+    hour: seed?.getHours() ?? 18,
+    minute: seed ? (Math.round(seed.getMinutes() / 15) * 15) % 60 : 0,
+    end: byDate.size ? noEnd() : sharedEnd,
+  };
+  return dates.map((date) => {
+    const hit = byDate.get(date);
+    if (hit) {
+      last = hit;
+      return hit;
+    }
+    const created = { ...last, date, end: { ...last.end } };
+    last = created;
+    return created;
+  });
+}
+
+function mergeDateSlots(dates: string[], prev: FormDateSlot[]): FormDateSlot[] {
+  const sorted = Array.from(new Set(dates))
+    .filter((day) => /^\d{4}-\d{2}-\d{2}$/.test(day))
+    .sort();
+  const byDate = new Map(prev.map((slot) => [slot.date, slot]));
+  let last: FormDateSlot | null = [...prev].reverse().find((slot) => slot.date) ?? null;
+  return sorted.map((date) => {
+    const hit = byDate.get(date);
+    if (hit) {
+      last = hit;
+      return hit;
+    }
+    const created: FormDateSlot = last
+      ? { date, hour: last.hour, minute: last.minute, end: { ...last.end } }
+      : { date, hour: 18, minute: 0, end: noEnd() };
+    last = created;
+    return created;
+  });
+}
+
+function slotStart(slot: FormDateSlot): Date {
+  return combineDayAndTime(slot.date, slot.hour, slot.minute);
 }
 
 function defaultDurationFromInitial(initial?: Props['initial']): number {
@@ -162,11 +269,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [editorIds, setEditorIds] = useState<string[]>(initial?.editor_user_ids ?? []);
   const [showEditors, setShowEditors] = useState(Boolean(initial?.editor_user_ids?.length));
   const [recurrenceMode, setRecurrenceMode] = useState<'once' | 'weekly' | 'dates'>(() => {
-    const weekly =
-      Boolean(initial?.is_recurring) &&
-      ((initial?.recurrence_rules?.length ?? 0) > 0 ||
-        ((initial as { recurrence_weekdays?: number[] } | undefined)?.recurrence_weekdays?.length ?? 0) > 0);
-    if (weekly) return 'weekly';
+    if (weeklyFromInitial(initial)) return 'weekly';
     if ((initial?.recurrence_dates?.length ?? 0) >= 2) return 'dates';
     if (initial?.is_recurring) return 'weekly';
     return 'once';
@@ -180,13 +283,15 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [pickedDates, setPickedDates] = useState<string[]>(() =>
     Array.from(new Set(initial?.recurrence_dates ?? [])).sort()
   );
-  const [extraDates, setExtraDates] = useState<string[]>(() => {
-    const weekly =
-      Boolean(initial?.is_recurring) &&
-      ((initial?.recurrence_rules?.length ?? 0) > 0 ||
-        ((initial as { recurrence_weekdays?: number[] } | undefined)?.recurrence_weekdays?.length ?? 0) > 0);
-    return weekly ? Array.from(new Set(initial?.recurrence_dates ?? [])).sort() : [];
-  });
+  const [extraDates, setExtraDates] = useState<string[]>(() =>
+    weeklyFromInitial(initial) ? Array.from(new Set(initial?.recurrence_dates ?? [])).sort() : []
+  );
+  const [dateSlots, setDateSlots] = useState<FormDateSlot[]>(() => initialDateSlots(initial));
+  const [endChoice, setEndChoice] = useState<EndChoice>(() => initialEnd(initial));
+  const [creatingGroup, setCreatingGroup] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [groupMemberIds, setGroupMemberIds] = useState<string[]>([]);
+  const [groupSaving, setGroupSaving] = useState(false);
   const [financeEnabled, setFinanceEnabled] = useState(Boolean(initial?.finance_enabled));
   const [showWeather, setShowWeather] = useState(Boolean(initial?.show_weather));
   const [moreOpen, setMoreOpen] = useState(
@@ -218,9 +323,12 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     const d = new Date(`${raw}T12:00:00`);
     return Number.isNaN(d.getTime()) ? null : d;
   });
-  const [durationMinutes, setDurationMinutes] = useState(() => defaultDurationFromInitial(initial));
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDateSlots((prev) => mergeDateSlots(pickedDates, prev));
+  }, [pickedDates]);
 
   function changeExtraDates(next: string[]) {
     setExtraDates(next);
@@ -420,9 +528,55 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       const template = prev[0];
       const hour = template?.hour ?? startsAt?.getHours() ?? 18;
       const minute = template?.minute ?? (startsAt ? (Math.round(startsAt.getMinutes() / 15) * 15) % 60 : 0);
-      const duration = template?.duration_minutes ?? durationMinutes;
-      return normalizeRules([...prev, { weekday: day, hour, minute, duration_minutes: duration }]);
+      return normalizeRules([
+        ...prev,
+        {
+          weekday: day,
+          hour,
+          minute,
+          duration_minutes: template?.duration_minutes ?? null,
+          end_hour: template?.end_hour ?? null,
+          end_minute: template?.end_minute ?? null,
+        },
+      ]);
     });
+  }
+
+  async function createGroupInline() {
+    if (!groupName.trim()) {
+      Alert.alert(t.common.error, t.groups.needName);
+      return;
+    }
+    if (!groupMemberIds.length) {
+      Alert.alert(t.common.error, t.groups.needMember);
+      return;
+    }
+    setGroupSaving(true);
+    const { data, error } = await supabase
+      .from('friend_groups')
+      .insert({ name: groupName.trim(), created_by: userId })
+      .select('id, name')
+      .single();
+    if (error || !data) {
+      setGroupSaving(false);
+      Alert.alert(t.common.error, error?.message || t.groups.createFailed);
+      return;
+    }
+    const { error: memErr } = await supabase.from('friend_group_members').insert(
+      groupMemberIds.map((uid) => ({ group_id: data.id, user_id: uid }))
+    );
+    setGroupSaving(false);
+    if (memErr) {
+      Alert.alert(t.common.error, memErr.message);
+      return;
+    }
+    setGroups((prev) =>
+      [...prev, { id: data.id, name: data.name }].sort((a, b) => a.name.localeCompare(b.name))
+    );
+    setSelectedGroupId(data.id);
+    setGroupName('');
+    setGroupMemberIds([]);
+    setCreatingGroup(false);
   }
 
   function patchRule(weekday: number, patch: Partial<RecurrenceRule>) {
@@ -458,30 +612,27 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       setFormError(t.form.needWeekday);
       return;
     }
-    if (recurrenceMode === 'weekly' && normalized.some((r) => !r.duration_minutes || r.duration_minutes < 15)) {
-      setFormError(t.form.needDurationPerDay);
-      return;
-    }
-    if (recurrenceMode !== 'weekly' && durationMinutes < 15) {
-      setFormError(t.form.minDuration);
-      return;
-    }
-
     let startToSave = startsAt;
+    let slotsToSave = dateSlots;
     if (isDateSeries) {
       const days = [...pickedDates].sort();
+      slotsToSave = mergeDateSlots(days, dateSlots);
       if (!activityId && days.length < 2) {
         setFormError(t.form.needDates);
         return;
       }
-      const seed = startsAt ?? new Date();
       const orig = activityId ? parseInitialDate(initial?.starts_at) : null;
       const day = orig ? formatDay(orig) : days[0];
-      if (!day) {
+      const slot = slotsToSave.find((item) => item.date === day) ?? slotsToSave[0];
+      if (!day || !slot) {
         setFormError(t.form.needDates);
         return;
       }
-      startToSave = combineDayAndTime(day, seed.getHours(), seed.getMinutes());
+      startToSave = slotStart(slot);
+      if (slotsToSave.some((item) => resolveEndMinutes(slotStart(item), item.end) == null && item.end.mode !== 'none')) {
+        setFormError(t.form.minDuration);
+        return;
+      }
     } else if (recurrenceMode === 'weekly') {
       if (!recurrenceUntil) {
         setFormError(t.form.needSeriesEnd);
@@ -496,6 +647,15 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         return;
       }
       startToSave = first;
+      if (
+        normalized.some((rule) => {
+          const end = endFromStored(rule.duration_minutes, rule.end_hour, rule.end_minute);
+          return end.mode !== 'none' && resolveEndMinutes(ruleTimeAsDate(rule), end) == null;
+        })
+      ) {
+        setFormError(t.form.minDuration);
+        return;
+      }
       const untilDay = formatDay(recurrenceUntil);
       if (untilDay < formatDay(startToSave)) {
         setFormError(t.form.seriesEndBeforeStart);
@@ -503,6 +663,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       }
     } else if (!startToSave) {
       setFormError(t.form.needActivityStart);
+      return;
+    } else if (endChoice.mode !== 'none' && resolveEndMinutes(startToSave, endChoice) == null) {
+      setFormError(t.form.minDuration);
       return;
     }
 
@@ -590,10 +753,15 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           category_id,
           starts_at: startToSave.toISOString(),
           ends_at: null,
-          duration_minutes: recurrenceMode === 'weekly'
-            ? normalized.find((r) => r.weekday === isoWeekday(startToSave))?.duration_minutes ??
-              durationMinutes
-            : durationMinutes,
+          duration_minutes:
+            recurrenceMode === 'weekly'
+              ? normalized.find((r) => r.weekday === isoWeekday(startToSave))?.duration_minutes ?? null
+              : recurrenceMode === 'dates'
+                ? resolveEndMinutes(
+                    startToSave,
+                    (slotsToSave.find((item) => item.date === formatDay(startToSave)) ?? slotsToSave[0])?.end ?? noEnd()
+                  )
+                : resolveEndMinutes(startToSave, endChoice),
           price: priceNum,
           min_participants: minNum,
           max_participants: maxNum,
@@ -609,6 +777,17 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           finance_enabled: financeEnabled,
           show_weather: geoLocation && venueLatitude != null && venueLongitude != null && showWeather,
           recurrence_rules: recurrenceMode === 'weekly' ? normalized : [],
+          date_slots:
+            recurrenceMode === 'dates'
+              ? slotsToSave.map((slot) => ({
+                  date: slot.date,
+                  hour: slot.hour,
+                  minute: slot.minute,
+                  duration_minutes: resolveEndMinutes(slotStart(slot), slot.end),
+                  end_hour: slot.end.mode === 'clock' ? slot.end.endHour : null,
+                  end_minute: slot.end.mode === 'clock' ? slot.end.endMinute : null,
+                }))
+              : undefined,
           recurrence_until: recurrenceMode === 'weekly' && recurrenceUntil ? formatDay(recurrenceUntil) : null,
           recurrence_dates:
             recurrenceMode === 'dates'
@@ -767,20 +946,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             onChange={setStartsAt}
             minimumDate={new Date()}
           />
-          <View style={{ marginBottom: theme.space.md }}>
-            <Text style={styles.durationLabel}>{req(t.form.duration)}</Text>
-            <View style={styles.durationRow}>
-              <View style={styles.durationBlock}>
-                <Chip label="−1h" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 60))} />
-                <Chip label="−30m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 30))} />
-                <Chip label="−15m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 15))} />
-                <Text style={styles.durationValue}>{formatDuration(durationMinutes)}</Text>
-                <Chip label="+15m" active={false} onPress={() => setDurationMinutes((m) => m + 15)} />
-                <Chip label="+30m" active={false} onPress={() => setDurationMinutes((m) => m + 30)} />
-                <Chip label="+1h" active={false} onPress={() => setDurationMinutes((m) => m + 60)} />
-              </View>
-            </View>
-          </View>
+          <EndChoiceField value={endChoice} onChange={setEndChoice} start={startsAt} />
         </View>
       ) : null}
 
@@ -852,7 +1018,33 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             <Muted>{t.form.groupEmpty}</Muted>
           ) : null}
           {!activityId ? (
-            <Button label={t.form.manageGroups} variant="secondary" onPress={() => router.push('/groups')} />
+            <View style={{ marginTop: 8 }}>
+              <Button
+                label={creatingGroup ? t.common.cancel : t.groups.newGroup}
+                variant="secondary"
+                onPress={() => setCreatingGroup((open) => !open)}
+              />
+              {creatingGroup ? (
+                <View style={{ marginTop: 12 }}>
+                  <Input
+                    label={t.groups.name}
+                    value={groupName}
+                    onChangeText={setGroupName}
+                    placeholder={t.groups.namePlaceholder}
+                  />
+                  <Muted>{t.groups.members}</Muted>
+                  <FriendPicker
+                    friends={friends}
+                    selectedIds={groupMemberIds}
+                    onChange={setGroupMemberIds}
+                    label={t.groups.addMember}
+                    placeholder={t.form.searchFriends}
+                    emptyHint={t.form.noFriends}
+                  />
+                  <Button label={t.groups.create} onPress={() => void createGroupInline()} loading={groupSaving} />
+                </View>
+              ) : null}
+            </View>
           ) : null}
         </View>
       ) : null}
@@ -894,27 +1086,38 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
               <Muted>{t.form.datesPicked(pickedDates.length)}</Muted>
             </View>
           )}
-          <DateTimeField
-            label={req(t.form.timeForDates)}
-            value={startsAt}
-            onChange={setStartsAt}
-            mode="time"
-            minimumDate={new Date(2000, 0, 1)}
-          />
-          <View style={{ marginBottom: theme.space.md }}>
-            <Text style={styles.durationLabel}>{req(t.form.duration)}</Text>
-            <View style={styles.durationRow}>
-              <View style={styles.durationBlock}>
-                <Chip label="−1h" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 60))} />
-                <Chip label="−30m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 30))} />
-                <Chip label="−15m" active={false} onPress={() => setDurationMinutes((m) => Math.max(15, m - 15))} />
-                <Text style={styles.durationValue}>{formatDuration(durationMinutes)}</Text>
-                <Chip label="+15m" active={false} onPress={() => setDurationMinutes((m) => m + 15)} />
-                <Chip label="+30m" active={false} onPress={() => setDurationMinutes((m) => m + 30)} />
-                <Chip label="+1h" active={false} onPress={() => setDurationMinutes((m) => m + 60)} />
-              </View>
+          {dateSlots.map((slot) => (
+            <View key={slot.date} style={styles.slotCard}>
+              <Text style={styles.ruleDay}>
+                {format(new Date(`${slot.date}T12:00:00`), locale === 'sl' ? 'EEEE, d. MMM' : 'EEEE, d MMM', {
+                  locale: locale === 'sl' ? slLocale : enUS,
+                })}
+              </Text>
+              <DateTimeField
+                label={t.form.start}
+                value={slotStart(slot)}
+                mode="time"
+                minimumDate={new Date(2000, 0, 1)}
+                onChange={(d) => {
+                  if (!d) return;
+                  setDateSlots((prev) =>
+                    prev.map((item) =>
+                      item.date === slot.date
+                        ? { ...item, hour: d.getHours(), minute: (Math.round(d.getMinutes() / 15) * 15) % 60 }
+                        : item
+                    )
+                  );
+                }}
+              />
+              <EndChoiceField
+                value={slot.end}
+                start={slotStart(slot)}
+                onChange={(end) =>
+                  setDateSlots((prev) => prev.map((item) => (item.date === slot.date ? { ...item, end } : item)))
+                }
+              />
             </View>
-          </View>
+          ))}
         </View>
       ) : recurrenceMode === 'weekly' ? (
         <View>
@@ -941,49 +1144,30 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
                     mode="time"
                     onChange={(d) => {
                       if (!d) return;
+                      const hour = d.getHours();
+                      const minute = (Math.round(d.getMinutes() / 15) * 15) % 60;
+                      const end = endFromStored(r.duration_minutes, r.end_hour, r.end_minute);
                       patchRule(r.weekday, {
-                        hour: d.getHours(),
-                        minute: (Math.round(d.getMinutes() / 15) * 15) % 60,
+                        hour,
+                        minute,
+                        duration_minutes: resolveEndMinutes(ruleTimeAsDate({ ...r, hour, minute }), end),
                       });
                     }}
                     containerStyle={{ marginBottom: 0 }}
                   />
                 </View>
                 <View style={styles.slotDuration}>
-                  <Text style={styles.durationLabel}>{t.form.duration}</Text>
-                  <View style={styles.durationBlock}>
-                    <Chip
-                      label="−1h"
-                      active={false}
-                      onPress={() => patchRule(r.weekday, { duration_minutes: Math.max(15, r.duration_minutes - 60) })}
-                    />
-                    <Chip
-                      label="−30m"
-                      active={false}
-                      onPress={() => patchRule(r.weekday, { duration_minutes: Math.max(15, r.duration_minutes - 30) })}
-                    />
-                    <Chip
-                      label="−15m"
-                      active={false}
-                      onPress={() => patchRule(r.weekday, { duration_minutes: Math.max(15, r.duration_minutes - 15) })}
-                    />
-                    <Text style={styles.durationValue}>{formatDuration(r.duration_minutes)}</Text>
-                    <Chip
-                      label="+15m"
-                      active={false}
-                      onPress={() => patchRule(r.weekday, { duration_minutes: r.duration_minutes + 15 })}
-                    />
-                    <Chip
-                      label="+30m"
-                      active={false}
-                      onPress={() => patchRule(r.weekday, { duration_minutes: r.duration_minutes + 30 })}
-                    />
-                    <Chip
-                      label="+1h"
-                      active={false}
-                      onPress={() => patchRule(r.weekday, { duration_minutes: r.duration_minutes + 60 })}
-                    />
-                  </View>
+                  <EndChoiceField
+                    value={endFromStored(r.duration_minutes, r.end_hour, r.end_minute)}
+                    start={ruleTimeAsDate(r)}
+                    onChange={(end) =>
+                      patchRule(r.weekday, {
+                        duration_minutes: resolveEndMinutes(ruleTimeAsDate(r), end),
+                        end_hour: end.mode === 'clock' ? end.endHour : null,
+                        end_minute: end.mode === 'clock' ? end.endMinute : null,
+                      })
+                    }
+                  />
                 </View>
               </View>
             </View>
@@ -1005,9 +1189,10 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           {computedFirst ? (
             <Muted>
               {t.form.firstOccurrenceComputed(formatFirstOccurrence(computedFirst, locale))}
-              {` · ${formatDuration(
-                rules.find((r) => r.weekday === isoWeekday(computedFirst))?.duration_minutes ?? durationMinutes
-              )}`}
+              {(() => {
+                const minutes = rules.find((r) => r.weekday === isoWeekday(computedFirst))?.duration_minutes;
+                return minutes != null && minutes > 0 ? ` · ${formatDuration(minutes)}` : '';
+              })()}
             </Muted>
           ) : rules.length ? (
             <Muted>{t.form.needFirstOccurrence}</Muted>

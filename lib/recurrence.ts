@@ -6,8 +6,21 @@ export type RecurrenceRule = {
   weekday: number;
   hour: number;
   minute: number;
-  /** Duration for this weekday in minutes */
-  duration_minutes: number;
+  /** Minutes until the end. Null means the day has no set end. */
+  duration_minutes: number | null;
+  /** Set when the end was picked as a clock time, so edit can restore that choice. */
+  end_hour?: number | null;
+  end_minute?: number | null;
+};
+
+/** One calendar day in a dated series, with its own start and optional end. */
+export type DateSlotRule = {
+  date: string;
+  hour: number;
+  minute: number;
+  duration_minutes: number | null;
+  end_hour?: number | null;
+  end_minute?: number | null;
 };
 
 export type RecurrenceLocale = 'en' | 'sl';
@@ -73,19 +86,29 @@ export function combineDayAndTime(day: string, hours: number, minutes: number): 
   return x;
 }
 
+function ruleEndText(r: RecurrenceRule): string {
+  if (r.end_hour != null && r.end_minute != null) return `– ${formatTime(r.end_hour, r.end_minute)}`;
+  if (r.duration_minutes != null && r.duration_minutes > 0) return `· ${formatDuration(r.duration_minutes)}`;
+  return '';
+}
+
 export function formatRecurrence(rules: RecurrenceRule[], locale: RecurrenceLocale = 'en'): string {
   if (!rules?.length) return '';
   const sorted = [...rules].sort((a, b) => a.weekday - b.weekday);
   if (sorted.length === 1) {
     const r = sorted[0];
     const time = formatTime(r.hour, r.minute);
-    const dur = formatDuration(r.duration_minutes);
+    const end = ruleEndText(r);
+    const tail = end ? ` ${end}` : '';
     return locale === 'sl'
-      ? `Vsak ${weekdayLong(r.weekday, 'sl')} ob ${time} · ${dur}`
-      : `Every ${weekdayLong(r.weekday, 'en')} at ${time} · ${dur}`;
+      ? `Vsak ${weekdayLong(r.weekday, 'sl')} ob ${time}${tail}`
+      : `Every ${weekdayLong(r.weekday, 'en')} at ${time}${tail}`;
   }
   return sorted
-    .map((r) => `${weekdayShort(r.weekday, locale)} ${formatTime(r.hour, r.minute)} (${formatDuration(r.duration_minutes)})`)
+    .map((r) => {
+      const end = ruleEndText(r);
+      return `${weekdayShort(r.weekday, locale)} ${formatTime(r.hour, r.minute)}${end ? ` ${end}` : ''}`;
+    })
     .join(' · ');
 }
 
@@ -95,16 +118,32 @@ export function formatFirstOccurrence(d: Date, locale: RecurrenceLocale = 'en'):
   return format(d, pattern, { locale: loc });
 }
 
+function snapDuration(value: number | null | undefined): number | null {
+  if (value == null || !(value > 0)) return null;
+  return Math.max(15, Math.round(value / 15) * 15);
+}
+
+export function hasWeekdayRules(
+  rules: { weekday?: number; date?: string }[] | null | undefined
+): boolean {
+  return (rules ?? []).some((r) => {
+    const weekday = Number(r.weekday);
+    return weekday >= 1 && weekday <= 7 && typeof r.date !== 'string';
+  });
+}
+
 export function normalizeRules(rules: RecurrenceRule[]): RecurrenceRule[] {
   const byDay = new Map<number, RecurrenceRule>();
   for (const r of rules) {
     if (r.weekday < 1 || r.weekday > 7) continue;
-    const duration = Math.max(15, Math.round((r.duration_minutes || 90) / 15) * 15);
     byDay.set(r.weekday, {
       weekday: r.weekday,
       hour: Math.min(23, Math.max(0, Math.round(r.hour))),
       minute: Math.min(59, Math.max(0, Math.round(r.minute / 15) * 15)),
-      duration_minutes: duration,
+      duration_minutes: snapDuration(r.duration_minutes),
+      end_hour: r.end_hour == null ? null : Math.min(23, Math.max(0, Math.round(r.end_hour))),
+      end_minute:
+        r.end_minute == null ? null : Math.min(59, Math.max(0, Math.round(r.end_minute / 15) * 15)),
     });
   }
   return Array.from(byDay.values()).sort((a, b) => a.weekday - b.weekday);
@@ -134,12 +173,21 @@ export function hydrateRules(
 ): RecurrenceRule[] {
   if (!rules?.length) return [];
   return normalizeRules(
-    rules.map((r) => ({
-      weekday: Number(r.weekday),
-      hour: Number(r.hour),
-      minute: Number(r.minute),
-      duration_minutes: Number(r.duration_minutes) || fallbackDuration,
-    }))
+    rules
+      .filter((r) => Number(r.weekday) >= 1 && Number(r.weekday) <= 7 && typeof (r as { date?: string }).date !== 'string')
+      .map((r) => {
+        const explicitNone = r.duration_minutes === null && r.end_hour == null;
+        const duration =
+          r.duration_minutes == null ? (explicitNone ? null : fallbackDuration) : Number(r.duration_minutes);
+        return {
+          weekday: Number(r.weekday),
+          hour: Number(r.hour),
+          minute: Number(r.minute),
+          duration_minutes: duration,
+          end_hour: r.end_hour ?? null,
+          end_minute: r.end_minute ?? null,
+        };
+      })
   );
 }
 
@@ -196,7 +244,7 @@ export type SeriesSlot = {
   seriesId: string;
   day: string;
   startsAt: Date;
-  durationMinutes: number;
+  durationMinutes: number | null;
 };
 
 type ExpandableActivity = {
@@ -206,7 +254,7 @@ type ExpandableActivity = {
   starts_at: string;
   ends_at?: string | null;
   duration_minutes?: number | null;
-  recurrence_rules?: Partial<RecurrenceRule>[] | null;
+  recurrence_rules?: (Partial<RecurrenceRule> & Partial<DateSlotRule>)[] | null;
   recurrence_weekdays?: number[];
   recurrence_until?: string | null;
   recurrence_dates?: string[];
@@ -216,7 +264,7 @@ export function isDateSeries(activity: Pick<ExpandableActivity, 'recurrence_date
   if ((activity.recurrence_dates?.length ?? 0) < 2) return false;
   const weekly =
     Boolean(activity.is_recurring) &&
-    ((activity.recurrence_rules?.length ?? 0) > 0 || (activity.recurrence_weekdays?.length ?? 0) > 0);
+    (hasWeekdayRules(activity.recurrence_rules) || (activity.recurrence_weekdays?.length ?? 0) > 0);
   return !weekly;
 }
 
@@ -289,14 +337,32 @@ export function expandSeriesSlots(
   const untilDay = endKey ? startOfLocalDay(new Date(`${endKey}T12:00:00`)) : null;
 
   if (isDateSeries(activity)) {
+    const timed = new Map<string, { hour: number; minute: number; duration_minutes: number | null }>();
+    for (const raw of activity.recurrence_rules ?? []) {
+      const date = raw.date?.slice(0, 10);
+      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || hasWeekdayRules([raw])) continue;
+      const hour = Number(raw.hour);
+      const minute = Number(raw.minute);
+      timed.set(date, {
+        hour: Number.isFinite(hour) ? hour : seed.getHours(),
+        minute: Number.isFinite(minute) ? minute : seed.getMinutes(),
+        duration_minutes: raw.duration_minutes == null ? null : Number(raw.duration_minutes),
+      });
+    }
     for (const day of activity.recurrence_dates ?? []) {
       const key = String(day).slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || skipped.has(key)) continue;
       if (endKey && key > endKey) continue;
-      const start = combineDayAndTime(key, seed.getHours(), seed.getMinutes());
+      const slot = timed.get(key);
+      const start = combineDayAndTime(key, slot?.hour ?? seed.getHours(), slot?.minute ?? seed.getMinutes());
       if (start.getTime() < now) continue;
       if (startOfLocalDay(start) < from || startOfLocalDay(start) > to) continue;
-      out.push({ seriesId, day: key, startsAt: start, durationMinutes: fallbackDuration });
+      const durationMinutes = slot
+        ? slot.duration_minutes != null && slot.duration_minutes > 0
+          ? slot.duration_minutes
+          : null
+        : fallbackDuration;
+      out.push({ seriesId, day: key, startsAt: start, durationMinutes });
     }
     return out.sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
   }

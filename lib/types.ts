@@ -232,7 +232,15 @@ export type Activity = {
   /** Show the start-time forecast in the top-right corner */
   show_weather?: boolean;
   recurrence_weekdays: number[];
-  recurrence_rules: { weekday: number; hour: number; minute: number; duration_minutes: number }[];
+  recurrence_rules: {
+    weekday?: number;
+    date?: string;
+    hour: number;
+    minute: number;
+    duration_minutes: number | null;
+    end_hour?: number | null;
+    end_minute?: number | null;
+  }[];
   duration_minutes: number | null;
   /** Last day a new occurrence may start (YYYY-MM-DD) */
   recurrence_until: string | null;

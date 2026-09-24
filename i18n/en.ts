@@ -289,6 +289,10 @@ export const en = {
       'Pick an address from suggestions, or type a name and press Enter (no coordinates).',
     needSubcategory: 'Enter a known subcategory (e.g. Football, Concert, Hiking).',
     duration: 'Duration',
+    addEnd: 'Add an end',
+    endClock: 'Expected end time',
+    endApprox: 'Approximate duration',
+    noEnd: 'No set end',
     neededCount: 'How many people you need',
     capacityHint:
       'Required. You count as one. From–to sets a minimum and a maximum; the maximum limits who can join.',
@@ -332,8 +336,8 @@ export const en = {
     groupEmpty: 'This group has no members yet.',
     recurrence: 'Recurrence',
     recurrenceHint:
-      'Pick weekdays. Each day has its own start time and duration. When an occurrence starts, it closes and the next opens; chat carries over.',
-    datesHint: 'Tap days on the calendar. The same start time and duration apply to every date. Each date is its own event; invites, chat and finance stay in one series.',
+      'Pick weekdays. Each day has its own start time. An end is optional. When an occurrence starts, it closes and the next opens; chat carries over.',
+    datesHint: 'Tap days on the calendar. Each date has its own start time and optional end. Each date is its own event; invites, chat and finance stay in one series.',
     datesLockedOnEdit: 'Dates are already created. Here you change the time of this occurrence only.',
     addDatesHint:
       'Tap a day to add a date — including one you deleted. Existing dates cannot be removed here; delete them from the event.',

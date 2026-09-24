@@ -6,7 +6,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useT } from '@/i18n';
 import { userCanEditActivity } from '@/lib/api';
 import { fetchSeriesFinanceSettings, seriesKey } from '@/lib/finance';
-import { hydrateRules, rulesFromLegacy, type RecurrenceRule } from '@/lib/recurrence';
+import { hasWeekdayRules, hydrateRules, rulesFromLegacy, type DateSlotRule, type RecurrenceRule } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
 import type { Activity, FundingMode, Privacy } from '@/lib/types';
 
@@ -41,7 +41,7 @@ export default function EditActivityScreen() {
     payer_group_id?: string | null;
     payer_user_ids?: string[];
     series_id?: string | null;
-    recurrence_rules?: RecurrenceRule[];
+    recurrence_rules?: (RecurrenceRule | DateSlotRule)[];
     recurrence_until?: string | null;
     recurrence_dates?: string[];
     duration_minutes?: number | null;
@@ -73,9 +73,16 @@ export default function EditActivityScreen() {
           : act.ends_at
             ? Math.max(15, Math.round((new Date(act.ends_at).getTime() - start.getTime()) / 60_000))
             : 90;
-      const rules = act.recurrence_rules?.length
-        ? hydrateRules(act.recurrence_rules, fallback)
-        : rulesFromLegacy(act.recurrence_weekdays ?? [], start.getHours(), start.getMinutes(), fallback);
+      const rawRules = (act.recurrence_rules ?? []) as (Partial<RecurrenceRule> & Partial<DateSlotRule>)[];
+      const dateSlots = rawRules.filter(
+        (rule) => typeof rule.date === 'string' && !hasWeekdayRules([rule])
+      );
+      const weekRules = hasWeekdayRules(rawRules)
+        ? hydrateRules(rawRules, fallback)
+        : act.recurrence_weekdays?.length
+          ? rulesFromLegacy(act.recurrence_weekdays, start.getHours(), start.getMinutes(), fallback)
+          : [];
+      const rules = [...weekRules, ...dateSlots];
       const sid = seriesKey(act);
       let fundingMode: FundingMode | null = null;
       let whoPays: import('@/lib/types').FinanceWhoPays | null = null;

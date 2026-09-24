@@ -440,12 +440,12 @@ export default function PlannerScreen() {
         if (skipped.has(slot.day)) continue;
         if (byKey.has(mapKey)) continue;
         if (realByDay.get(mapKey)) continue;
-        const durationMs = slot.durationMinutes * 60_000;
+        const durationMs = slot.durationMinutes != null ? slot.durationMinutes * 60_000 : null;
         byKey.set(mapKey, {
           ...template,
           join_count: 0,
           starts_at: slot.startsAt.toISOString(),
-          ends_at: new Date(slot.startsAt.getTime() + durationMs).toISOString(),
+          ends_at: durationMs != null ? new Date(slot.startsAt.getTime() + durationMs).toISOString() : null,
           duration_minutes: slot.durationMinutes,
           slotKey: mapKey,
           virtual: true,

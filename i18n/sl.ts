@@ -288,6 +288,10 @@ export const sl = {
       'Izberi naslov s predloga ali vpiši ime in pritisni Enter (brez koordinat).',
     needSubcategory: 'Vnesite znano podkategorijo (npr. Nogomet, Koncert, Pohod).',
     duration: 'Trajanje',
+    addEnd: 'Dodaj zaključek',
+    endClock: 'Predvidena ura zaključka',
+    endApprox: 'Približno trajanje',
+    noEnd: 'Brez zaključka',
     neededCount: 'Koliko ljudi potrebuješ',
     capacityHint:
       'Obvezno. Ti se šteješ zraven. Od–do nastavi minimum in maksimum; maksimum omejuje prijave.',
@@ -330,9 +334,9 @@ export const sl = {
     groupEmpty: 'Ta skupina še nima članov.',
     recurrence: 'Ponavljanje',
     recurrenceHint:
-      'Izberi dneve. Vsak dan ima svojo uro začetka in trajanje. Ko se termin začne, se zapre in odpre naslednji; klepet se prenese.',
+      'Izberi dneve. Vsak dan ima svojo uro začetka. Zaključek ni obvezen. Ko se termin začne, se zapre in odpre naslednji; klepet se prenese.',
     datesHint:
-      'Tapni dneve v koledarju. Ista ura in trajanje veljata za vse datume. Vsak datum je svoj dogodek; vabila, klepet in finance ostanejo v isti seriji.',
+      'Tapni dneve v koledarju. Vsak datum ima svojo uro začetka in neobvezen zaključek. Vsak datum je svoj dogodek; vabila, klepet in finance ostanejo v isti seriji.',
     datesLockedOnEdit: 'Datumi so že ustvarjeni. Tukaj spremeniš uro tega termina.',
     addDatesHint:
       'Tapni dan, da dodaš termin — tudi izbrisanega. Obstoječih datumov tukaj ne moreš odstraniti; izbriši jih v dogodku.',
