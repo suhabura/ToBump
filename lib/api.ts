@@ -339,7 +339,7 @@ export async function fetchActivities(
     const maxM = radiusKm * 1000;
     if (opts.origin) {
       result = result.filter((a) => a.distance_m != null && a.distance_m <= maxM);
-      result = hideFullEventsExceptInvolved(result, opts.userId);
+      result = hideFullEvents(result);
       result.sort((a, b) => (a.distance_m ?? 0) - (b.distance_m ?? 0));
       return attachDeclineCounts(oneActivityPerSeries(result), opts.userId);
     }
@@ -349,10 +349,7 @@ export async function fetchActivities(
     const marked = await attachDeclineCounts(result, opts.userId);
     // Drop a declined date before picking the series card, so the next date still asks.
     const open = oneActivityPerSeries(
-      hideFullEventsExceptInvolved(
-        marked.filter((a) => !a.is_declined),
-        opts.userId
-      )
+      hideFullEvents(marked.filter((a) => !a.is_declined))
     );
     open.sort((a, b) => {
       if (a.sort_group !== b.sort_group) return (a.sort_group ?? 0) - (b.sort_group ?? 0);
@@ -364,8 +361,8 @@ export async function fetchActivities(
     return { open, declined };
   }
 
-  // Full events drop out of Events (still visible to organizer / already joined)
-  result = hideFullEventsExceptInvolved(result, opts.userId);
+  // Full events drop out of Events for everyone. A leave drops the count and the card returns.
+  result = hideFullEvents(result);
 
   // Personal feed first; within feed sort by start time
   result.sort((a, b) => {
@@ -376,15 +373,10 @@ export async function fetchActivities(
   return attachDeclineCounts(oneActivityPerSeries(result), opts.userId);
 }
 
-function hideFullEventsExceptInvolved(
-  activities: ActivityWithRelations[],
-  userId: string
-): ActivityWithRelations[] {
+function hideFullEvents(activities: ActivityWithRelations[]): ActivityWithRelations[] {
   return activities.filter((a) => {
     if (a.max_participants == null) return true;
-    const full = (a.join_count ?? 0) >= a.max_participants;
-    if (!full) return true;
-    return Boolean(a.is_joined) || a.created_by === userId;
+    return (a.join_count ?? 0) < a.max_participants;
   });
 }
 
