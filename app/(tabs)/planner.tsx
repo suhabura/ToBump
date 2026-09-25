@@ -72,13 +72,11 @@ function dayKey(d: Date): string {
   return format(startOfDay(d), 'yyyy-MM-dd');
 }
 
-type DayFlags = { org: boolean; joined: boolean; planner: boolean };
+type DayFlags = { joined: boolean; planner: boolean };
 
 function DayMarks({ flags, selected }: { flags?: DayFlags; selected: boolean }) {
-  const ink = selected ? '#fff' : theme.colors.text;
   return (
     <View style={styles.markRow}>
-      {flags?.org ? <FontAwesome name="star" size={8} color={ink} /> : null}
       {flags?.joined ? <View style={[styles.dot, { backgroundColor: selected ? '#fff' : theme.colors.primary }]} /> : null}
       {flags?.planner ? <View style={[styles.dot, { backgroundColor: selected ? '#fff' : '#E6B325' }]} /> : null}
     </View>
@@ -450,15 +448,14 @@ export default function PlannerScreen() {
       if (a.skipped || a.status === 'cancelled') continue;
       const key = localDayKey(new Date(a.starts_at));
       if (Number.isNaN(new Date(a.starts_at).getTime())) continue;
-      const cur = flags.get(key) ?? { org: false, joined: false, planner: false };
+      const cur = flags.get(key) ?? { joined: false, planner: false };
       const joinedThis = !a.virtual && joinedIds.has(a.id);
-      if (a.created_by === user?.id) cur.org = true;
       if (joinedThis) cur.joined = true;
       else cur.planner = true;
       flags.set(key, cur);
     }
     return flags;
-  }, [plannerItems, joinedIds, user?.id]);
+  }, [plannerItems, joinedIds]);
 
   const selectedDayEvents = useMemo(() => {
     return plannerItems
@@ -658,10 +655,6 @@ export default function PlannerScreen() {
                   })}
                 </View>
                 <View style={styles.legend}>
-                  <View style={styles.legendItem}>
-                    <FontAwesome name="star" size={10} color={theme.colors.text} />
-                    <Text style={styles.legendText}>{t.planner.legendOrganizing}</Text>
-                  </View>
                   <View style={styles.legendItem}>
                     <View style={[styles.dot, styles.dotJoined]} />
                     <Text style={styles.legendText}>{t.planner.legendJoined}</Text>

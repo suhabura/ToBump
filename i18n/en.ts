@@ -158,7 +158,6 @@ export const en = {
     skipHint: 'Mark this date as cancelled. Other dates in the series stay.',
     skipShort: 'Skip',
     upcomingSlot: 'Upcoming date',
-    legendOrganizing: 'Organizing',
     legendJoined: 'Joined',
     legendPlanner: 'On your planner',
   },

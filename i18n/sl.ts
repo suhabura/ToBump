@@ -158,7 +158,6 @@ export const sl = {
     skipHint: 'Ta datum v seriji označiš kot odpovedan. Ostali termini ostanejo.',
     skipShort: 'Odpade',
     upcomingSlot: 'Prihodnji termin',
-    legendOrganizing: 'Organiziraš',
     legendJoined: 'Pridružen',
     legendPlanner: 'V planerju',
   },
