@@ -14,7 +14,7 @@ import {
 } from 'date-fns';
 import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { WeatherBadge } from '@/components/WeatherBadge';
@@ -34,6 +34,7 @@ import {
   fetchSkippedDays,
   joinSeriesOccurrence,
   openSeriesOccurrence,
+  subscribeSeriesFollows,
 } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
@@ -205,6 +206,31 @@ async function fetchMineAndJoined(
   return hydrateParents(Array.from(byId.values()));
 }
 
+async function fetchFollowedSeries(followIds: string[]): Promise<ActivityWithRelations[]> {
+  if (!followIds.length) return [];
+  const list = followIds.join(',');
+  async function load(select: string) {
+    const { data, error } = await supabase
+      .from('activities')
+      .select(select)
+      .or(`id.in.(${list}),series_id.in.(${list})`)
+      .in('status', ['active', 'completed']);
+    return { data: (data as ActivityWithRelations[]) ?? [], error };
+  }
+  let { data, error } = await load(PLANNER_SELECT_WITH_PARENT);
+  if (error) {
+    const retry = await load(PLANNER_SELECT_BASIC);
+    data = retry.data;
+    error = retry.error;
+  }
+  if (error) throw error;
+  const byId = new Map<string, ActivityWithRelations>();
+  for (const row of data) {
+    if (row?.id) byId.set(row.id, row);
+  }
+  return hydrateParents(Array.from(byId.values()));
+}
+
 async function fetchFutureJoins(joinIds: string[]): Promise<ActivityWithRelations[]> {
   if (!joinIds.length) return [];
   const nowIso = new Date().toISOString();
@@ -283,17 +309,21 @@ export default function PlannerScreen() {
           .eq('user_id', user.id);
         const ids = (joins ?? []).map((j) => j.activity_id);
         setJoinedIds(new Set(ids));
-        const [rows, futureJoins] = await Promise.all([
+        const followSet = await fetchSeriesFollows(user.id);
+        const [mineRows, futureJoins, followedRows] = await Promise.all([
           fetchMineAndJoined(user.id, ids, windowStart, windowEnd),
           fetchFutureJoins(ids),
+          fetchFollowedSeries([...followSet]),
         ]);
+        const rowsById = new Map<string, ActivityWithRelations>();
+        for (const row of mineRows.concat(followedRows)) {
+          if (row?.id) rowsById.set(row.id, row);
+        }
+        const rows = Array.from(rowsById.values());
         setItems(rows);
         setJoinedFuture(futureJoins);
         const seriesIds = Array.from(new Set(rows.concat(futureJoins).map((a) => seriesKey(a))));
-        const [followSet, skipped] = await Promise.all([
-          fetchSeriesFollows(user.id),
-          fetchSkippedDays(seriesIds),
-        ]);
+        const skipped = await fetchSkippedDays(seriesIds);
         setFollows(followSet);
         setSkippedBySeries(skipped);
         hasLoaded.current = true;
@@ -303,6 +333,12 @@ export default function PlannerScreen() {
     },
     [user?.id, month]
   );
+
+  useEffect(() => {
+    return subscribeSeriesFollows(() => {
+      void load({ silent: true });
+    });
+  }, [load]);
 
   useFocusEffect(
     useCallback(() => {
@@ -344,10 +380,22 @@ export default function PlannerScreen() {
         .on('postgres_changes', { event: '*', schema: 'public', table: 'activities' }, reloadActivities)
         .subscribe();
 
+      const followChannel = supabase
+        .channel(`planner-follow-${user.id}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'series_follows', filter: `user_id=eq.${user.id}` },
+          () => {
+            reloadActivities();
+          }
+        )
+        .subscribe();
+
       return () => {
         if (reloadTimer.current) clearTimeout(reloadTimer.current);
         supabase.removeChannel(channel);
         supabase.removeChannel(activityChannel);
+        supabase.removeChannel(followChannel);
       };
     }, [load, user?.id])
   );
@@ -399,9 +447,11 @@ export default function PlannerScreen() {
     }
 
     for (const [sid, template] of templates) {
-      if (!isSeriesActivity(template)) continue;
+      const series = isSeriesActivity(template);
       const isMine = template.created_by === user?.id;
-      if (!isMine && !follows.has(sid)) continue;
+      const followed = follows.has(sid);
+      if (!series) continue;
+      if (!isMine && !followed) continue;
       const skipped = skippedBySeries.get(sid) ?? new Set();
       let seriesStart = template.starts_at;
       for (const a of items) {

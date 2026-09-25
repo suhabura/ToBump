@@ -27,6 +27,19 @@ export async function fetchSkippedDays(seriesIds: string[]): Promise<Map<string,
   return map;
 }
 
+const followListeners = new Set<() => void>();
+
+export function subscribeSeriesFollows(listener: () => void) {
+  followListeners.add(listener);
+  return () => {
+    followListeners.delete(listener);
+  };
+}
+
+function notifySeriesFollows() {
+  for (const listener of followListeners) listener();
+}
+
 export async function setSeriesFollow(seriesId: string, follow: boolean) {
   const {
     data: { user },
@@ -38,6 +51,7 @@ export async function setSeriesFollow(seriesId: string, follow: boolean) {
       { onConflict: 'series_id,user_id' }
     );
     if (error) throw error;
+    notifySeriesFollows();
     return;
   }
   const { error } = await supabase
@@ -46,6 +60,7 @@ export async function setSeriesFollow(seriesId: string, follow: boolean) {
     .eq('series_id', seriesId)
     .eq('user_id', user.id);
   if (error) throw error;
+  notifySeriesFollows();
 }
 
 export async function skipSeriesDay(seriesId: string, day: string) {

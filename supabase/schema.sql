@@ -445,9 +445,10 @@ create policy "reports_insert" on public.activity_reports for insert to authenti
 create policy "reports_select_own" on public.activity_reports for select to authenticated
   using (reported_by = auth.uid());
 
--- Realtime for chat
+-- Realtime for chat and planner follows
 alter publication supabase_realtime add table public.chat_messages;
 alter publication supabase_realtime add table public.notifications;
+alter publication supabase_realtime add table public.series_follows;
 
 -- Seed categories
 insert into public.categories (name, icon) values
