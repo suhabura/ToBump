@@ -72,30 +72,16 @@ function dayKey(d: Date): string {
   return format(startOfDay(d), 'yyyy-MM-dd');
 }
 
-function DayDot({
-  mark,
-  selected,
-}: {
-  mark?: 'organizing' | 'joined' | 'both';
-  selected: boolean;
-}) {
-  if (!mark) return <View style={styles.dot} />;
-  if (selected) return <View style={[styles.dot, styles.dotOnSelected]} />;
-  if (mark === 'both') {
-    return (
-      <View style={styles.dotSplit}>
-        <View style={[styles.dotHalf, { backgroundColor: theme.colors.primary }]} />
-        <View style={[styles.dotHalf, { backgroundColor: theme.colors.accent }]} />
-      </View>
-    );
-  }
+type DayFlags = { org: boolean; joined: boolean; planner: boolean };
+
+function DayMarks({ flags, selected }: { flags?: DayFlags; selected: boolean }) {
+  const ink = selected ? '#fff' : theme.colors.text;
   return (
-    <View
-      style={[
-        styles.dot,
-        mark === 'organizing' ? styles.dotOrganizing : styles.dotJoined,
-      ]}
-    />
+    <View style={styles.markRow}>
+      {flags?.org ? <FontAwesome name="star" size={8} color={ink} /> : null}
+      {flags?.joined ? <View style={[styles.dot, { backgroundColor: selected ? '#fff' : theme.colors.primary }]} /> : null}
+      {flags?.planner ? <View style={[styles.dot, { backgroundColor: selected ? '#fff' : '#E6B325' }]} /> : null}
+    </View>
   );
 }
 
@@ -459,24 +445,20 @@ export default function PlannerScreen() {
   }, [items, follows, skippedBySeries, rangeStart, rangeEnd, user?.id]);
 
   const dayMarks = useMemo(() => {
-    const flags = new Map<string, { org: boolean; joined: boolean }>();
+    const flags = new Map<string, DayFlags>();
     for (const a of plannerItems) {
       if (a.skipped || a.status === 'cancelled') continue;
       const key = localDayKey(new Date(a.starts_at));
       if (Number.isNaN(new Date(a.starts_at).getTime())) continue;
-      const cur = flags.get(key) ?? { org: false, joined: false };
+      const cur = flags.get(key) ?? { org: false, joined: false, planner: false };
+      const joinedThis = !a.virtual && joinedIds.has(a.id);
       if (a.created_by === user?.id) cur.org = true;
-      else cur.joined = true;
+      if (joinedThis) cur.joined = true;
+      else cur.planner = true;
       flags.set(key, cur);
     }
-    const map = new Map<string, 'organizing' | 'joined' | 'both'>();
-    for (const [key, f] of flags) {
-      if (f.org && f.joined) map.set(key, 'both');
-      else if (f.org) map.set(key, 'organizing');
-      else map.set(key, 'joined');
-    }
-    return map;
-  }, [plannerItems, user?.id]);
+    return flags;
+  }, [plannerItems, joinedIds, user?.id]);
 
   const selectedDayEvents = useMemo(() => {
     return plannerItems
@@ -670,19 +652,23 @@ export default function PlannerScreen() {
                           ]}>
                           {format(day, 'd')}
                         </Text>
-                        <DayDot mark={mark} selected={selected} />
+                        <DayMarks flags={mark} selected={selected} />
                       </Pressable>
                     );
                   })}
                 </View>
                 <View style={styles.legend}>
                   <View style={styles.legendItem}>
-                    <View style={[styles.dot, styles.dotOrganizing]} />
+                    <FontAwesome name="star" size={10} color={theme.colors.text} />
                     <Text style={styles.legendText}>{t.planner.legendOrganizing}</Text>
                   </View>
                   <View style={styles.legendItem}>
                     <View style={[styles.dot, styles.dotJoined]} />
                     <Text style={styles.legendText}>{t.planner.legendJoined}</Text>
+                  </View>
+                  <View style={styles.legendItem}>
+                    <View style={[styles.dot, styles.dotPlanner]} />
+                    <Text style={styles.legendText}>{t.planner.legendPlanner}</Text>
                   </View>
                 </View>
               </View>
@@ -778,29 +764,21 @@ const styles = StyleSheet.create({
   dayText: { fontSize: 15, color: theme.colors.text, fontWeight: '600' },
   dayMuted: { color: theme.colors.textMuted, fontWeight: '500' },
   dayTextSelected: { color: '#fff', fontWeight: '700' },
-  dot: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    marginTop: 3,
-    backgroundColor: 'transparent',
-    overflow: 'hidden',
-  },
-  dotSplit: {
-    width: 9,
-    height: 9,
-    borderRadius: 5,
-    marginTop: 3,
+  markRow: {
     flexDirection: 'row',
-    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+    marginTop: 2,
+    minHeight: 9,
   },
-  dotHalf: {
-    flex: 1,
-    height: '100%',
+  dot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
   },
-  dotOrganizing: { backgroundColor: theme.colors.primary },
-  dotJoined: { backgroundColor: theme.colors.accent },
-  dotOnSelected: { backgroundColor: '#fff' },
+  dotJoined: { backgroundColor: theme.colors.primary },
+  dotPlanner: { backgroundColor: '#E6B325' },
   legend: {
     flexDirection: 'row',
     flexWrap: 'wrap',

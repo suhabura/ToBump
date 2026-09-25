@@ -160,6 +160,7 @@ export const sl = {
     upcomingSlot: 'Prihodnji termin',
     legendOrganizing: 'Organiziraš',
     legendJoined: 'Pridružen',
+    legendPlanner: 'V planerju',
   },
   friends: {
     title: 'Prijatelji',

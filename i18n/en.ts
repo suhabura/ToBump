@@ -160,6 +160,7 @@ export const en = {
     upcomingSlot: 'Upcoming date',
     legendOrganizing: 'Organizing',
     legendJoined: 'Joined',
+    legendPlanner: 'On your planner',
   },
   friends: {
     title: 'Friends',
