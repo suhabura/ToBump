@@ -325,6 +325,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   });
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   useEffect(() => {
     setDateSlots((prev) => mergeDateSlots(pickedDates, prev));
@@ -603,14 +604,12 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
   async function onSave() {
     setFormError(null);
-    if (!title.trim()) {
-      setFormError(t.form.needActivityStart);
-      return;
-    }
+    const missing: Record<string, string> = {};
+    if (!title.trim()) missing.title = t.form.needActivityStart;
+
     const normalized = recurrenceMode === 'weekly' ? normalizeRules(rules) : [];
     if (recurrenceMode === 'weekly' && normalized.length === 0) {
-      setFormError(t.form.needWeekday);
-      return;
+      missing.weekdays = t.form.needWeekday;
     }
     let startToSave = startsAt;
     let slotsToSave = dateSlots;
@@ -618,75 +617,68 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       const days = [...pickedDates].sort();
       slotsToSave = mergeDateSlots(days, dateSlots);
       if (!activityId && days.length < 2) {
-        setFormError(t.form.needDates);
-        return;
+        missing.dates = t.form.needDates;
       }
       const orig = activityId ? parseInitialDate(initial?.starts_at) : null;
       const day = orig ? formatDay(orig) : days[0];
       const slot = slotsToSave.find((item) => item.date === day) ?? slotsToSave[0];
       if (!day || !slot) {
-        setFormError(t.form.needDates);
-        return;
-      }
-      startToSave = slotStart(slot);
-      if (slotsToSave.some((item) => resolveEndMinutes(slotStart(item), item.end) == null && item.end.mode !== 'none')) {
-        setFormError(t.form.minDuration);
-        return;
+        missing.dates = t.form.needDates;
+      } else {
+        startToSave = slotStart(slot);
+        if (slotsToSave.some((item) => resolveEndMinutes(slotStart(item), item.end) == null && item.end.mode !== 'none')) {
+          missing.end = t.form.minDuration;
+        }
       }
     } else if (recurrenceMode === 'weekly') {
       if (!recurrenceUntil) {
-        setFormError(t.form.needSeriesEnd);
-        return;
+        missing.seriesEnd = t.form.needSeriesEnd;
+      } else {
+        const first = firstOccurrence(seriesFromDate, normalized, {
+          now: new Date(),
+          until: recurrenceUntil,
+        });
+        if (!first) {
+          missing.first = t.form.needFirstOccurrence;
+        } else {
+          startToSave = first;
+          if (formatDay(recurrenceUntil) < formatDay(startToSave)) {
+            missing.seriesEnd = t.form.seriesEndBeforeStart;
+          }
+        }
       }
-      const first = firstOccurrence(seriesFromDate, normalized, {
-        now: new Date(),
-        until: recurrenceUntil,
-      });
-      if (!first) {
-        setFormError(t.form.needFirstOccurrence);
-        return;
-      }
-      startToSave = first;
       if (
         normalized.some((rule) => {
           const end = endFromStored(rule.duration_minutes, rule.end_hour, rule.end_minute);
           return end.mode !== 'none' && resolveEndMinutes(ruleTimeAsDate(rule), end) == null;
         })
       ) {
-        setFormError(t.form.minDuration);
-        return;
-      }
-      const untilDay = formatDay(recurrenceUntil);
-      if (untilDay < formatDay(startToSave)) {
-        setFormError(t.form.seriesEndBeforeStart);
-        return;
+        missing.end = t.form.minDuration;
       }
     } else if (!startToSave) {
-      setFormError(t.form.needActivityStart);
-      return;
+      missing.when = t.form.needActivityStart;
     } else if (endChoice.mode !== 'none' && resolveEndMinutes(startToSave, endChoice) == null) {
-      setFormError(t.form.minDuration);
-      return;
+      missing.end = t.form.minDuration;
     }
 
-    if (startToSave.getTime() < Date.now() - 30_000) {
-      setFormError(t.form.pastNotAllowed);
-      return;
+    if (startToSave && startToSave.getTime() < Date.now() - 30_000) {
+      if (recurrenceMode === 'weekly') missing.first = missing.first ?? t.form.pastNotAllowed;
+      else missing.when = t.form.pastNotAllowed;
     }
 
     if (privacy === 'group' && !selectedGroupId) {
-      setFormError(t.form.needGroup);
-      return;
+      missing.people = t.form.needGroup;
+    } else if (privacy === 'invite' && inviteIds.filter((id) => id !== userId).length === 0) {
+      missing.people = t.form.needInviteFriends;
     }
 
     const priceTrim = financeEnabled ? price.trim() : '';
     if (financeEnabled) {
       if (priceTrim === '' || Number.isNaN(Number(priceTrim)) || Number(priceTrim) < 0) {
-        setFormError(t.form.needPrice);
-        return;
+        missing.price = t.form.needPrice;
       }
     }
-    const priceNum = financeEnabled ? Number(priceTrim) || 0 : null;
+    const priceNum = financeEnabled && !missing.price ? Number(priceTrim) || 0 : null;
     const modeToSave: FundingMode = isRecurring ? fundingMode : 'per_event';
 
     function parseOptionalCount(raw: string): number | null | 'invalid' {
@@ -706,16 +698,11 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       maxNum = exact;
     }
     if (minNum === 'invalid' || maxNum === 'invalid') {
-      setFormError(t.form.needCapacity);
-      return;
-    }
-    if (minNum == null) {
-      setFormError(t.form.needPeople);
-      return;
-    }
-    if (maxNum != null && minNum > maxNum) {
-      setFormError(t.form.capacityMinMax);
-      return;
+      missing.capacity = t.form.needCapacity;
+    } else if (minNum == null) {
+      missing.capacity = t.form.needPeople;
+    } else if (maxNum != null && minNum > maxNum) {
+      missing.capacity = t.form.capacityMinMax;
     }
     const inviteeCount =
       privacy === 'friends'
@@ -723,13 +710,27 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         : privacy === 'group'
           ? groupMembers.filter((p) => p.id !== userId).length
           : inviteIds.filter((id) => id !== userId).length;
-    if (inviteeCount + 1 < minNum) {
-      setFormError(t.form.needMorePeople(minNum - (inviteeCount + 1)));
-      return;
+    if (typeof minNum === 'number' && inviteeCount + 1 < minNum && !missing.people) {
+      missing.people = t.form.needMorePeople(minNum - (inviteeCount + 1));
     }
 
     if (!enterpriseId && !venueText.trim()) {
-      setFormError(t.form.needVenue);
+      missing.venue = t.form.needVenue;
+    }
+
+    if (Object.keys(missing).length || !startToSave || minNum === 'invalid' || minNum == null || maxNum === 'invalid') {
+      setFieldErrors(missing);
+      if (
+        missing.dates ||
+        missing.weekdays ||
+        missing.seriesEnd ||
+        missing.first ||
+        missing.price ||
+        (missing.when && recurrenceMode !== 'once') ||
+        (missing.end && recurrenceMode !== 'once')
+      ) {
+        setMoreOpen(true);
+      }
       return;
     }
 
@@ -742,9 +743,10 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         : null;
       const titleToSave = (categoryKey ?? title.trim()).trim();
       if (!titleToSave) {
-        setFormError(t.form.needActivityStart);
+        setFieldErrors({ title: t.form.needActivityStart });
         return;
       }
+      setFieldErrors({});
 
       const id = await saveActivity(
         userId,
@@ -859,10 +861,12 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   }
 
   const req = (label: string) => `${label} *`;
+  const fieldNote = (key: string) =>
+    fieldErrors[key] ? <Text style={styles.fieldError}>{fieldErrors[key]}</Text> : null;
+  const fieldSummary = Array.from(new Set(Object.values(fieldErrors)));
 
   return (
     <ScrollView contentContainerStyle={styles.wrap} keyboardShouldPersistTaps="handled">
-      {formError ? <Text style={styles.error}>{formError}</Text> : null}
       <SuggestInput
         label={req(t.form.activity)}
         value={title}
@@ -874,6 +878,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           return key ? categoryDisplayName(key, locale) : null;
         }}
       />
+      {fieldNote('title')}
 
       <Text style={styles.section}>{req(t.form.neededCount)}</Text>
       <View style={styles.row}>
@@ -911,6 +916,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         />
       )}
       <Muted>{t.form.capacityHint}</Muted>
+      {fieldNote('capacity')}
 
       <Text style={styles.section}>{req(t.events.venue)}</Text>
       <View style={styles.row}>
@@ -936,6 +942,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           placeholder={t.form.venuePlaceholder}
         />
       )}
+      {fieldNote('venue')}
 
       {recurrenceMode === 'once' ? (
         <View>
@@ -947,6 +954,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             minimumDate={new Date()}
           />
           <EndChoiceField value={endChoice} onChange={setEndChoice} start={startsAt} />
+          {fieldNote('when')}
+          {fieldNote('end')}
         </View>
       ) : null}
 
@@ -981,11 +990,15 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             placeholder={t.form.searchFriends}
             emptyHint={t.form.noFriends}
           />
+          {fieldNote('people')}
         </View>
       ) : null}
 
       {privacy === 'friends' ? (
-        <Muted>{t.form.allFriendsInvited(friends.length)}</Muted>
+        <>
+          <Muted>{t.form.allFriendsInvited(friends.length)}</Muted>
+          {fieldNote('people')}
+        </>
       ) : null}
 
       {privacy === 'group' ? (
@@ -1046,6 +1059,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
               ) : null}
             </View>
           ) : null}
+          {fieldNote('people')}
         </View>
       ) : null}
 
@@ -1078,12 +1092,14 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
               <Muted>{t.form.addDatesHint}</Muted>
               <DateMultiField selected={pickedDates} onChange={setPickedDates} lockedDays={lockedDates} />
               <Muted>{t.form.datesPicked(pickedDates.length)}</Muted>
+              {fieldNote('dates')}
             </View>
           ) : (
             <View>
               <Muted>{t.form.datesHint}</Muted>
               <DateMultiField selected={pickedDates} onChange={setPickedDates} />
               <Muted>{t.form.datesPicked(pickedDates.length)}</Muted>
+              {fieldNote('dates')}
             </View>
           )}
           {dateSlots.map((slot) => (
@@ -1118,6 +1134,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
               />
             </View>
           ))}
+          {fieldNote('end')}
+          {fieldNote('when')}
         </View>
       ) : recurrenceMode === 'weekly' ? (
         <View>
@@ -1133,6 +1151,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
               />
             ))}
           </View>
+          {fieldNote('weekdays')}
           {rules.map((r) => (
             <View key={r.weekday} style={styles.slotCard}>
               <Text style={styles.ruleDay}>{weekdayLong(r.weekday, locale)}</Text>
@@ -1173,6 +1192,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             </View>
           ))}
           {rules.length ? <Muted>{formatRecurrence(rules, locale)}</Muted> : null}
+          {fieldNote('end')}
 
           <DateTimeField
             label={req(t.form.firstOccurrence)}
@@ -1186,6 +1206,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             }}
             minimumDate={new Date()}
           />
+          {fieldNote('first')}
           {computedFirst ? (
             <Muted>
               {t.form.firstOccurrenceComputed(formatFirstOccurrence(computedFirst, locale))}
@@ -1205,6 +1226,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             mode="date"
             minimumDate={computedFirst ?? seriesFromDate}
           />
+          {fieldNote('seriesEnd')}
           {activityId ? (
             <View>
               <Text style={styles.section}>{t.form.addExtraDate}</Text>
@@ -1277,6 +1299,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             keyboardType="decimal-pad"
             placeholder="0"
           />
+          {fieldNote('price')}
           <Muted>
             {fundingMode === 'fixed' || fundingMode === 'annual'
               ? t.form.priceFixedHint
@@ -1320,6 +1343,17 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       ) : null}
 
       <View style={{ height: 16 }} />
+      {fieldSummary.length ? (
+        <View style={styles.error}>
+          {fieldSummary.map((msg) => (
+            <Text key={msg} style={styles.errorLine}>
+              {msg}
+            </Text>
+          ))}
+        </View>
+      ) : formError ? (
+        <Text style={styles.error}>{formError}</Text>
+      ) : null}
       <Button label={t.events.save} onPress={onSave} loading={loading} />
     </ScrollView>
   );
@@ -1387,6 +1421,17 @@ const styles = StyleSheet.create({
     borderRadius: theme.radius.sm,
     marginBottom: 12,
     fontWeight: '600',
+  },
+  errorLine: {
+    color: theme.colors.danger,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  fieldError: {
+    color: theme.colors.danger,
+    fontWeight: '600',
+    fontSize: 13,
+    marginBottom: 8,
   },
   link: {
     color: theme.colors.primary,
