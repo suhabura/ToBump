@@ -21,7 +21,7 @@ import {
   type DeleteActivityMode,
 } from '@/lib/api';
 import { fetchActivityGuests, removeGuestAttendance, type GuestAttendanceWithGuest } from '@/lib/guests';
-import { formatRecurrence, formatRecurrenceDates, hydrateRules, isSeriesActivity, rulesFromLegacy } from '@/lib/recurrence';
+import { formatRecurrence, formatRecurrenceDates, hydrateRules, isChatOpen, isSeriesActivity, rulesFromLegacy } from '@/lib/recurrence';
 import { seriesKey } from '@/lib/finance';
 import { fetchSeriesFollows, setSeriesFollow } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
@@ -441,21 +441,22 @@ export default function ActivityDetailScreen() {
         ) : null}
 
         <View style={{ marginTop: 20, gap: 10 }}>
-          {joined ? (
+          {isChatOpen(activity) && (joined || following) ? (
             <Button
               label={t.events.chat}
               variant="secondary"
               icon="comments"
               onPress={() => router.push(`/chat/${activity.id}`)}
             />
-          ) : (
+          ) : null}
+          {!joined ? (
             <Button
               label={full ? t.events.full : t.events.join}
               icon="check"
               onPress={onJoin}
               disabled={full}
             />
-          )}
+          ) : null}
           {joined || !declined ? (
             <Button
               label={t.events.decline}
@@ -484,7 +485,7 @@ export default function ActivityDetailScreen() {
               />
             </>
           ) : null}
-          {user && isSeriesActivity(activity) && !isOwner ? (
+          {user && isSeriesActivity(activity) ? (
             <View style={{ gap: 6 }}>
               {following ? <Muted>{t.planner.followShort}</Muted> : null}
               <Button

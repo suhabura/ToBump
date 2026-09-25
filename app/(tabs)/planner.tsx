@@ -24,6 +24,7 @@ import { ensureDueRecurringActivities } from '@/lib/api';
 import { seriesKey } from '@/lib/finance';
 import {
   expandSeriesSlots,
+  isChatOpen,
   isSeriesActivity,
   localDayKey,
   seriesEndFromRows,
@@ -558,6 +559,7 @@ export default function PlannerScreen() {
     const capRange = activityCapacityRange(item);
     const weather = eventWeatherPoint(item);
     const showJoin = future && !item.skipped && !isJoined;
+    const showChat = isChatOpen(item) && (isJoined || follows.has(seriesKey(item)));
     return (
       <View style={[styles.card, isMine ? styles.cardMine : null]}>
         <Pressable style={[styles.cardBody, weather ? styles.cardBodyWeather : null]} onPress={() => void onOpenSlot(item)}>
@@ -588,13 +590,15 @@ export default function PlannerScreen() {
           <WeatherBadge latitude={weather.latitude} longitude={weather.longitude} startsAt={item.starts_at} />
         ) : null}
         <View style={styles.actions} onStartShouldSetResponder={() => true}>
-          <Button
-            label={t.events.chat}
-            variant="outline"
-            size="xs"
-            icon="comments"
-            onPress={() => router.push(`/chat/${item.id}`)}
-          />
+          {showChat ? (
+            <Button
+              label={t.events.chat}
+              variant="outline"
+              size="xs"
+              icon="comments"
+              onPress={() => router.push(`/chat/${item.id}`)}
+            />
+          ) : null}
           {showJoin ? (
             <Button
               label={t.events.join}

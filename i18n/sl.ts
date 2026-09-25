@@ -252,6 +252,7 @@ export const sl = {
     placeholder: 'Sporočilo…',
     send: 'Pošlji',
     newMessage: (title: string) => `Novo sporočilo v »${title}«`,
+    closed: 'Klepet je za prijavljene in za tiste, ki so dogodek dodali v planer.',
   },
   venue: {
     title: 'Prizorišče',

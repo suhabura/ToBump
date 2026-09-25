@@ -253,6 +253,7 @@ export const en = {
     placeholder: 'Message…',
     send: 'Send',
     newMessage: (title: string) => `New message in “${title}”`,
+    closed: 'Chat is for people who joined, and for people who added the event to their planner.',
   },
   venue: {
     title: 'Venue',

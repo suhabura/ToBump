@@ -368,7 +368,43 @@ create policy "friendships_update" on public.friendships for update to authentic
 create policy "friendships_delete" on public.friendships for delete to authenticated
   using (from_user_id = auth.uid() or to_user_id = auth.uid());
 
--- Chat (joined or creator)
+-- Chat: joined to an event that has not ended, or the series is on the planner
+-- while such an event still exists. Messages live on the series root, which may
+-- already be old, so access looks at sibling rows.
+create or replace function public.chat_thread_recipients(p_activity_id uuid)
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  with series as (
+    select coalesce(target.series_id, target.id) as sid
+    from public.activities target
+    where target.id = p_activity_id
+  ),
+  open_rows as (
+    select sib.id
+    from public.activities sib
+    join series s on coalesce(sib.series_id, sib.id) = s.sid
+    where coalesce(sib.status, '') <> 'cancelled'
+      and (
+        (sib.ends_at is not null and sib.ends_at > now())
+        or (sib.ends_at is null and sib.starts_at > now())
+      )
+  )
+  select j.user_id
+  from public.activity_joins j
+  join open_rows o on o.id = j.activity_id
+  union
+  select f.user_id
+  from public.series_follows f
+  join series s on f.series_id = s.sid
+  where exists (select 1 from open_rows);
+$$;
+
+grant execute on function public.chat_thread_recipients(uuid) to authenticated;
+
 create or replace function public.user_in_activity_series(p_activity_id uuid)
 returns boolean
 language sql
@@ -378,17 +414,8 @@ set search_path = public
 as $$
   select exists (
     select 1
-    from public.activities target
-    where target.id = p_activity_id
-      and (
-        target.created_by = auth.uid()
-        or exists (
-          select 1
-          from public.activities sib
-          join public.activity_joins j on j.activity_id = sib.id and j.user_id = auth.uid()
-          where coalesce(sib.series_id, sib.id) = coalesce(target.series_id, target.id)
-        )
-      )
+    from public.chat_thread_recipients(p_activity_id) recipient
+    where recipient = auth.uid()
   );
 $$;
 

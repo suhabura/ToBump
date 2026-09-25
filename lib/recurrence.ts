@@ -275,6 +275,19 @@ export function isSeriesActivity(activity: ExpandableActivity): boolean {
   return rules.length > 0 || (activity.recurrence_weekdays?.length ?? 0) > 0;
 }
 
+/** Chat stays through the event. It closes at the end, or at the start when no end is set. */
+export function isChatOpen(
+  activity: { starts_at?: string | null; ends_at?: string | null; status?: string | null },
+  now = Date.now()
+): boolean {
+  if (activity.status === 'cancelled') return false;
+  const end = activity.ends_at ? new Date(activity.ends_at).getTime() : NaN;
+  if (!Number.isNaN(end)) return end > now;
+  const start = activity.starts_at ? new Date(activity.starts_at).getTime() : NaN;
+  if (Number.isNaN(start)) return false;
+  return start > now;
+}
+
 export function dayKeyOf(value: string | null | undefined): string | null {
   if (!value) return null;
   const day = String(value).slice(0, 10);
