@@ -261,6 +261,36 @@ async function fetchFutureJoins(joinIds: string[]): Promise<ActivityWithRelation
   return hydrateParents(Array.from(byId.values()));
 }
 
+/** Future events this person created, including full ones. Not limited to the visible month. */
+async function fetchOrganizing(userId: string): Promise<ActivityWithRelations[]> {
+  const nowIso = new Date().toISOString();
+
+  async function load(select: string) {
+    const { data, error } = await supabase
+      .from('activities')
+      .select(select)
+      .eq('created_by', userId)
+      .eq('status', 'active')
+      .gte('starts_at', nowIso)
+      .order('starts_at', { ascending: true });
+    return { data: (data as ActivityWithRelations[]) ?? [], error };
+  }
+
+  let { data, error } = await load(PLANNER_SELECT_WITH_PARENT);
+  if (error) {
+    const retry = await load(PLANNER_SELECT_BASIC);
+    data = retry.data;
+    error = retry.error;
+  }
+  if (error) throw error;
+
+  const byId = new Map<string, ActivityWithRelations>();
+  for (const row of data) {
+    if (row?.id) byId.set(row.id, row);
+  }
+  return hydrateParents(Array.from(byId.values()));
+}
+
 export default function PlannerScreen() {
   const t = useT();
   const { locale } = useLocale();
@@ -269,6 +299,7 @@ export default function PlannerScreen() {
   const router = useRouter();
   const [items, setItems] = useState<ActivityWithRelations[]>([]);
   const [joinedFuture, setJoinedFuture] = useState<ActivityWithRelations[]>([]);
+  const [organizingRows, setOrganizingRows] = useState<ActivityWithRelations[]>([]);
   const [joinedIds, setJoinedIds] = useState<Set<string>>(new Set());
   const [follows, setFollows] = useState<Set<string>>(new Set());
   const [skippedBySeries, setSkippedBySeries] = useState<Map<string, Set<string>>>(new Map());
@@ -310,10 +341,11 @@ export default function PlannerScreen() {
         const ids = (joins ?? []).map((j) => j.activity_id);
         setJoinedIds(new Set(ids));
         const followSet = await fetchSeriesFollows(user.id);
-        const [mineRows, futureJoins, followedRows] = await Promise.all([
+        const [mineRows, futureJoins, followedRows, createdFuture] = await Promise.all([
           fetchMineAndJoined(user.id, ids, windowStart, windowEnd),
           fetchFutureJoins(ids),
           fetchFollowedSeries([...followSet]),
+          fetchOrganizing(user.id),
         ]);
         const rowsById = new Map<string, ActivityWithRelations>();
         for (const row of mineRows.concat(followedRows)) {
@@ -322,7 +354,10 @@ export default function PlannerScreen() {
         const rows = Array.from(rowsById.values());
         setItems(rows);
         setJoinedFuture(futureJoins);
-        const seriesIds = Array.from(new Set(rows.concat(futureJoins).map((a) => seriesKey(a))));
+        setOrganizingRows(createdFuture);
+        const seriesIds = Array.from(
+          new Set(rows.concat(futureJoins, createdFuture).map((a) => seriesKey(a)))
+        );
         const skipped = await fetchSkippedDays(seriesIds);
         setFollows(followSet);
         setSkippedBySeries(skipped);
@@ -355,6 +390,9 @@ export default function PlannerScreen() {
         if (activityId && delta) {
           setItems((prev) => prev.map((row) => (row.id === activityId ? bumpJoinCount(row, delta) : row)));
           setJoinedFuture((prev) =>
+            prev.map((row) => (row.id === activityId ? bumpJoinCount(row, delta) : row))
+          );
+          setOrganizingRows((prev) =>
             prev.map((row) => (row.id === activityId ? bumpJoinCount(row, delta) : row))
           );
         }
@@ -539,6 +577,29 @@ export default function PlannerScreen() {
     return Array.from(byKey.values()).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   }, [joinedFuture, skippedBySeries]);
 
+  const organizing = useMemo(() => {
+    const now = Date.now();
+    const bySeries = new Map<string, PlannerItem>();
+    for (const a of organizingRows) {
+      if (a.created_by !== user?.id || a.status !== 'active') continue;
+      const starts = new Date(a.starts_at);
+      if (Number.isNaN(starts.getTime()) || starts.getTime() < now) continue;
+      const sid = seriesKey(a);
+      const day = localDayKey(starts);
+      if (skippedBySeries.get(sid)?.has(day)) continue;
+      const prev = bySeries.get(sid);
+      if (prev && new Date(prev.starts_at).getTime() <= starts.getTime()) continue;
+      bySeries.set(sid, {
+        ...a,
+        join_count: signupCount(a),
+        slotKey: a.id,
+        virtual: false,
+        skipped: false,
+      });
+    }
+    return Array.from(bySeries.values()).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  }, [organizingRows, skippedBySeries, user?.id]);
+
   const weekLabels = useMemo(
     () => days.slice(0, 7).map((d) => format(d, 'EEEEEE', { locale: dfLocale })),
     [days, dfLocale]
@@ -650,7 +711,7 @@ export default function PlannerScreen() {
         <FlatList
           data={upcoming}
           keyExtractor={(i) => i.slotKey}
-          extraData={`${dayKey(selectedDay)}:${joinedIds.size}:${follows.size}:${busyKey}`}
+          extraData={`${dayKey(selectedDay)}:${joinedIds.size}:${follows.size}:${busyKey}:${organizing.length}`}
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
             <View style={styles.column}>
@@ -735,6 +796,18 @@ export default function PlannerScreen() {
             </View>
           }
           ListEmptyComponent={<EmptyState title={t.planner.empty} />}
+          ListFooterComponent={
+            <View style={styles.section}>
+              <Subtitle>{t.planner.organizing}</Subtitle>
+              {organizing.length ? (
+                organizing.map((item) => (
+                  <View key={`org-${item.slotKey}`}>{renderEventCard(item)}</View>
+                ))
+              ) : (
+                <Muted>{t.planner.organizingEmpty}</Muted>
+              )}
+            </View>
+          }
           renderItem={({ item }) =>
             renderEventCard(item)
           }

@@ -147,6 +147,8 @@ export const sl = {
     emptyDay: 'Na ta dan ni dogodkov.',
     emptyPast: 'Še nimate preteklih dogodkov, na katerih ste bili.',
     upcoming: 'Prihajajoči',
+    organizing: 'Organiziram',
+    organizingEmpty: 'Ni dogodkov, ki jih organiziraš.',
     past: 'Pretekli',
     today: 'danes',
     todayHeading: 'Danes',

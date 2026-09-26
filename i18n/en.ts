@@ -147,6 +147,8 @@ export const en = {
     emptyDay: 'Nothing on this day.',
     emptyPast: 'No past events you attended yet.',
     upcoming: 'Upcoming',
+    organizing: 'Organizing',
+    organizingEmpty: 'You are not organizing any upcoming events.',
     past: 'Past',
     today: 'today',
     todayHeading: 'Today',
