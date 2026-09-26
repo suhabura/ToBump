@@ -35,20 +35,18 @@ import { mapsUrl } from '@/lib/geo';
 import { useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
-const NO_REPLY = '#E6B325';
-
 function byName(people: Profile[]): Profile[] {
   return [...people].sort((a, b) => displayName(a).localeCompare(displayName(b), 'sl'));
 }
 
-function ResponseGroup({ title, people, color }: { title: string; people: Profile[]; color: string }) {
+function ResponseGroup({ title, people }: { title: string; people: Profile[] }) {
   return (
     <View style={styles.responseGroup}>
-      <Text style={[styles.responseTitle, { color }]}>
+      <Text style={styles.responseTitle}>
         {title} · {people.length}
       </Text>
       {people.map((person) => (
-        <Text key={person.id} style={[styles.responseName, { color }]}>
+        <Text key={person.id} style={styles.responseName}>
           {displayName(person)}
         </Text>
       ))}
@@ -640,25 +638,29 @@ export default function ActivityDetailScreen() {
           </View>
         ) : null}
         {showDecline || showNever || showPlanner ? (
-          <View style={styles.linkRow}>
+          <View style={styles.stack}>
             {showDecline ? (
-              <Text style={styles.actionLink} onPress={() => void onNotGoing()}>
-                {t.events.decline}
-              </Text>
+              <Button
+                label={t.events.decline}
+                variant="secondary"
+                icon="times"
+                onPress={() => void onNotGoing()}
+              />
             ) : null}
             {showNever ? (
-              <Text style={styles.actionLink} onPress={() => void onNeverComing()}>
-                {t.events.neverComing}
-              </Text>
+              <Button
+                label={t.events.neverComing}
+                variant="secondary"
+                onPress={() => void onNeverComing()}
+              />
             ) : null}
             {showPlanner ? (
-              <Text style={styles.actionLink} onPress={() => void onToggleFollow()}>
-                {seriesBusy
-                  ? t.common.loading
-                  : following
-                    ? t.planner.unfollowSeries
-                    : t.planner.followSeries}
-              </Text>
+              <Button
+                label={following ? t.planner.unfollowSeries : t.planner.followSeries}
+                variant="secondary"
+                loading={seriesBusy}
+                onPress={() => void onToggleFollow()}
+              />
             ) : null}
           </View>
         ) : null}
@@ -692,9 +694,9 @@ export default function ActivityDetailScreen() {
         {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
 
         <View style={styles.responses}>
-          <ResponseGroup title={t.events.coming} people={participants} color={theme.colors.primary} />
-          <ResponseGroup title={t.events.decline} people={decliners} color={theme.colors.danger} />
-          <ResponseGroup title={t.events.noReply} people={silent} color={NO_REPLY} />
+          <ResponseGroup title={t.events.coming} people={participants} />
+          <ResponseGroup title={t.events.decline} people={decliners} />
+          <ResponseGroup title={t.events.noReply} people={silent} />
         </View>
 
         {guests.length ? (
@@ -843,16 +845,9 @@ const styles = StyleSheet.create({
   primarySlot: {
     flex: 1,
   },
-  linkRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 14,
-    marginTop: 12,
-  },
-  actionLink: {
-    color: theme.colors.text,
-    fontWeight: '700',
-    fontSize: 15,
+  stack: {
+    gap: 8,
+    marginTop: 8,
   },
   manageRow: {
     flexDirection: 'row',
@@ -870,10 +865,12 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     marginBottom: 4,
+    color: theme.colors.text,
   },
   responseName: {
     fontSize: 15,
     lineHeight: 22,
+    color: theme.colors.text,
   },
   guestBlock: {
     marginTop: 24,
