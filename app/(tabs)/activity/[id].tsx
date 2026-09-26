@@ -79,7 +79,6 @@ export default function ActivityDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [editChoiceOpen, setEditChoiceOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
   const [moveStart, setMoveStart] = useState<Date | null>(null);
   const [moving, setMoving] = useState(false);
@@ -680,13 +679,7 @@ export default function ActivityDetailScreen() {
                   variant="outline"
                   size="sm"
                   icon="pencil"
-                  onPress={() => {
-                    if (isSeriesActivity(activity)) {
-                      setEditChoiceOpen(true);
-                      return;
-                    }
-                    router.push(`/activity/edit/${activity.id}`);
-                  }}
+                  onPress={() => router.push(`/activity/edit/${activity.id}`)}
                 />
               </View>
             ) : null}
@@ -748,44 +741,23 @@ export default function ActivityDetailScreen() {
             onChanged={() => void load({ silent: true })}
           />
         ) : null}
-          </>
-        )}
-      </ScrollView>
-
-      <Modal
-        visible={editChoiceOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setEditChoiceOpen(false)}>
-        <Pressable style={styles.deleteBackdrop} onPress={() => setEditChoiceOpen(false)}>
-          <Pressable style={styles.deleteSheet} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.deleteTitle}>{t.events.edit}</Text>
-            <Muted>{t.events.editChoicePrompt}</Muted>
-            <View style={{ height: 12 }} />
+        {canEdit && isSeriesActivity(activity) ? (
+          <View style={styles.moveRow}>
             <Button
-              label={t.events.editThis}
-              variant="secondary"
+              label={t.events.moveTitle}
+              variant="outline"
+              icon="calendar"
               onPress={() => {
-                setEditChoiceOpen(false);
                 setMoveError(null);
                 setMoveStart(new Date(activity.starts_at));
                 setMoveOpen(true);
               }}
             />
-            <View style={{ height: 8 }} />
-            <Button
-              label={t.events.editSeries}
-              variant="secondary"
-              onPress={() => {
-                setEditChoiceOpen(false);
-                router.push(`/activity/edit/${activity.id}`);
-              }}
-            />
-            <View style={{ height: 8 }} />
-            <Button label={t.common.cancel} variant="ghost" onPress={() => setEditChoiceOpen(false)} />
-          </Pressable>
-        </Pressable>
-      </Modal>
+          </View>
+        ) : null}
+          </>
+        )}
+      </ScrollView>
 
       <Modal visible={moveOpen} transparent animationType="fade" onRequestClose={() => setMoveOpen(false)}>
         <Pressable style={styles.deleteBackdrop} onPress={() => !moving && setMoveOpen(false)}>
@@ -938,6 +910,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     marginTop: 12,
+  },
+  moveRow: {
+    marginTop: 28,
   },
   responses: {
     marginTop: 24,
