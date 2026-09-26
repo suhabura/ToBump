@@ -65,6 +65,12 @@ export async function createNotification(
   message: string,
   data: Record<string, unknown> = {}
 ) {
+  const activityId =
+    typeof data.activity_id === 'string' ? data.activity_id : null;
+  if (activityId && (await userOptedOutOfActivity(userId, activityId))) {
+    return;
+  }
+
   // Prefer RPC so recipient notification prefs are enforced server-side.
   const { error } = await supabase.rpc('notify_user', {
     p_user_id: userId,
@@ -82,6 +88,94 @@ export async function createNotification(
     });
   }
 }
+
+function optOutTablesMissing(message: string) {
+  return /series_opt_outs|series_decline_prompts|schema cache|does not exist|could not find the table/i.test(
+    message
+  );
+}
+
+async function resolveSeriesId(activityId: string): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('activities')
+    .select('id, series_id')
+    .eq('id', activityId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data.series_id as string | null) ?? (data.id as string);
+}
+
+/** True when this user marked "never" for the series of this activity. Missing table = false. */
+export async function userOptedOutOfActivity(
+  userId: string,
+  activityId: string
+): Promise<boolean> {
+  const sid = await resolveSeriesId(activityId);
+  if (!sid) return false;
+  const { data, error } = await supabase
+    .from('series_opt_outs')
+    .select('series_id')
+    .eq('series_id', sid)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) {
+    if (optOutTablesMissing(error.message ?? '')) return false;
+    return false;
+  }
+  return Boolean(data);
+}
+
+export async function fetchSeriesOptOuts(userId: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('series_opt_outs')
+    .select('series_id')
+    .eq('user_id', userId);
+  if (error) {
+    if (optOutTablesMissing(error.message ?? '')) return new Set();
+    return new Set();
+  }
+  return new Set((data ?? []).map((r: { series_id: string }) => r.series_id));
+}
+
+export async function fetchSeriesDeclinePrompts(userId: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('series_decline_prompts')
+    .select('series_id')
+    .eq('user_id', userId);
+  if (error) {
+    if (optOutTablesMissing(error.message ?? '')) return new Set();
+    return new Set();
+  }
+  return new Set((data ?? []).map((r: { series_id: string }) => r.series_id));
+}
+
+async function markSeriesDeclinePrompt(seriesId: string, userId: string) {
+  const { error } = await supabase.from('series_decline_prompts').upsert(
+    { series_id: seriesId, user_id: userId },
+    { onConflict: 'series_id,user_id' }
+  );
+  if (error && !optOutTablesMissing(error.message ?? '')) throw error;
+}
+
+async function attachSeriesOptOutFlags(
+  activities: ActivityWithRelations[],
+  userId: string
+): Promise<ActivityWithRelations[]> {
+  if (!activities.length) return activities;
+  const [optOuts, prompts] = await Promise.all([
+    fetchSeriesOptOuts(userId),
+    fetchSeriesDeclinePrompts(userId),
+  ]);
+  return activities.map((a) => {
+    const sid = a.series_id || a.id;
+    return {
+      ...a,
+      is_series_opted_out: optOuts.has(sid),
+      series_decline_prompted: prompts.has(sid) || optOuts.has(sid),
+    };
+  });
+}
+
 
 const NOTIFICATION_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -347,17 +441,29 @@ export async function fetchActivities(
 
   if (opts.inbox) {
     const marked = await attachDeclineCounts(result, opts.userId);
+    const withOpt = await attachSeriesOptOutFlags(marked, opts.userId);
     // Drop a declined date before picking the series card, so the next date still asks.
+    // Opted-out series leave the open list entirely (one card stays under Ne pridem).
     const open = oneActivityPerSeries(
-      hideFullEvents(marked.filter((a) => !a.is_declined))
+      hideFullEvents(
+        withOpt.filter((a) => !a.is_declined && !a.is_series_opted_out)
+      )
     );
     open.sort((a, b) => {
       if (a.sort_group !== b.sort_group) return (a.sort_group ?? 0) - (b.sort_group ?? 0);
       return new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime();
     });
-    const declined = marked
-      .filter((a) => a.is_declined)
-      .sort((a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime());
+    const declinedRaw = withOpt.filter(
+      (a) => a.is_declined || a.is_series_opted_out
+    );
+    // One card per opted-out series; keep each single-date decline.
+    const declined = oneActivityPerSeries(
+      declinedRaw.map((a) =>
+        a.is_series_opted_out ? { ...a, is_declined: true } : a
+      )
+    ).sort(
+      (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
+    );
     return { open, declined };
   }
 
@@ -571,6 +677,7 @@ export async function joinActivity(activityId: string, userId: string, creatorId
   }
 
   await clearActivityDecline(activityId, userId);
+  await clearSeriesOptOutForActivity(activityId, userId);
 
   // Create per-person fee on first attendance (if eligible)
   try {
@@ -621,6 +728,69 @@ export async function declineActivity(activityId: string, userId: string) {
     if (declinesTableMissing(error.message ?? '')) throw new Error('DECLINES_DB');
     throw error;
   }
+}
+
+/** Remember that the first Ne pridem dialog was answered for this series (this date only). */
+export async function markSeriesDeclinePrompted(activityId: string, userId: string) {
+  const sid = await resolveSeriesId(activityId);
+  if (!sid) return;
+  await markSeriesDeclinePrompt(sid, userId);
+}
+
+/**
+ * Never coming to this series: decline/leave current date, opt out, leave planner,
+ * and remember the dialog so it does not ask again.
+ */
+export async function optOutOfSeries(activityId: string, userId: string) {
+  const sid = await resolveSeriesId(activityId);
+  if (!sid) throw new Error('Event not found');
+
+  const { data: joinRow } = await supabase
+    .from('activity_joins')
+    .select('user_id')
+    .eq('activity_id', activityId)
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (joinRow) {
+    await leaveActivity(activityId, userId);
+  } else {
+    await declineActivity(activityId, userId);
+  }
+
+  const { error } = await supabase.from('series_opt_outs').upsert(
+    { series_id: sid, user_id: userId },
+    { onConflict: 'series_id,user_id' }
+  );
+  if (error) {
+    if (optOutTablesMissing(error.message ?? '')) throw new Error('OPT_OUT_DB');
+    throw error;
+  }
+
+  await markSeriesDeclinePrompt(sid, userId);
+
+  try {
+    const { setSeriesFollow } = await import('@/lib/seriesPlanner');
+    await setSeriesFollow(sid, false);
+  } catch {
+    /* follow table may be missing */
+  }
+}
+
+export async function clearSeriesOptOutForActivity(activityId: string, userId: string) {
+  const sid = await resolveSeriesId(activityId);
+  if (!sid) return;
+  const { error: optErr } = await supabase
+    .from('series_opt_outs')
+    .delete()
+    .eq('series_id', sid)
+    .eq('user_id', userId);
+  if (optErr && !optOutTablesMissing(optErr.message ?? '')) throw optErr;
+  const { error: promptErr } = await supabase
+    .from('series_decline_prompts')
+    .delete()
+    .eq('series_id', sid)
+    .eq('user_id', userId);
+  if (promptErr && !optOutTablesMissing(promptErr.message ?? '')) throw promptErr;
 }
 
 export async function leaveActivity(activityId: string, userId: string) {

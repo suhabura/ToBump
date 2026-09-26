@@ -78,6 +78,12 @@ export const sl = {
     joinedCount: 'Prijavljeni',
     needed: 'Potrebnih',
     decline: 'Ne pridem',
+    declineThisDate: 'Ne pridem na ta dogodek',
+    declineNeverSeries: 'Nikoli ne bom prišel na to serijo',
+    declineSeriesPrompt: 'Samo za ta termin ali za vse termine te serije?',
+    neverComing: 'Nikoli ne pridem',
+    optOutDbFix:
+      'Odjava od serije v bazi še ni vklopljena. V urejevalniku SQL v Supabase zaženi supabase/series_opt_out.sql in poskusi znova.',
     revert: 'Razveljavi',
     openList: 'Odprti',
     declinedEmpty: 'Ni dogodkov, kjer si označil, da ne prideš.',

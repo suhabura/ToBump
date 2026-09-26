@@ -130,6 +130,20 @@ create table if not exists public.series_skipped_dates (
   primary key (series_id, day)
 );
 
+create table if not exists public.series_opt_outs (
+  series_id uuid not null references public.activities(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (series_id, user_id)
+);
+
+create table if not exists public.series_decline_prompts (
+  series_id uuid not null references public.activities(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (series_id, user_id)
+);
+
 create table if not exists public.activity_invites (
   id uuid primary key default gen_random_uuid(),
   activity_id uuid not null references public.activities(id) on delete cascade,
@@ -345,6 +359,22 @@ create policy "declines_insert" on public.activity_declines for insert to authen
     and exists (select 1 from public.activities a where a.id = activity_id and public.can_view_activity(a))
   );
 create policy "declines_delete" on public.activity_declines for delete to authenticated
+  using (user_id = auth.uid());
+
+alter table public.series_opt_outs enable row level security;
+create policy "series_opt_outs_select" on public.series_opt_outs for select to authenticated
+  using (user_id = auth.uid());
+create policy "series_opt_outs_insert" on public.series_opt_outs for insert to authenticated
+  with check (user_id = auth.uid());
+create policy "series_opt_outs_delete" on public.series_opt_outs for delete to authenticated
+  using (user_id = auth.uid());
+
+alter table public.series_decline_prompts enable row level security;
+create policy "series_decline_prompts_select" on public.series_decline_prompts for select to authenticated
+  using (user_id = auth.uid());
+create policy "series_decline_prompts_insert" on public.series_decline_prompts for insert to authenticated
+  with check (user_id = auth.uid());
+create policy "series_decline_prompts_delete" on public.series_decline_prompts for delete to authenticated
   using (user_id = auth.uid());
 
 -- Invites

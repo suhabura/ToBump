@@ -78,6 +78,12 @@ export const en = {
     joinedCount: 'Signed up',
     needed: 'Needed',
     decline: "I can't come",
+    declineThisDate: "I can't come to this date",
+    declineNeverSeries: "I'll never come to this series",
+    declineSeriesPrompt: 'Is this only for this date, or for every date in the series?',
+    neverComing: "I'll never come",
+    optOutDbFix:
+      'Series opt-out is not enabled in the database yet. Run supabase/series_opt_out.sql in the Supabase SQL editor, then try again.',
     revert: 'Revert',
     openList: 'Open',
     declinedEmpty: "You haven't marked any events as not going.",

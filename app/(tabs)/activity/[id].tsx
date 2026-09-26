@@ -15,8 +15,11 @@ import {
   declineActivity,
   ensureDueRecurringActivities,
   deleteActivity,
+  fetchSeriesOptOuts,
   joinActivity,
   leaveActivity,
+  markSeriesDeclinePrompted,
+  optOutOfSeries,
   userCanEditActivity,
   type DeleteActivityMode,
 } from '@/lib/api';
@@ -45,6 +48,9 @@ export default function ActivityDetailScreen() {
   const [participants, setParticipants] = useState<Profile[]>([]);
   const [decliners, setDecliners] = useState<Profile[]>([]);
   const [declined, setDeclined] = useState(false);
+  const [seriesOptedOut, setSeriesOptedOut] = useState(false);
+  const [seriesPrompted, setSeriesPrompted] = useState(false);
+  const [declineChoiceOpen, setDeclineChoiceOpen] = useState(false);
   const [guests, setGuests] = useState<GuestAttendanceWithGuest[]>([]);
   const [joined, setJoined] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
@@ -171,8 +177,31 @@ export default function ActivityDetailScreen() {
       } catch {
         setFollowing(false);
       }
+      try {
+        const optOuts = await fetchSeriesOptOuts(user.id);
+        const sid = seriesKey(act);
+        const opted = optOuts.has(sid);
+        setSeriesOptedOut(opted);
+        if (opted) {
+          setSeriesPrompted(true);
+        } else {
+          const { data: promptRow, error: promptErr } = await supabase
+            .from('series_decline_prompts')
+            .select('series_id')
+            .eq('series_id', sid)
+            .eq('user_id', user.id)
+            .maybeSingle();
+          if (promptErr) setSeriesPrompted(false);
+          else setSeriesPrompted(Boolean(promptRow));
+        }
+      } catch {
+        setSeriesOptedOut(false);
+        setSeriesPrompted(false);
+      }
     } else {
       setFollowing(false);
+      setSeriesOptedOut(false);
+      setSeriesPrompted(false);
     }
     hasLoaded.current = true;
     setLoading(false);
@@ -246,14 +275,97 @@ export default function ActivityDetailScreen() {
   async function onNotGoing() {
     if (!user || !activity) return;
     try {
-      if (joined) await leaveActivity(activity.id, user.id);
-      else if (declined) await clearActivityDecline(activity.id, user.id);
-      else await declineActivity(activity.id, user.id);
+      if (joined) {
+        await leaveActivity(activity.id, user.id);
+        void load({ silent: true });
+        return;
+      }
+      if (declined) {
+        await clearActivityDecline(activity.id, user.id);
+        void load({ silent: true });
+        return;
+      }
+      if (
+        isSeriesActivity(activity) &&
+        !seriesOptedOut &&
+        !seriesPrompted
+      ) {
+        setDeclineChoiceOpen(true);
+        return;
+      }
+      await declineActivity(activity.id, user.id);
       void load({ silent: true });
     } catch (e) {
       void load({ silent: true });
       const msg = e instanceof Error ? e.message : t.common.error;
-      Alert.alert(t.common.error, msg === 'DECLINES_DB' ? t.events.declineDbFix : msg);
+      Alert.alert(
+        t.common.error,
+        msg === 'DECLINES_DB'
+          ? t.events.declineDbFix
+          : msg === 'OPT_OUT_DB'
+            ? t.events.optOutDbFix
+            : msg
+      );
+    }
+  }
+
+  async function onDeclineThisDate() {
+    if (!user || !activity) return;
+    setDeclineChoiceOpen(false);
+    try {
+      await declineActivity(activity.id, user.id);
+      await markSeriesDeclinePrompted(activity.id, user.id);
+      void load({ silent: true });
+    } catch (e) {
+      void load({ silent: true });
+      const msg = e instanceof Error ? e.message : t.common.error;
+      Alert.alert(
+        t.common.error,
+        msg === 'DECLINES_DB'
+          ? t.events.declineDbFix
+          : msg === 'OPT_OUT_DB'
+            ? t.events.optOutDbFix
+            : msg
+      );
+    }
+  }
+
+  async function onDeclineNeverSeries() {
+    if (!user || !activity) return;
+    setDeclineChoiceOpen(false);
+    try {
+      await optOutOfSeries(activity.id, user.id);
+      void load({ silent: true });
+    } catch (e) {
+      void load({ silent: true });
+      const msg = e instanceof Error ? e.message : t.common.error;
+      Alert.alert(
+        t.common.error,
+        msg === 'DECLINES_DB'
+          ? t.events.declineDbFix
+          : msg === 'OPT_OUT_DB'
+            ? t.events.optOutDbFix
+            : msg
+      );
+    }
+  }
+
+  async function onNeverComing() {
+    if (!user || !activity) return;
+    try {
+      await optOutOfSeries(activity.id, user.id);
+      void load({ silent: true });
+    } catch (e) {
+      void load({ silent: true });
+      const msg = e instanceof Error ? e.message : t.common.error;
+      Alert.alert(
+        t.common.error,
+        msg === 'DECLINES_DB'
+          ? t.events.declineDbFix
+          : msg === 'OPT_OUT_DB'
+            ? t.events.optOutDbFix
+            : msg
+      );
     }
   }
 
@@ -480,6 +592,13 @@ export default function ActivityDetailScreen() {
               onPress={() => void onNotGoing()}
             />
           ) : null}
+          {user && isSeriesActivity(activity) && !seriesOptedOut ? (
+            <Button
+              label={t.events.neverComing}
+              variant="secondary"
+              onPress={() => void onNeverComing()}
+            />
+          ) : null}
           {canEdit ? (
             <Button
               label={t.events.edit}
@@ -603,6 +722,37 @@ export default function ActivityDetailScreen() {
             )}
             <View style={{ height: 8 }} />
             <Button label={t.common.cancel} variant="ghost" onPress={() => setDeleteOpen(false)} />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal
+        visible={declineChoiceOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeclineChoiceOpen(false)}>
+        <Pressable style={styles.deleteBackdrop} onPress={() => setDeclineChoiceOpen(false)}>
+          <Pressable style={styles.deleteSheet} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.deleteTitle}>{t.events.decline}</Text>
+            <Muted>{t.events.declineSeriesPrompt}</Muted>
+            <View style={{ height: 12 }} />
+            <Button
+              label={t.events.declineThisDate}
+              variant="secondary"
+              onPress={() => void onDeclineThisDate()}
+            />
+            <View style={{ height: 8 }} />
+            <Button
+              label={t.events.declineNeverSeries}
+              variant="secondary"
+              onPress={() => void onDeclineNeverSeries()}
+            />
+            <View style={{ height: 8 }} />
+            <Button
+              label={t.common.cancel}
+              variant="ghost"
+              onPress={() => setDeclineChoiceOpen(false)}
+            />
           </Pressable>
         </Pressable>
       </Modal>

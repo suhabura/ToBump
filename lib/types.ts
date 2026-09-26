@@ -338,6 +338,10 @@ export type ActivityWithRelations = Activity & {
   decline_count?: number;
   is_joined?: boolean;
   is_declined?: boolean;
+  /** User marked never coming for this series */
+  is_series_opted_out?: boolean;
+  /** First Ne pridem dialog already answered for this series */
+  series_decline_prompted?: boolean;
   is_invited?: boolean;
   is_from_friend?: boolean;
   /** FoF / friends-privacy event visible to you without a formal invite */

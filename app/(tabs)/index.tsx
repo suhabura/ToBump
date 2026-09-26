@@ -2,14 +2,22 @@ import { format } from 'date-fns';
 import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { WeatherBadge } from '@/components/WeatherBadge';
-import { Button, Chip, EmptyState, Loading, Screen } from '@/components/ui';
+import { Button, Chip, EmptyState, Loading, Muted, Screen } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEventsHeader } from '@/contexts/EventsHeaderContext';
-import { fetchActivities, clearActivityDecline, declineActivity, joinActivity } from '@/lib/api';
+import {
+  fetchActivities,
+  clearActivityDecline,
+  declineActivity,
+  joinActivity,
+  markSeriesDeclinePrompted,
+  optOutOfSeries,
+} from '@/lib/api';
 import { formatDistance } from '@/lib/geo';
+import { isSeriesActivity } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
 import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName } from '@/lib/types';
@@ -32,6 +40,7 @@ export default function EventsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [declineChoice, setDeclineChoice] = useState<ActivityWithRelations | null>(null);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoaded = useRef(false);
   const shown = list === 'declined' ? declinedItems : openItems;
@@ -195,16 +204,88 @@ export default function EventsScreen() {
     }
   }
 
+  function shouldAskSeriesDecline(item: ActivityWithRelations) {
+    return (
+      isSeriesActivity(item) &&
+      !item.is_declined &&
+      !item.is_series_opted_out &&
+      !item.series_decline_prompted
+    );
+  }
+
   async function onDecline(item: ActivityWithRelations) {
     if (!user) return;
+    if (item.is_declined) {
+      setBusyId(item.id);
+      try {
+        await clearActivityDecline(item.id, user.id);
+        await load({ silent: true });
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : t.common.error;
+        Alert.alert(t.common.error, msg === 'DECLINES_DB' ? t.events.declineDbFix : msg);
+      } finally {
+        setBusyId(null);
+      }
+      return;
+    }
+    if (shouldAskSeriesDecline(item)) {
+      setDeclineChoice(item);
+      return;
+    }
     setBusyId(item.id);
     try {
-      if (item.is_declined) await clearActivityDecline(item.id, user.id);
-      else await declineActivity(item.id, user.id);
+      await declineActivity(item.id, user.id);
       await load({ silent: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : t.common.error;
       Alert.alert(t.common.error, msg === 'DECLINES_DB' ? t.events.declineDbFix : msg);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function onDeclineThisDate() {
+    if (!user || !declineChoice) return;
+    const item = declineChoice;
+    setDeclineChoice(null);
+    setBusyId(item.id);
+    try {
+      await declineActivity(item.id, user.id);
+      await markSeriesDeclinePrompted(item.id, user.id);
+      await load({ silent: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : t.common.error;
+      Alert.alert(
+        t.common.error,
+        msg === 'DECLINES_DB'
+          ? t.events.declineDbFix
+          : msg === 'OPT_OUT_DB'
+            ? t.events.optOutDbFix
+            : msg
+      );
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function onDeclineNeverSeries() {
+    if (!user || !declineChoice) return;
+    const item = declineChoice;
+    setDeclineChoice(null);
+    setBusyId(item.id);
+    try {
+      await optOutOfSeries(item.id, user.id);
+      await load({ silent: true });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : t.common.error;
+      Alert.alert(
+        t.common.error,
+        msg === 'DECLINES_DB'
+          ? t.events.declineDbFix
+          : msg === 'OPT_OUT_DB'
+            ? t.events.optOutDbFix
+            : msg
+      );
     } finally {
       setBusyId(null);
     }
@@ -344,6 +425,33 @@ export default function EventsScreen() {
           <FontAwesome name="plus" size={22} color="#fff" />
         </Pressable>
       </View>
+
+      <Modal
+        visible={Boolean(declineChoice)}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDeclineChoice(null)}>
+        <Pressable style={styles.declineBackdrop} onPress={() => setDeclineChoice(null)}>
+          <Pressable style={styles.declineSheet} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.declineTitle}>{t.events.decline}</Text>
+            <Muted>{t.events.declineSeriesPrompt}</Muted>
+            <View style={{ height: 12 }} />
+            <Button
+              label={t.events.declineThisDate}
+              variant="secondary"
+              onPress={() => void onDeclineThisDate()}
+            />
+            <View style={{ height: 8 }} />
+            <Button
+              label={t.events.declineNeverSeries}
+              variant="secondary"
+              onPress={() => void onDeclineNeverSeries()}
+            />
+            <View style={{ height: 8 }} />
+            <Button label={t.common.cancel} variant="ghost" onPress={() => setDeclineChoice(null)} />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }
@@ -440,5 +548,22 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingHorizontal: theme.space.md,
     paddingBottom: 10,
+  },
+  declineBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center',
+    padding: 24,
+  },
+  declineSheet: {
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    padding: 20,
+  },
+  declineTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: theme.colors.text,
+    marginBottom: 8,
   },
 });
