@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { WeatherBadge } from '@/components/WeatherBadge';
-import { Button, EmptyState, Loading, Muted, Screen, Subtitle } from '@/components/ui';
+import { Button, Chip, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureDueRecurringActivities } from '@/lib/api';
 import { seriesKey } from '@/lib/finance';
@@ -307,6 +307,7 @@ export default function PlannerScreen() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
+  const [view, setView] = useState<'date' | 'upcoming' | 'organizing'>('date');
   const hasLoaded = useRef(false);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const monthSwipe = useRef(
@@ -610,6 +611,9 @@ export default function PlannerScreen() {
   const selectedHeading = selectedIsToday
     ? t.planner.todayHeading
     : format(selectedDay, 'EEEE, d. M. yyyy', { locale: dfLocale });
+  const shown = view === 'date' ? selectedDayEvents : view === 'upcoming' ? upcoming : organizing;
+  const emptyTitle =
+    view === 'date' ? t.planner.emptyDay : view === 'upcoming' ? t.planner.empty : t.planner.organizingEmpty;
 
   async function onJoinSlot(item: PlannerItem) {
     if (!user) return;
@@ -709,9 +713,9 @@ export default function PlannerScreen() {
         <Loading />
       ) : (
         <FlatList
-          data={upcoming}
+          data={shown}
           keyExtractor={(i) => i.slotKey}
-          extraData={`${dayKey(selectedDay)}:${joinedIds.size}:${follows.size}:${busyKey}:${organizing.length}`}
+          extraData={`${view}:${dayKey(selectedDay)}:${joinedIds.size}:${follows.size}:${busyKey}:${organizing.length}`}
           contentContainerStyle={styles.listContent}
           ListHeaderComponent={
             <View style={styles.column}>
@@ -746,6 +750,7 @@ export default function PlannerScreen() {
                         onPress={() => {
                           setSelectedDay(startOfDay(day));
                           if (!isSameMonth(day, month)) setMonth(startOfMonth(day));
+                          setView('date');
                         }}
                         style={[
                           styles.dayCell,
@@ -777,37 +782,32 @@ export default function PlannerScreen() {
                 </View>
               </View>
 
-              <View style={styles.section}>
-                <Subtitle>{selectedHeading}</Subtitle>
-                {selectedDayEvents.length ? (
-                  selectedDayEvents.map((item) => (
-                    <View key={`day-${item.slotKey}`}>
-                      {renderEventCard(item)}
-                    </View>
-                  ))
-                ) : (
-                  <Muted>{t.planner.emptyDay}</Muted>
-                )}
+              <View style={styles.tabs}>
+                <Chip
+                  label={t.planner.byDate}
+                  active={view === 'date'}
+                  onPress={() => setView('date')}
+                />
+                <Chip
+                  label={t.planner.upcomingEvents}
+                  active={view === 'upcoming'}
+                  onPress={() => setView('upcoming')}
+                />
+                <Chip
+                  label={t.planner.organizing}
+                  active={view === 'organizing'}
+                  onPress={() => setView('organizing')}
+                />
               </View>
 
-              <View style={styles.section}>
-                <Subtitle>{t.planner.upcoming}</Subtitle>
-              </View>
+              {view === 'date' ? (
+                <View style={styles.section}>
+                  <Subtitle>{selectedHeading}</Subtitle>
+                </View>
+              ) : null}
             </View>
           }
-          ListEmptyComponent={<EmptyState title={t.planner.empty} />}
-          ListFooterComponent={
-            <View style={styles.section}>
-              <Subtitle>{t.planner.organizing}</Subtitle>
-              {organizing.length ? (
-                organizing.map((item) => (
-                  <View key={`org-${item.slotKey}`}>{renderEventCard(item)}</View>
-                ))
-              ) : (
-                <Muted>{t.planner.organizingEmpty}</Muted>
-              )}
-            </View>
-          }
+          ListEmptyComponent={<EmptyState title={emptyTitle} />}
           renderItem={({ item }) =>
             renderEventCard(item)
           }
@@ -826,6 +826,13 @@ const styles = StyleSheet.create({
   },
   column: {
     width: '100%',
+  },
+  tabs: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 12,
+    marginBottom: 4,
   },
   calCard: {
     backgroundColor: theme.colors.surface,
