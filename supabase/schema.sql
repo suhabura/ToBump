@@ -379,8 +379,15 @@ create policy "series_decline_prompts_delete" on public.series_decline_prompts f
 
 -- Invites
 create policy "invites_select" on public.activity_invites for select to authenticated
-  using (user_id = auth.uid() or invited_by = auth.uid()
-    or exists (select 1 from public.activities a where a.id = activity_id and a.created_by = auth.uid()));
+  using (
+    user_id = auth.uid()
+    or invited_by = auth.uid()
+    or exists (
+      select 1 from public.activities a
+      where a.id = activity_id
+        and (a.created_by = auth.uid() or public.can_view_activity(a))
+    )
+  );
 create policy "invites_insert" on public.activity_invites for insert to authenticated
   with check (invited_by = auth.uid() and exists (
     select 1 from public.activities a where a.id = activity_id and a.created_by = auth.uid()

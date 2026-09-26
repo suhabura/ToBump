@@ -78,6 +78,8 @@ export const sl = {
     joinedCount: 'Prijavljeni',
     needed: 'Potrebnih',
     decline: 'Ne pridem',
+    coming: 'Pridem',
+    noReply: 'Ni odziva',
     declineThisDate: 'Ne pridem na ta dogodek',
     declineNeverSeries: 'Nikoli ne bom prišel na to serijo',
     declineSeriesPrompt: 'Samo za ta termin ali za vse termine te serije?',

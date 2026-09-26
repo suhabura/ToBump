@@ -35,6 +35,27 @@ import { mapsUrl } from '@/lib/geo';
 import { useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
+const NO_REPLY = '#E6B325';
+
+function byName(people: Profile[]): Profile[] {
+  return [...people].sort((a, b) => displayName(a).localeCompare(displayName(b), 'sl'));
+}
+
+function ResponseGroup({ title, people, color }: { title: string; people: Profile[]; color: string }) {
+  return (
+    <View style={styles.responseGroup}>
+      <Text style={[styles.responseTitle, { color }]}>
+        {title} · {people.length}
+      </Text>
+      {people.map((person) => (
+        <Text key={person.id} style={[styles.responseName, { color }]}>
+          {displayName(person)}
+        </Text>
+      ))}
+    </View>
+  );
+}
+
 export default function ActivityDetailScreen() {
   const t = useT();
   const { locale } = useLocale();
@@ -47,6 +68,7 @@ export default function ActivityDetailScreen() {
   const [activity, setActivity] = useState<ActivityWithRelations | null>(null);
   const [participants, setParticipants] = useState<Profile[]>([]);
   const [decliners, setDecliners] = useState<Profile[]>([]);
+  const [silent, setSilent] = useState<Profile[]>([]);
   const [declined, setDeclined] = useState(false);
   const [seriesOptedOut, setSeriesOptedOut] = useState(false);
   const [seriesPrompted, setSeriesPrompted] = useState(false);
@@ -141,28 +163,51 @@ export default function ActivityDetailScreen() {
     const { data: joins } = await supabase.from('activity_joins').select('user_id').eq('activity_id', id);
     const ids = (joins ?? []).map((j: { user_id: string }) => j.user_id);
     const joinedNow = ids.includes(user.id);
+    const joinedSet = new Set(ids);
     setJoined(joinedNow);
     if (ids.length) {
       const { data: people } = await supabase.from('profiles').select('*').in('id', ids);
-      setParticipants((people as Profile[]) ?? []);
+      setParticipants(byName((people as Profile[]) ?? []));
     } else setParticipants([]);
 
     const { data: declineRows, error: declineErr } = await supabase
       .from('activity_declines')
       .select('user_id')
       .eq('activity_id', id);
+    let declineIds: string[] = [];
     if (declineErr) {
       setDecliners([]);
       setDeclined(false);
     } else {
-      const declineIds = (declineRows ?? [])
+      declineIds = (declineRows ?? [])
         .map((d: { user_id: string }) => d.user_id)
-        .filter((uid: string) => !ids.includes(uid));
+        .filter((uid: string) => !joinedSet.has(uid));
       setDeclined(!joinedNow && declineIds.includes(user.id));
       if (declineIds.length) {
         const { data: people } = await supabase.from('profiles').select('*').in('id', declineIds);
-        setDecliners((people as Profile[]) ?? []);
+        setDecliners(byName((people as Profile[]) ?? []));
       } else setDecliners([]);
+    }
+
+    const declinedSet = new Set(declineIds);
+    const { data: inviteRows, error: inviteErr } = await supabase
+      .from('activity_invites')
+      .select('user_id')
+      .eq('activity_id', id);
+    if (inviteErr || !inviteRows) {
+      setSilent([]);
+    } else {
+      const silentIds = Array.from(
+        new Set(
+          (inviteRows as { user_id: string }[])
+            .map((row) => row.user_id)
+            .filter((uid) => !joinedSet.has(uid) && !declinedSet.has(uid))
+        )
+      );
+      if (silentIds.length) {
+        const { data: people } = await supabase.from('profiles').select('*').in('id', silentIds);
+        setSilent(byName((people as Profile[]) ?? []));
+      } else setSilent([]);
     }
 
     try {
@@ -406,6 +451,11 @@ export default function ActivityDetailScreen() {
   }
 
   const isOwner = user?.id === activity.created_by;
+  const showChat = isChatOpen(activity) && (joined || following);
+  const showJoin = !joined;
+  const showDecline = joined || !declined;
+  const showNever = Boolean(user && isSeriesActivity(activity) && !seriesOptedOut);
+  const showPlanner = Boolean(user && isSeriesActivity(activity));
   const participantCount = participants.length + guests.length;
   const capRange = activityCapacityRange(activity);
   const weather = eventWeatherPoint(activity);
@@ -509,12 +559,8 @@ export default function ActivityDetailScreen() {
               : ''}
           </Muted>
         ) : null}
-        <Muted>
-          {t.events.organizer}: {displayName(activity.profiles)}
-        </Muted>
         {(() => {
           const location = activityLocationLabel(activity);
-          if (!location) return <Muted>{t.events.locationUnset}</Muted>;
           const ent = activity.enterprises;
           const point = activityVenuePoint(activity);
           const mapsLink = point
@@ -524,148 +570,151 @@ export default function ActivityDetailScreen() {
                   `${ent.name}, ${ent.address.trim()}`
                 )}`
               : null;
+          const provider = ent
+            ? ent.provider_kind === 'tobump_booking'
+              ? t.events.tobumpBooking
+              : t.events.officialProvider
+            : null;
           return (
-            <View>
-              <Muted>
-                {t.events.location}:{' '}
-                {ent ? (
-                  <Text
-                    style={{ color: theme.colors.primary, fontWeight: '600' }}
-                    onPress={() => router.push(`/enterprise/${activity.enterprise_id}`)}>
-                    {ent.name}
-                  </Text>
-                ) : (
-                  location
-                )}
-                {ent?.address ? ` · ${ent.address}` : null}
-                {ent
-                  ? ent.provider_kind === 'tobump_booking'
-                    ? ` · ${t.events.tobumpBooking}`
-                    : ` · ${t.events.officialProvider}`
-                  : null}
-              </Muted>
-              {mapsLink ? (
-                <Text style={styles.mapsLink} onPress={() => Linking.openURL(mapsLink)}>
-                  {t.events.openMaps}
-                </Text>
+            <Text style={styles.factLine}>
+              {t.events.organizer}: {displayName(activity.profiles)}
+              {location ? (
+                <>
+                  {' · '}
+                  {ent ? (
+                    <Text
+                      style={styles.placeLink}
+                      onPress={() => router.push(`/enterprise/${activity.enterprise_id}`)}>
+                      {ent.name}
+                    </Text>
+                  ) : (
+                    location
+                  )}
+                  {ent?.address ? ` · ${ent.address}` : null}
+                  {provider ? ` · ${provider}` : null}
+                  {mapsLink ? (
+                    <>
+                      {' · '}
+                      <Text style={styles.placeLink} onPress={() => Linking.openURL(mapsLink)}>
+                        {t.events.openMaps}
+                      </Text>
+                    </>
+                  ) : null}
+                </>
               ) : null}
-            </View>
+            </Text>
           );
         })()}
-        <Muted>
-          {(!activity.finance_enabled || activity.price == null)
-            ? t.common.priceUnspecified
-            : `${t.common.price}: ${activityPriceLabel(activity, t.common)}`}
-        </Muted>
+        {activity.finance_enabled && activity.price != null ? (
+          <Muted>
+            {t.common.price}: {activityPriceLabel(activity, t.common)}
+          </Muted>
+        ) : null}
         <Muted>
           {t.events.joinedCount}: {participantCount}
           {capRange ? ` · ${t.events.needed}: ${capRange}` : ''}
         </Muted>
-        {decliners.length > 0 ? (
-          <Muted>
-            {t.events.declineCount}: {decliners.length}
-          </Muted>
-        ) : null}
 
-        <View style={{ marginTop: 20, gap: 10 }}>
-          {isChatOpen(activity) && (joined || following) ? (
-            <Button
-              label={t.events.chat}
-              variant="secondary"
-              icon="comments"
-              onPress={() => router.push(`/chat/${activity.id}`)}
-            />
-          ) : null}
-          {!joined ? (
-            <Button
-              label={full ? t.events.full : t.events.join}
-              icon="check"
-              onPress={onJoin}
-              disabled={full}
-            />
-          ) : null}
-          {joined || !declined ? (
-            <Button
-              label={t.events.decline}
-              variant="secondary"
-              icon="times"
-              onPress={() => void onNotGoing()}
-            />
-          ) : null}
-          {user && isSeriesActivity(activity) && !seriesOptedOut ? (
-            <Button
-              label={t.events.neverComing}
-              variant="secondary"
-              onPress={() => void onNeverComing()}
-            />
-          ) : null}
-          {canEdit ? (
-            <Button
-              label={t.events.edit}
-              variant="secondary"
-              icon="pencil"
-              onPress={() => router.push(`/activity/edit/${activity.id}`)}
-            />
-          ) : null}
-          {isOwner ? (
-            <>
-              {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
-              <Button
-                label={t.events.delete}
-                variant="dangerOutline"
-                icon="trash"
-                onPress={onDelete}
-                loading={deleting}
-              />
-            </>
-          ) : null}
-          {user && isSeriesActivity(activity) ? (
-            <View style={{ gap: 6 }}>
-              {following ? <Muted>{t.planner.followShort}</Muted> : null}
-              <Button
-                label={following ? t.planner.unfollowSeries : t.planner.followSeries}
-                variant="secondary"
-                loading={seriesBusy}
-                onPress={() => void onToggleFollow()}
-              />
-              <Muted>{t.planner.followHint}</Muted>
-            </View>
-          ) : null}
-        </View>
-
-        <View style={{ marginTop: 24 }}>
-          <Subtitle>{t.events.participants}</Subtitle>
-          {participants.map((p) => (
-            <Text key={p.id} style={styles.participant}>
-              {displayName(p)}
-            </Text>
-          ))}
-          {guests.map((g) => {
-            const gName = g.activity_guests?.name ?? '—';
-            return (
-              <View key={g.id} style={styles.guestRow}>
-                <Text style={styles.guestName}>
-                  {gName}{' '}
-                  <Text style={styles.guestTag}>({t.guests.guest})</Text>
-                </Text>
-                {isOwner || canEdit ? (
-                  <Pressable onPress={() => onRemoveGuest(g.id)}>
-                    <Text style={styles.guestRemove}>{t.guests.remove}</Text>
-                  </Pressable>
-                ) : null}
+        {showJoin || showChat ? (
+          <View style={styles.primaryRow}>
+            {showJoin ? (
+              <View style={styles.primarySlot}>
+                <Button
+                  label={full ? t.events.full : t.events.join}
+                  icon="check"
+                  onPress={onJoin}
+                  disabled={full}
+                />
               </View>
-            );
-          })}
+            ) : null}
+            {showChat ? (
+              <View style={styles.primarySlot}>
+                <Button
+                  label={t.events.chat}
+                  variant="secondary"
+                  icon="comments"
+                  onPress={() => router.push(`/chat/${activity.id}`)}
+                />
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+        {showDecline || showNever || showPlanner ? (
+          <View style={styles.linkRow}>
+            {showDecline ? (
+              <Text style={styles.actionLink} onPress={() => void onNotGoing()}>
+                {t.events.decline}
+              </Text>
+            ) : null}
+            {showNever ? (
+              <Text style={styles.actionLink} onPress={() => void onNeverComing()}>
+                {t.events.neverComing}
+              </Text>
+            ) : null}
+            {showPlanner ? (
+              <Text style={styles.actionLink} onPress={() => void onToggleFollow()}>
+                {seriesBusy
+                  ? t.common.loading
+                  : following
+                    ? t.planner.unfollowSeries
+                    : t.planner.followSeries}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+        {canEdit || isOwner ? (
+          <View style={styles.manageRow}>
+            {canEdit ? (
+              <View style={styles.primarySlot}>
+                <Button
+                  label={t.events.edit}
+                  variant="outline"
+                  size="sm"
+                  icon="pencil"
+                  onPress={() => router.push(`/activity/edit/${activity.id}`)}
+                />
+              </View>
+            ) : null}
+            {isOwner ? (
+              <View style={styles.primarySlot}>
+                <Button
+                  label={t.events.delete}
+                  variant="dangerOutline"
+                  size="sm"
+                  icon="trash"
+                  onPress={onDelete}
+                  loading={deleting}
+                />
+              </View>
+            ) : null}
+          </View>
+        ) : null}
+        {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
+
+        <View style={styles.responses}>
+          <ResponseGroup title={t.events.coming} people={participants} color={theme.colors.primary} />
+          <ResponseGroup title={t.events.decline} people={decliners} color={theme.colors.danger} />
+          <ResponseGroup title={t.events.noReply} people={silent} color={NO_REPLY} />
         </View>
 
-        {decliners.length > 0 ? (
-          <View style={{ marginTop: 24 }}>
-            <Subtitle>{t.events.declineCount}</Subtitle>
-            {decliners.map((p) => (
-              <Text key={p.id} style={styles.participant}>
-                {displayName(p)}
-              </Text>
-            ))}
+        {guests.length ? (
+          <View style={styles.guestBlock}>
+            <Subtitle>{t.guests.title}</Subtitle>
+            {guests.map((g) => {
+              const gName = g.activity_guests?.name ?? '—';
+              return (
+                <View key={g.id} style={styles.guestRow}>
+                  <Text style={styles.guestName}>
+                    {gName} <Text style={styles.guestTag}>({t.guests.guest})</Text>
+                  </Text>
+                  {isOwner || canEdit ? (
+                    <Pressable onPress={() => onRemoveGuest(g.id)}>
+                      <Text style={styles.guestRemove}>{t.guests.remove}</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              );
+            })}
           </View>
         ) : null}
 
@@ -775,6 +824,59 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     lineHeight: 20,
     marginBottom: 4,
+  },
+  factLine: {
+    color: theme.colors.textMuted,
+    fontSize: 14,
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  placeLink: {
+    color: theme.colors.primary,
+    fontWeight: '600',
+  },
+  primaryRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 16,
+  },
+  primarySlot: {
+    flex: 1,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 14,
+    marginTop: 12,
+  },
+  actionLink: {
+    color: theme.colors.text,
+    fontWeight: '700',
+    fontSize: 15,
+  },
+  manageRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  responses: {
+    marginTop: 24,
+    gap: 16,
+  },
+  responseGroup: {
+    gap: 2,
+  },
+  responseTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  responseName: {
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  guestBlock: {
+    marginTop: 24,
   },
   participant: {
     paddingVertical: 8,

@@ -78,6 +78,8 @@ export const en = {
     joinedCount: 'Signed up',
     needed: 'Needed',
     decline: "I can't come",
+    coming: 'Coming',
+    noReply: 'No reply',
     declineThisDate: "I can't come to this date",
     declineNeverSeries: "I'll never come to this series",
     declineSeriesPrompt: 'Is this only for this date, or for every date in the series?',
