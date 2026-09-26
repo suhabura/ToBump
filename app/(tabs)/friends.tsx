@@ -392,9 +392,14 @@ export default function FriendsScreen() {
             </View>
           )}
         />
-        <Text style={styles.link} onPress={() => router.push('/groups')}>
-          {t.friends.manageGroups}
-        </Text>
+        <View style={styles.manageGroups}>
+          <Button
+            label={t.friends.manageGroups}
+            variant="outline"
+            icon="users"
+            onPress={() => router.push('/groups')}
+          />
+        </View>
       </View>
     </Screen>
   );
@@ -414,10 +419,5 @@ const styles = StyleSheet.create({
     ...theme.shadow.card,
   },
   name: { fontWeight: '700', color: theme.colors.text, fontSize: 16 },
-  link: {
-    color: theme.colors.primary,
-    fontWeight: '600',
-    fontSize: 15,
-    marginTop: 8,
-  },
+  manageGroups: { marginTop: 16 },
 });

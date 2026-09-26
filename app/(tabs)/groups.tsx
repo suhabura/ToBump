@@ -4,7 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { FriendPicker } from '@/components/FriendPicker';
 import { useAuth } from '@/contexts/AuthContext';
-import { confirmAction, showAlert } from '@/lib/dialog';
+import { showAlert } from '@/lib/dialog';
 import { supabase } from '@/lib/supabase';
 import { dedupeProfilesByEmail, friendshipOtherId } from '@/lib/friends';
 import type { FriendGroup, Profile } from '@/lib/types';
@@ -38,6 +38,8 @@ export default function GroupsScreen() {
   const [editMembers, setEditMembers] = useState<string[]>([]);
   const [editExtras, setEditExtras] = useState<Profile[]>([]);
   const [editSaving, setEditSaving] = useState(false);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -141,24 +143,41 @@ export default function GroupsScreen() {
     load();
   }
 
-  async function deleteGroup(id: string, groupName: string) {
-    confirmAction({
-      title: t.groups.delete,
-      message: t.groups.deleteConfirm(groupName),
-      confirmLabel: t.groups.delete,
-      cancelLabel: t.common.cancel,
-      destructive: true,
-      onConfirm: () => {
-        void (async () => {
-          const { error } = await supabase.from('friend_groups').delete().eq('id', id);
-          if (error) {
-            showAlert(t.common.error, error.message || t.groups.deleteFailed);
-            return;
-          }
-          load();
-        })();
-      },
-    });
+  async function removeGroup(id: string) {
+    if (!user || deletingId) return;
+    setDeletingId(id);
+    const rpc = await supabase.rpc('delete_friend_group', { p_group_id: id });
+    const rpcMissing = /delete_friend_group|PGRST202|schema cache/i.test(rpc.error?.message ?? '');
+    if (!rpc.error) {
+      setGroups((prev) => prev.filter((g) => g.id !== id));
+      setPendingDeleteId(null);
+      if (editingId === id) setEditingId(null);
+      setDeletingId(null);
+      return;
+    }
+    if (!rpcMissing) {
+      setDeletingId(null);
+      showAlert(t.common.error, rpc.error.message || t.groups.deleteFailed);
+      return;
+    }
+
+    await supabase.from('friend_group_members').delete().eq('group_id', id);
+    await supabase.from('activities').update({ group_id: null }).eq('group_id', id);
+    await supabase.from('activities').update({ series_group_id: null }).eq('series_group_id', id);
+    const { data, error } = await supabase
+      .from('friend_groups')
+      .delete()
+      .eq('id', id)
+      .eq('created_by', user.id)
+      .select('id');
+    setDeletingId(null);
+    if (error || !data?.length) {
+      showAlert(t.common.error, error?.message || t.groups.deleteFailed);
+      return;
+    }
+    setGroups((prev) => prev.filter((g) => g.id !== id));
+    setPendingDeleteId(null);
+    if (editingId === id) setEditingId(null);
   }
 
   async function startEdit(item: GroupWithMembers) {
@@ -252,15 +271,44 @@ export default function GroupsScreen() {
                   <Text style={styles.name}>{item.name}</Text>
                   <Muted>{t.groups.membersCount(item.memberIds.length)}</Muted>
                 </Pressable>
-                <View style={styles.cardActions}>
-                  <Button label={t.groups.edit} variant="secondary" size="sm" onPress={() => void startEdit(item)} />
-                  <Button
-                    label={t.groups.delete}
-                    variant="dangerOutline"
-                    size="sm"
-                    onPress={() => deleteGroup(item.id, item.name)}
-                  />
-                </View>
+                {pendingDeleteId === item.id ? (
+                  <View style={{ gap: 8 }}>
+                    <Muted>{t.groups.deleteConfirm(item.name)}</Muted>
+                    <View style={styles.cardActions}>
+                      <View style={styles.cardAction}>
+                        <Button
+                          label={t.common.cancel}
+                          variant="secondary"
+                          size="sm"
+                          onPress={() => setPendingDeleteId(null)}
+                        />
+                      </View>
+                      <View style={styles.cardAction}>
+                        <Button
+                          label={t.groups.delete}
+                          variant="danger"
+                          size="sm"
+                          loading={deletingId === item.id}
+                          onPress={() => void removeGroup(item.id)}
+                        />
+                      </View>
+                    </View>
+                  </View>
+                ) : (
+                  <View style={styles.cardActions}>
+                    <View style={styles.cardAction}>
+                      <Button label={t.groups.edit} variant="secondary" size="sm" onPress={() => void startEdit(item)} />
+                    </View>
+                    <View style={styles.cardAction}>
+                      <Button
+                        label={t.groups.delete}
+                        variant="dangerOutline"
+                        size="sm"
+                        onPress={() => setPendingDeleteId(item.id)}
+                      />
+                    </View>
+                  </View>
+                )}
               </View>
             )}
           </View>
@@ -301,6 +349,7 @@ const styles = StyleSheet.create({
   },
   name: { fontWeight: '700', fontSize: 16, color: theme.colors.text },
   cardActions: { flexDirection: 'row', gap: 8 },
+  cardAction: { flex: 1 },
   link: {
     color: theme.colors.primary,
     fontWeight: '600',
