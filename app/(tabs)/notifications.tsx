@@ -20,9 +20,9 @@ export default function NotificationsScreen() {
   const [items, setItems] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!user) return;
-    setLoading(true);
+    if (!opts?.silent) setLoading(true);
     void pruneOldNotifications();
     const { data } = await supabase
       .from('notifications')
@@ -36,8 +36,22 @@ export default function NotificationsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load])
+      void load();
+      if (!user?.id) return;
+      const channel = supabase
+        .channel(`notices-live-${user.id}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${user.id}` },
+          () => {
+            void load({ silent: true });
+          }
+        )
+        .subscribe();
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    }, [load, user?.id])
   );
 
   async function markRead(id: string) {

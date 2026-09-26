@@ -208,12 +208,27 @@ export default function ActivityDetailScreen() {
         )
         .subscribe();
 
+      const followChannel = user?.id
+        ? supabase
+            .channel(`activity-follow-${user.id}`)
+            .on(
+              'postgres_changes',
+              { event: '*', schema: 'public', table: 'series_follows', filter: `user_id=eq.${user.id}` },
+              () => {
+                if (reloadTimer.current) clearTimeout(reloadTimer.current);
+                reloadTimer.current = setTimeout(() => void load({ silent: true }), 200);
+              }
+            )
+            .subscribe()
+        : null;
+
       return () => {
         if (reloadTimer.current) clearTimeout(reloadTimer.current);
         supabase.removeChannel(channel);
         supabase.removeChannel(rowChannel);
+        if (followChannel) supabase.removeChannel(followChannel);
       };
-    }, [load, id])
+    }, [load, id, user?.id])
   );
 
   async function onJoin() {

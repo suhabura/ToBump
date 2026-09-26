@@ -34,8 +34,6 @@ export default function EventsScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoaded = useRef(false);
-  const loadedAt = useRef(0);
-  const fetchedSearch = useRef<string | null>(null);
   const shown = list === 'declined' ? declinedItems : openItems;
 
   const userId = user?.id;
@@ -60,8 +58,6 @@ export default function EventsScreen() {
         setOpenItems(data.open);
         setDeclinedItems(data.declined);
         hasLoaded.current = true;
-        loadedAt.current = Date.now();
-        fetchedSearch.current = search;
       } catch (e) {
         setError(e instanceof Error ? e.message : t.common.error);
       } finally {
@@ -117,9 +113,7 @@ export default function EventsScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      const stale = Date.now() - loadedAt.current > 15_000;
-      const searchChanged = fetchedSearch.current !== search;
-      if (!hasLoaded.current || stale || searchChanged) void load();
+      void load({ silent: hasLoaded.current });
       if (!userId || !configured) return;
 
       const reloadOnly = () => scheduleLiveReload();
