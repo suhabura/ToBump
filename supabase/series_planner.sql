@@ -58,14 +58,28 @@ create policy "series_skipped_insert" on public.series_skipped_dates for insert 
   with check (
     exists (
       select 1 from public.activities a
-      where coalesce(a.series_id, a.id) = series_id and a.created_by = auth.uid()
+      where coalesce(a.series_id, a.id) = series_id
+        and (
+          a.created_by = auth.uid()
+          or exists (
+            select 1 from public.activity_editors e
+            where e.activity_id = a.id and e.user_id = auth.uid()
+          )
+        )
     )
   );
 create policy "series_skipped_delete" on public.series_skipped_dates for delete to authenticated
   using (
     exists (
       select 1 from public.activities a
-      where coalesce(a.series_id, a.id) = series_id and a.created_by = auth.uid()
+      where coalesce(a.series_id, a.id) = series_id
+        and (
+          a.created_by = auth.uid()
+          or exists (
+            select 1 from public.activity_editors e
+            where e.activity_id = a.id and e.user_id = auth.uid()
+          )
+        )
     )
   );
 

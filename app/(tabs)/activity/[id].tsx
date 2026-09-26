@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
+import { DateTimeField } from '@/components/DateTimeField';
 import { WeatherBadge } from '@/components/WeatherBadge';
 import { Button, Chip, EmptyState, Loading, Muted, Screen, Subtitle, Title } from '@/components/ui';
 import { ActivityExtraInvitePanel } from '@/components/ActivityExtraInvitePanel';
@@ -20,6 +21,7 @@ import {
   leaveActivity,
   markSeriesDeclinePrompted,
   optOutOfSeries,
+  rescheduleOccurrence,
   userCanEditActivity,
   type DeleteActivityMode,
 } from '@/lib/api';
@@ -77,6 +79,11 @@ export default function ActivityDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [editChoiceOpen, setEditChoiceOpen] = useState(false);
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [moveStart, setMoveStart] = useState<Date | null>(null);
+  const [moving, setMoving] = useState(false);
+  const [moveError, setMoveError] = useState<string | null>(null);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoaded = useRef(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -673,7 +680,13 @@ export default function ActivityDetailScreen() {
                   variant="outline"
                   size="sm"
                   icon="pencil"
-                  onPress={() => router.push(`/activity/edit/${activity.id}`)}
+                  onPress={() => {
+                    if (isSeriesActivity(activity)) {
+                      setEditChoiceOpen(true);
+                      return;
+                    }
+                    router.push(`/activity/edit/${activity.id}`);
+                  }}
                 />
               </View>
             ) : null}
@@ -738,6 +751,78 @@ export default function ActivityDetailScreen() {
           </>
         )}
       </ScrollView>
+
+      <Modal
+        visible={editChoiceOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setEditChoiceOpen(false)}>
+        <Pressable style={styles.deleteBackdrop} onPress={() => setEditChoiceOpen(false)}>
+          <Pressable style={styles.deleteSheet} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.deleteTitle}>{t.events.edit}</Text>
+            <Muted>{t.events.editChoicePrompt}</Muted>
+            <View style={{ height: 12 }} />
+            <Button
+              label={t.events.editThis}
+              variant="secondary"
+              onPress={() => {
+                setEditChoiceOpen(false);
+                setMoveError(null);
+                setMoveStart(new Date(activity.starts_at));
+                setMoveOpen(true);
+              }}
+            />
+            <View style={{ height: 8 }} />
+            <Button
+              label={t.events.editSeries}
+              variant="secondary"
+              onPress={() => {
+                setEditChoiceOpen(false);
+                router.push(`/activity/edit/${activity.id}`);
+              }}
+            />
+            <View style={{ height: 8 }} />
+            <Button label={t.common.cancel} variant="ghost" onPress={() => setEditChoiceOpen(false)} />
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={moveOpen} transparent animationType="fade" onRequestClose={() => setMoveOpen(false)}>
+        <Pressable style={styles.deleteBackdrop} onPress={() => !moving && setMoveOpen(false)}>
+          <Pressable style={styles.deleteSheet} onPress={(e) => e.stopPropagation()}>
+            <Text style={styles.deleteTitle}>{t.events.moveTitle}</Text>
+            <Muted>{t.events.moveHint}</Muted>
+            <View style={{ height: 12 }} />
+            <DateTimeField
+              label={t.form.start}
+              value={moveStart}
+              onChange={setMoveStart}
+              minimumDate={new Date()}
+            />
+            {moveError ? <Text style={styles.deleteError}>{moveError}</Text> : null}
+            <Button
+              label={t.events.save}
+              loading={moving}
+              onPress={() => {
+                if (!moveStart || moving) return;
+                setMoving(true);
+                setMoveError(null);
+                void rescheduleOccurrence(activity.id, moveStart)
+                  .then(async () => {
+                    setMoveOpen(false);
+                    await load();
+                  })
+                  .catch((e: unknown) => {
+                    setMoveError(e instanceof Error ? e.message : t.events.moveFailed);
+                  })
+                  .finally(() => setMoving(false));
+              }}
+            />
+            <View style={{ height: 8 }} />
+            <Button label={t.common.cancel} variant="ghost" disabled={moving} onPress={() => setMoveOpen(false)} />
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal visible={deleteOpen} transparent animationType="fade" onRequestClose={() => setDeleteOpen(false)}>
         <Pressable style={styles.deleteBackdrop} onPress={() => setDeleteOpen(false)}>

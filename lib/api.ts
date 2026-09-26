@@ -1,7 +1,7 @@
 import { getT } from '@/i18n/runtime';
 import { supabase } from '@/lib/supabase';
 import { distanceMeters } from '@/lib/geo';
-import { combineDayAndTime, firstOccurrence, isoWeekday, localDayKey, normalizeRules, seriesEndDay, type DateSlotRule, type RecurrenceRule } from '@/lib/recurrence';
+import { combineDayAndTime, firstOccurrence, hasWeekdayRules, isDateSeries, isoWeekday, localDayKey, normalizeRules, seriesEndDay, type DateSlotRule, type RecurrenceRule } from '@/lib/recurrence';
 import { displayName, type ActivityWithRelations, type Category, type Privacy } from '@/lib/types';
 import {
   DEFAULT_SUBCATEGORIES,
@@ -1010,6 +1010,171 @@ async function assertActivityGone(activityId: string) {
   if (error) throw error;
   if (data) {
     throw new Error('Could not delete the event. Try again.');
+  }
+}
+
+function dayList(value: unknown): string[] {
+  return (Array.isArray(value) ? value : [])
+    .map((d) => String(d).slice(0, 10))
+    .filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d));
+}
+
+function shiftClock(hour: number, minute: number, deltaMin: number) {
+  const total = hour * 60 + minute + deltaMin;
+  const wrapped = ((total % 1440) + 1440) % 1440;
+  return { hour: Math.floor(wrapped / 60), minute: wrapped % 60 };
+}
+
+function movedDateRules(rules: unknown, oldDay: string, newDay: string, start: Date, deltaMin: number) {
+  if (!Array.isArray(rules)) return rules;
+  return rules.map((rule) => {
+    if (!rule || typeof rule !== 'object') return rule;
+    const rec = rule as Record<string, unknown>;
+    if (typeof rec.date !== 'string' || rec.date.slice(0, 10) !== oldDay) return rule;
+    const minute = (Math.round(start.getMinutes() / 15) * 15) % 60;
+    const next: Record<string, unknown> = {
+      ...rec,
+      date: newDay,
+      hour: start.getHours(),
+      minute,
+    };
+    if (typeof rec.end_hour === 'number') {
+      const shifted = shiftClock(Number(rec.end_hour), Number(rec.end_minute ?? 0), deltaMin);
+      next.end_hour = shifted.hour;
+      next.end_minute = shifted.minute;
+    }
+    return next;
+  });
+}
+
+/** Move one occurrence to any start. Other dates in the series stay. */
+export async function rescheduleOccurrence(activityId: string, nextStart: Date) {
+  const t = getT();
+  if (!(nextStart instanceof Date) || Number.isNaN(nextStart.getTime()) || nextStart.getTime() < Date.now()) {
+    throw new Error(t.form.pastNotAllowed);
+  }
+
+  const { data: act, error: loadError } = await supabase
+    .from('activities')
+    .select(
+      'id, series_id, starts_at, ends_at, duration_minutes, is_recurring, recurrence_dates, recurrence_rules, recurrence_weekdays, status'
+    )
+    .eq('id', activityId)
+    .maybeSingle();
+  if (loadError) throw loadError;
+  if (!act) throw new Error(t.events.notFound);
+
+  const oldStart = new Date(act.starts_at as string);
+  if (Number.isNaN(oldStart.getTime())) throw new Error(t.events.moveFailed);
+  const oldDay = localDayKey(oldStart);
+  const newDay = localDayKey(nextStart);
+  const sid = (act.series_id as string | null) ?? (act.id as string);
+  let templateDates = dayList(act.recurrence_dates);
+  let templateRules = act.recurrence_rules;
+  let templateRecurring = Boolean(act.is_recurring);
+  let templateWeekdays = (act.recurrence_weekdays as number[] | null) ?? [];
+  if (act.series_id) {
+    const { data: root, error: rootError } = await supabase
+      .from('activities')
+      .select('is_recurring, recurrence_dates, recurrence_rules, recurrence_weekdays')
+      .eq('id', sid)
+      .maybeSingle();
+    if (rootError) throw rootError;
+    if (root) {
+      const rootDates = dayList(root.recurrence_dates);
+      if (rootDates.length >= templateDates.length) templateDates = rootDates;
+      templateRules = root.recurrence_rules ?? templateRules;
+      templateRecurring = Boolean(root.is_recurring);
+      templateWeekdays = (root.recurrence_weekdays as number[] | null) ?? templateWeekdays;
+    }
+  }
+  const weekly =
+    templateRecurring &&
+    (hasWeekdayRules(templateRules as { weekday?: number; date?: string }[] | null) || templateWeekdays.length > 0);
+  const dateSeries = isDateSeries({
+    recurrence_dates: templateDates,
+    is_recurring: templateRecurring,
+    recurrence_rules: (templateRules as { weekday?: number; date?: string }[] | null) ?? null,
+    recurrence_weekdays: templateWeekdays,
+  });
+
+  let durationMs: number | null = null;
+  if (act.ends_at) {
+    const endMs = new Date(act.ends_at as string).getTime();
+    if (!Number.isNaN(endMs) && endMs > oldStart.getTime()) durationMs = endMs - oldStart.getTime();
+  } else if (typeof act.duration_minutes === 'number' && act.duration_minutes >= 15) {
+    durationMs = act.duration_minutes * 60_000;
+  }
+  const endsAt = durationMs != null ? new Date(nextStart.getTime() + durationMs).toISOString() : null;
+  const durationMinutes = durationMs != null ? Math.max(15, Math.round(durationMs / 60_000)) : null;
+  const deltaMin =
+    nextStart.getHours() * 60 + nextStart.getMinutes() - (oldStart.getHours() * 60 + oldStart.getMinutes());
+
+  const previous = {
+    starts_at: act.starts_at,
+    ends_at: act.ends_at,
+    duration_minutes: act.duration_minutes,
+    recurrence_dates: act.recurrence_dates,
+    recurrence_rules: act.recurrence_rules,
+  };
+  const sourceDates = templateDates.includes(oldDay) ? templateDates : dayList(act.recurrence_dates);
+  const sourceRules = templateDates.includes(oldDay) ? templateRules : act.recurrence_rules;
+  const nextRules = dateSeries ? movedDateRules(sourceRules, oldDay, newDay, nextStart, deltaMin) : act.recurrence_rules;
+  const nextDates = dateSeries
+    ? Array.from(new Set(sourceDates.map((d) => (d === oldDay ? newDay : d)))).sort()
+    : dayList(act.recurrence_dates);
+
+  const patch: Record<string, unknown> = {
+    starts_at: nextStart.toISOString(),
+    ends_at: endsAt,
+    duration_minutes: durationMinutes,
+    updated_at: new Date().toISOString(),
+  };
+  if (dateSeries) {
+    patch.recurrence_dates = nextDates;
+    patch.recurrence_rules = nextRules;
+  }
+
+  const { error: updError } = await supabase.from('activities').update(patch).eq('id', activityId);
+  if (updError) throw updError;
+
+  if (dateSeries && newDay !== oldDay) {
+    const { data: rows, error: rowsError } = await supabase
+      .from('activities')
+      .select('id, recurrence_dates, recurrence_rules')
+      .or(`id.eq.${sid},series_id.eq.${sid}`);
+    if (rowsError) {
+      await supabase.from('activities').update(previous).eq('id', activityId);
+      throw rowsError;
+    }
+    for (const row of rows ?? []) {
+      if (row.id === activityId) continue;
+      const dates = Array.from(new Set(dayList(row.recurrence_dates).map((d) => (d === oldDay ? newDay : d)))).sort();
+      const rules = movedDateRules(row.recurrence_rules, oldDay, newDay, nextStart, deltaMin);
+      const { error: sibError } = await supabase
+        .from('activities')
+        .update({ recurrence_dates: dates, recurrence_rules: rules })
+        .eq('id', row.id);
+      if (sibError) {
+        await supabase.from('activities').update(previous).eq('id', activityId);
+        throw sibError;
+      }
+    }
+  }
+
+  if (newDay !== oldDay) {
+    await supabase.from('series_skipped_dates').delete().eq('series_id', sid).eq('day', newDay);
+  }
+
+  if (weekly && !dateSeries && newDay !== oldDay) {
+    const { error: skipError } = await supabase.from('series_skipped_dates').insert({
+      series_id: sid,
+      day: oldDay,
+    });
+    if (skipError && skipError.code !== '23505') {
+      await supabase.from('activities').update(previous).eq('id', activityId);
+      throw new Error(t.events.moveFailed);
+    }
   }
 }
 

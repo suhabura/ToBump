@@ -276,10 +276,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   });
   const isRecurring = recurrenceMode !== 'once';
   const isDateSeries = recurrenceMode === 'dates';
-  const lockedDates = useMemo(
-    () => Array.from(new Set(initial?.recurrence_dates ?? [])).sort(),
-    [initial?.recurrence_dates]
-  );
   const [pickedDates, setPickedDates] = useState<string[]>(() =>
     Array.from(new Set(initial?.recurrence_dates ?? [])).sort()
   );
@@ -330,21 +326,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   useEffect(() => {
     setDateSlots((prev) => mergeDateSlots(pickedDates, prev));
   }, [pickedDates]);
-
-  function changeExtraDates(next: string[]) {
-    setExtraDates(next);
-    setRecurrenceUntil((current) => {
-      if (!current) return current;
-      const untilDay = formatDay(current);
-      let later = untilDay;
-      for (const day of next) {
-        if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day > later) later = day;
-      }
-      if (later === untilDay) return current;
-      const moved = new Date(`${later}T12:00:00`);
-      return Number.isNaN(moved.getTime()) ? current : moved;
-    });
-  }
 
   // Only English canonical names from seed + DB English rows — show localized labels once
   const activitySuggestions = useMemo(() => {
@@ -1087,14 +1068,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       )}
       {recurrenceMode === 'dates' ? (
         <View>
-          {activityId ? (
-            <View>
-              <Muted>{t.form.addDatesHint}</Muted>
-              <DateMultiField selected={pickedDates} onChange={setPickedDates} lockedDays={lockedDates} />
-              <Muted>{t.form.datesPicked(pickedDates.length)}</Muted>
-              {fieldNote('dates')}
-            </View>
-          ) : (
+          {activityId ? null : (
             <View>
               <Muted>{t.form.datesHint}</Muted>
               <DateMultiField selected={pickedDates} onChange={setPickedDates} />
@@ -1227,13 +1201,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             minimumDate={computedFirst ?? seriesFromDate}
           />
           {fieldNote('seriesEnd')}
-          {activityId ? (
-            <View>
-              <Text style={styles.section}>{t.form.addExtraDate}</Text>
-              <Muted>{t.form.addExtraDateHint}</Muted>
-              <DateMultiField selected={extraDates} onChange={changeExtraDates} />
-            </View>
-          ) : null}
         </View>
       ) : null}
 
