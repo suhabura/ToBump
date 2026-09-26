@@ -1304,13 +1304,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
   }
 
   const weekdays = rules.map((r) => r.weekday);
-  const weeklyExtraDates = isWeekly
-    ? dateDays.filter((d) => {
-        const dt = new Date(`${d}T12:00:00`);
-        if (Number.isNaN(dt.getTime())) return false;
-        return !rules.some((r) => r.weekday === isoWeekday(dt));
-      })
-    : [];
+  const extraSlots = isWeekly ? dateSlots.filter((slot) => dateDays.includes(slot.date)) : [];
 
   let startsAt = input.starts_at;
   let endsAt = input.ends_at || null;
@@ -1357,9 +1351,9 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
     finance_enabled: Boolean(input.finance_enabled),
     show_weather: Boolean(input.show_weather),
     recurrence_weekdays: weekdays,
-    recurrence_rules: isDateSeries ? dateSlots : rules,
+    recurrence_rules: isDateSeries ? dateSlots : [...rules, ...extraSlots],
     recurrence_until: isWeekly ? weeklyUntil : isDateSeries ? dateDays[dateDays.length - 1] : null,
-    recurrence_dates: isDateSeries ? dateDays : isWeekly ? weeklyExtraDates : [],
+    recurrence_dates: isDateSeries || isWeekly ? dateDays : [],
     duration_minutes: durationMinutes,
     updated_at: new Date().toISOString(),
   };
@@ -1417,7 +1411,7 @@ export async function saveActivity(userId: string, input: ActivityInput, activit
 
     if (isDateSeries || isWeekly) {
       const sid = existing.series_id ?? activityId;
-      const storedDates = isDateSeries ? dateDays : weeklyExtraDates;
+      const storedDates = dateDays;
       const seriesPatch = {
         recurrence_dates: storedDates,
         recurrence_until: payload.recurrence_until,

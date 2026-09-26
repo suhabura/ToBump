@@ -276,11 +276,18 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   });
   const isRecurring = recurrenceMode !== 'once';
   const isDateSeries = recurrenceMode === 'dates';
+  const lockedDates = useMemo(
+    () => Array.from(new Set(initial?.recurrence_dates ?? [])).sort(),
+    [initial?.recurrence_dates]
+  );
   const [pickedDates, setPickedDates] = useState<string[]>(() =>
     Array.from(new Set(initial?.recurrence_dates ?? [])).sort()
   );
   const [extraDates, setExtraDates] = useState<string[]>(() =>
     weeklyFromInitial(initial) ? Array.from(new Set(initial?.recurrence_dates ?? [])).sort() : []
+  );
+  const [extraSlots, setExtraSlots] = useState<FormDateSlot[]>(() =>
+    weeklyFromInitial(initial) ? initialDateSlots(initial) : []
   );
   const [dateSlots, setDateSlots] = useState<FormDateSlot[]>(() => initialDateSlots(initial));
   const [endChoice, setEndChoice] = useState<EndChoice>(() => initialEnd(initial));
@@ -326,6 +333,25 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   useEffect(() => {
     setDateSlots((prev) => mergeDateSlots(pickedDates, prev));
   }, [pickedDates]);
+
+  useEffect(() => {
+    setExtraSlots((prev) => mergeDateSlots(extraDates, prev));
+  }, [extraDates]);
+
+  function changeExtraDates(next: string[]) {
+    setExtraDates(next);
+    setRecurrenceUntil((current) => {
+      if (!current) return current;
+      const untilDay = formatDay(current);
+      let later = untilDay;
+      for (const day of next) {
+        if (/^\d{4}-\d{2}-\d{2}$/.test(day) && day > later) later = day;
+      }
+      if (later === untilDay) return current;
+      const moved = new Date(`${later}T12:00:00`);
+      return Number.isNaN(moved.getTime()) ? current : moved;
+    });
+  }
 
   // Only English canonical names from seed + DB English rows — show localized labels once
   const activitySuggestions = useMemo(() => {
@@ -632,7 +658,8 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         normalized.some((rule) => {
           const end = endFromStored(rule.duration_minutes, rule.end_hour, rule.end_minute);
           return end.mode !== 'none' && resolveEndMinutes(ruleTimeAsDate(rule), end) == null;
-        })
+        }) ||
+        extraSlots.some((item) => resolveEndMinutes(slotStart(item), item.end) == null && item.end.mode !== 'none')
       ) {
         missing.end = t.form.minDuration;
       }
@@ -770,7 +797,16 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
                   end_hour: slot.end.mode === 'clock' ? slot.end.endHour : null,
                   end_minute: slot.end.mode === 'clock' ? slot.end.endMinute : null,
                 }))
-              : undefined,
+              : recurrenceMode === 'weekly'
+                ? extraSlots.map((slot) => ({
+                    date: slot.date,
+                    hour: slot.hour,
+                    minute: slot.minute,
+                    duration_minutes: resolveEndMinutes(slotStart(slot), slot.end),
+                    end_hour: slot.end.mode === 'clock' ? slot.end.endHour : null,
+                    end_minute: slot.end.mode === 'clock' ? slot.end.endMinute : null,
+                  }))
+                : undefined,
           recurrence_until: recurrenceMode === 'weekly' && recurrenceUntil ? formatDay(recurrenceUntil) : null,
           recurrence_dates:
             recurrenceMode === 'dates'
@@ -1068,7 +1104,14 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       )}
       {recurrenceMode === 'dates' ? (
         <View>
-          {activityId ? null : (
+          {activityId ? (
+            <View>
+              <Muted>{t.form.addDatesHint}</Muted>
+              <DateMultiField selected={pickedDates} onChange={setPickedDates} lockedDays={lockedDates} />
+              <Muted>{t.form.datesPicked(pickedDates.length)}</Muted>
+              {fieldNote('dates')}
+            </View>
+          ) : (
             <View>
               <Muted>{t.form.datesHint}</Muted>
               <DateMultiField selected={pickedDates} onChange={setPickedDates} />
@@ -1201,6 +1244,45 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             minimumDate={computedFirst ?? seriesFromDate}
           />
           {fieldNote('seriesEnd')}
+          {activityId ? (
+            <View>
+              <Text style={styles.section}>{t.form.addExtraDate}</Text>
+              <Muted>{t.form.addExtraDateHint}</Muted>
+              <DateMultiField selected={extraDates} onChange={changeExtraDates} />
+              {extraSlots.map((slot) => (
+                <View key={slot.date} style={styles.slotCard}>
+                  <Text style={styles.ruleDay}>
+                    {format(new Date(`${slot.date}T12:00:00`), locale === 'sl' ? 'EEEE, d. MMM' : 'EEEE, d MMM', {
+                      locale: locale === 'sl' ? slLocale : enUS,
+                    })}
+                  </Text>
+                  <DateTimeField
+                    label={t.form.start}
+                    value={slotStart(slot)}
+                    mode="time"
+                    minimumDate={new Date(2000, 0, 1)}
+                    onChange={(d) => {
+                      if (!d) return;
+                      setExtraSlots((prev) =>
+                        prev.map((item) =>
+                          item.date === slot.date
+                            ? { ...item, hour: d.getHours(), minute: (Math.round(d.getMinutes() / 15) * 15) % 60 }
+                            : item
+                        )
+                      );
+                    }}
+                  />
+                  <EndChoiceField
+                    value={slot.end}
+                    start={slotStart(slot)}
+                    onChange={(end) =>
+                      setExtraSlots((prev) => prev.map((item) => (item.date === slot.date ? { ...item, end } : item)))
+                    }
+                  />
+                </View>
+              ))}
+            </View>
+          ) : null}
         </View>
       ) : null}
 

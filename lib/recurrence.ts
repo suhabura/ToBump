@@ -326,6 +326,25 @@ export function seriesEndFromRows(
   return base;
 }
 
+function dateRuleTimes(
+  rules: ExpandableActivity['recurrence_rules'],
+  seed: Date
+): Map<string, { hour: number; minute: number; duration_minutes: number | null }> {
+  const timed = new Map<string, { hour: number; minute: number; duration_minutes: number | null }>();
+  for (const raw of rules ?? []) {
+    const date = raw.date?.slice(0, 10);
+    if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || hasWeekdayRules([raw])) continue;
+    const hour = Number(raw.hour);
+    const minute = Number(raw.minute);
+    timed.set(date, {
+      hour: Number.isFinite(hour) ? hour : seed.getHours(),
+      minute: Number.isFinite(minute) ? minute : seed.getMinutes(),
+      duration_minutes: raw.duration_minutes == null ? null : Number(raw.duration_minutes),
+    });
+  }
+  return timed;
+}
+
 /** Future slots in [rangeStart, rangeEnd] (local), from the series start through recurrence_until. The end day is included. Nothing after it is drawn. */
 export function expandSeriesSlots(
   activity: ExpandableActivity,
@@ -349,19 +368,9 @@ export function expandSeriesSlots(
   const endKey = dayKeyOf(activity.recurrence_until);
   const untilDay = endKey ? startOfLocalDay(new Date(`${endKey}T12:00:00`)) : null;
 
+  const timed = dateRuleTimes(activity.recurrence_rules, seed);
+
   if (isDateSeries(activity)) {
-    const timed = new Map<string, { hour: number; minute: number; duration_minutes: number | null }>();
-    for (const raw of activity.recurrence_rules ?? []) {
-      const date = raw.date?.slice(0, 10);
-      if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date) || hasWeekdayRules([raw])) continue;
-      const hour = Number(raw.hour);
-      const minute = Number(raw.minute);
-      timed.set(date, {
-        hour: Number.isFinite(hour) ? hour : seed.getHours(),
-        minute: Number.isFinite(minute) ? minute : seed.getMinutes(),
-        duration_minutes: raw.duration_minutes == null ? null : Number(raw.duration_minutes),
-      });
-    }
     for (const day of activity.recurrence_dates ?? []) {
       const key = String(day).slice(0, 10);
       if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || skipped.has(key)) continue;
@@ -408,13 +417,27 @@ export function expandSeriesSlots(
   const seen = new Set(out.map((s) => s.day));
   for (const extra of activity.recurrence_dates ?? []) {
     const day = String(extra).slice(0, 10);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || skipped.has(day) || seen.has(day)) continue;
-    const start = combineDayAndTime(day, seed.getHours(), seed.getMinutes());
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || skipped.has(day)) continue;
+    const slot = timed.get(day);
+    const start = combineDayAndTime(day, slot?.hour ?? seed.getHours(), slot?.minute ?? seed.getMinutes());
+    const durationMinutes = slot
+      ? slot.duration_minutes != null && slot.duration_minutes > 0
+        ? slot.duration_minutes
+        : null
+      : fallbackDuration;
+    if (seen.has(day)) {
+      const idx = out.findIndex((item) => item.day === day);
+      if (idx >= 0 && slot) {
+        if (start.getTime() < now) out.splice(idx, 1);
+        else out[idx] = { ...out[idx], startsAt: start, durationMinutes };
+      }
+      continue;
+    }
     if (start.getTime() < now) continue;
     if (untilDay && startOfLocalDay(start).getTime() > untilDay.getTime()) continue;
     if (startOfLocalDay(start) < from || startOfLocalDay(start) > to) continue;
     seen.add(day);
-    out.push({ seriesId, day, startsAt: start, durationMinutes: fallbackDuration });
+    out.push({ seriesId, day, startsAt: start, durationMinutes });
   }
   return out;
 }
