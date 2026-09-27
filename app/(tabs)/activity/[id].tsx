@@ -6,7 +6,7 @@ import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } 
 import { useFocusEffect } from 'expo-router';
 import { DateTimeField } from '@/components/DateTimeField';
 import { WeatherBadge } from '@/components/WeatherBadge';
-import { Button, Chip, EmptyState, Loading, Muted, Screen, Subtitle, Title } from '@/components/ui';
+import { Button, Chip, EmptyState, Loading, Muted, Screen, Title } from '@/components/ui';
 import { ActivityExtraInvitePanel } from '@/components/ActivityExtraInvitePanel';
 import { ActivityFinancePanel } from '@/components/ActivityFinancePanel';
 import { ActivityGuestsPanel } from '@/components/ActivityGuestsPanel';
@@ -742,14 +742,15 @@ export default function ActivityDetailScreen() {
 
         <View style={styles.responses}>
           <Text style={styles.sectionTitle}>{t.events.participants}</Text>
-          <ResponseGroup title={t.events.coming} people={participants} />
-          <ResponseGroup title={t.events.decline} people={decliners} />
-          <ResponseGroup title={t.events.noReply} people={silent} />
-        </View>
-
-        {guests.length ? (
-          <View style={styles.guestBlock}>
-            <Subtitle>{t.guests.title}</Subtitle>
+          <View style={styles.responseGroup}>
+            <Text style={styles.responseTitle}>
+              {t.events.coming} · {participants.length + guests.length}
+            </Text>
+            {participants.map((person) => (
+              <Text key={person.id} style={styles.responseName}>
+                {displayName(person)}
+              </Text>
+            ))}
             {guests.map((g) => {
               const gName = g.activity_guests?.name ?? '—';
               return (
@@ -766,7 +767,9 @@ export default function ActivityDetailScreen() {
               );
             })}
           </View>
-        ) : null}
+          <ResponseGroup title={t.events.decline} people={decliners} />
+          <ResponseGroup title={t.events.noReply} people={silent} />
+        </View>
 
         <ActivityGuestsPanel
           activity={activity}
@@ -1015,26 +1018,16 @@ const styles = StyleSheet.create({
     lineHeight: 22,
     color: theme.colors.text,
   },
-  guestBlock: {
-    marginTop: 24,
-  },
-  participant: {
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
-    color: theme.colors.text,
-  },
   guestRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 8,
-    paddingVertical: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.colors.border,
   },
   guestName: {
     flex: 1,
+    fontSize: 15,
+    lineHeight: 22,
     color: theme.colors.text,
   },
   guestTag: {
