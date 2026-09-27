@@ -26,12 +26,12 @@ import {
   type DeleteActivityMode,
 } from '@/lib/api';
 import { fetchActivityGuests, removeGuestAttendance, type GuestAttendanceWithGuest } from '@/lib/guests';
-import { canUseChat, formatRecurrence, formatRecurrenceDates, hydrateRules, isSeriesActivity, rulesFromLegacy } from '@/lib/recurrence';
+import { formatRecurrence, formatRecurrenceDates, hydrateRules, isSeriesActivity, rulesFromLegacy } from '@/lib/recurrence';
 import { seriesKey } from '@/lib/finance';
 import { fetchSeriesFollows, setSeriesFollow } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations, Profile } from '@/lib/types';
-import { activityCapacityRange, activityLocationLabel, activityPriceLabel, activityVenuePoint, categoryLabel, displayName } from '@/lib/types';
+import { activityPriceLabel, activityVenuePoint, categoryLabel, displayName } from '@/lib/types';
 import { eventWeatherPoint } from '@/lib/weather';
 import { mapsUrl } from '@/lib/geo';
 import { useLocale, useT } from '@/i18n';
@@ -39,6 +39,24 @@ import { theme } from '@/constants/theme';
 
 function byName(people: Profile[]): Profile[] {
   return [...people].sort((a, b) => displayName(a).localeCompare(displayName(b), 'sl'));
+}
+
+function signupSummary(
+  count: number,
+  activity: { min_participants?: number | null; max_participants?: number | null },
+  labels: {
+    signedUpOf: (count: number, max: number) => string;
+    signedUpRange: (count: number, min: number, max: number) => string;
+    signedUpMin: (count: number, min: number) => string;
+    signedUpOnly: (count: number) => string;
+  }
+): string {
+  const min = activity.min_participants ?? null;
+  const max = activity.max_participants ?? null;
+  if (min != null && max != null && min !== max) return labels.signedUpRange(count, min, max);
+  if (max != null) return labels.signedUpOf(count, max);
+  if (min != null) return labels.signedUpMin(count, min);
+  return labels.signedUpOnly(count);
 }
 
 function ResponseGroup({ title, people }: { title: string; people: Profile[] }) {
@@ -90,19 +108,15 @@ export default function ActivityDetailScreen() {
   const tabRef = useRef(tab);
   tabRef.current = tab;
   const [following, setFollowing] = useState(false);
-  const [chatRows, setChatRows] = useState<Parameters<typeof canUseChat>[0]['rows']>([]);
-  const [joinedChatIds, setJoinedChatIds] = useState<string[]>([]);
   const [seriesBusy, setSeriesBusy] = useState(false);
   const routeKey = Array.isArray(id) ? id[0] : (id ?? '');
   const routeKeyRef = useRef(routeKey);
   routeKeyRef.current = routeKey;
-  const [chatRouteId, setChatRouteId] = useState(routeKey);
-  if (chatRouteId !== routeKey) {
-    setChatRouteId(routeKey);
+  const [seenRouteId, setSeenRouteId] = useState(routeKey);
+  if (seenRouteId !== routeKey) {
+    setSeenRouteId(routeKey);
     setJoined(false);
     setFollowing(false);
-    setChatRows([]);
-    setJoinedChatIds([]);
     setActivity(null);
     setLoading(true);
   }
@@ -235,39 +249,8 @@ export default function ActivityDetailScreen() {
     } catch {
       setGuests([]);
     }
-    let nextChatRows: Parameters<typeof canUseChat>[0]['rows'] = act
-      ? [
-          {
-            id: act.id,
-            starts_at: act.starts_at,
-            ends_at: act.ends_at,
-            status: act.status,
-            is_recurring: act.is_recurring,
-            recurrence_rules: act.recurrence_rules,
-            recurrence_weekdays: act.recurrence_weekdays,
-            recurrence_dates: act.recurrence_dates,
-          },
-        ]
-      : [];
-    let nextJoinedChatIds = joinedNow && act ? [act.id] : [];
     if (act && user) {
       const sid = seriesKey(act);
-      const { data: sibs } = await supabase
-        .from('activities')
-        .select('id, starts_at, ends_at, status, is_recurring, recurrence_rules, recurrence_weekdays, recurrence_dates')
-        .or(`id.eq.${sid},series_id.eq.${sid}`);
-      if (sibs?.length) nextChatRows = sibs;
-      const siblingIds = nextChatRows.map((row) => row.id);
-      if (siblingIds.length) {
-        const { data: myJoins, error: joinErr } = await supabase
-          .from('activity_joins')
-          .select('activity_id')
-          .eq('user_id', user.id)
-          .in('activity_id', siblingIds);
-        nextJoinedChatIds = joinErr
-          ? nextJoinedChatIds
-          : (myJoins ?? []).map((row: { activity_id: string }) => row.activity_id);
-      }
       try {
         const followSet = await fetchSeriesFollows(user.id);
         setFollowing(followSet.has(sid));
@@ -276,7 +259,6 @@ export default function ActivityDetailScreen() {
       }
       try {
         const optOuts = await fetchSeriesOptOuts(user.id);
-        const sid = seriesKey(act);
         const opted = optOuts.has(sid);
         setSeriesOptedOut(opted);
         if (opted) {
@@ -301,8 +283,6 @@ export default function ActivityDetailScreen() {
       setSeriesPrompted(false);
     }
     if (routeKeyRef.current !== startedFor) return;
-    setChatRows(nextChatRows);
-    setJoinedChatIds(nextJoinedChatIds);
     hasLoaded.current = true;
     setLoading(false);
   }, [id, user?.id, router, financeTab]);
@@ -506,32 +486,32 @@ export default function ActivityDetailScreen() {
   }
 
   const isOwner = user?.id === activity.created_by;
-  const showChat = canUseChat({
-    rows: chatRows.length
-      ? chatRows
-      : [
-          {
-            id: activity.id,
-            starts_at: activity.starts_at,
-            ends_at: activity.ends_at,
-            status: activity.status,
-            is_recurring: activity.is_recurring,
-            recurrence_rules: activity.recurrence_rules,
-            recurrence_weekdays: activity.recurrence_weekdays,
-            recurrence_dates: activity.recurrence_dates,
-          },
-        ],
-    activityId: activity.id,
-    joinedActivityIds: joinedChatIds,
-    followingSeries: following,
-  });
   const showJoin = !joined;
   const showDecline = joined || !declined;
   const showNever = Boolean(user && isSeriesActivity(activity) && !seriesOptedOut);
   const showPlanner = Boolean(user && isSeriesActivity(activity));
   const participantCount = participants.length + guests.length;
-  const capRange = activityCapacityRange(activity);
+  const signupLine = signupSummary(participantCount, activity, t.events);
+  const category = categoryLabel(activity.categories);
+  const showCategory =
+    Boolean(category) && category!.trim().toLowerCase() !== activity.title.trim().toLowerCase();
   const weather = eventWeatherPoint(activity);
+  const place = activity.enterprises;
+  const placeName = place?.name ?? activity.venue_text?.trim() ?? null;
+  const placeAddress = place?.address?.trim() || null;
+  const placePoint = activityVenuePoint(activity);
+  const mapsLink = placePoint
+    ? mapsUrl(placePoint)
+    : placeAddress
+      ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+          `${place?.name ?? ''}, ${placeAddress}`
+        )}`
+      : null;
+  const provider = place
+    ? place.provider_kind === 'tobump_booking'
+      ? t.events.tobumpBooking
+      : t.events.officialProvider
+    : null;
   const full =
     activity.max_participants != null && participantCount >= activity.max_participants;
 
@@ -562,9 +542,8 @@ export default function ActivityDetailScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         <View style={styles.titleRow}>
           <View style={styles.titleMain}>
-            <Title>
-              {categoryLabel(activity.categories) ?? activity.title}
-            </Title>
+            {showCategory ? <Text style={styles.categoryOver}>{category}</Text> : null}
+            <Title>{activity.title}</Title>
           </View>
           {weather ? (
             <WeatherBadge
@@ -632,143 +611,127 @@ export default function ActivityDetailScreen() {
               : ''}
           </Muted>
         ) : null}
-        {(() => {
-          const location = activityLocationLabel(activity);
-          const ent = activity.enterprises;
-          const point = activityVenuePoint(activity);
-          const mapsLink = point
-            ? mapsUrl(point)
-            : ent?.address?.trim()
-              ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
-                  `${ent.name}, ${ent.address.trim()}`
-                )}`
-              : null;
-          const provider = ent
-            ? ent.provider_kind === 'tobump_booking'
-              ? t.events.tobumpBooking
-              : t.events.officialProvider
-            : null;
-          return (
-            <Text style={styles.factLine}>
-              {t.events.organizer}: {displayName(activity.profiles)}
-              {location ? (
-                <>
-                  {' · '}
-                  {ent ? (
-                    <Text
-                      style={styles.placeLink}
-                      onPress={() => router.push(`/enterprise/${activity.enterprise_id}`)}>
-                      {ent.name}
-                    </Text>
-                  ) : (
-                    location
-                  )}
-                  {ent?.address ? ` · ${ent.address}` : null}
-                  {provider ? ` · ${provider}` : null}
-                  {mapsLink ? (
-                    <>
-                      {' · '}
-                      <Text style={styles.placeLink} onPress={() => Linking.openURL(mapsLink)}>
-                        {t.events.openMaps}
-                      </Text>
-                    </>
-                  ) : null}
-                </>
-              ) : null}
-            </Text>
-          );
-        })()}
+        {activity.profiles ? (
+          <View style={styles.factBlock}>
+            <Text style={styles.factLabel}>{t.events.organizer}</Text>
+            <Text style={styles.factValue}>{displayName(activity.profiles)}</Text>
+          </View>
+        ) : null}
+        {placeName || mapsLink ? (
+          <View style={styles.factBlock}>
+            <Text style={styles.factLabel}>{t.events.where}</Text>
+            {placeName ? (
+              place ? (
+                <Text
+                  style={styles.placeLink}
+                  onPress={() => router.push(`/enterprise/${activity.enterprise_id}`)}>
+                  {place.name}
+                </Text>
+              ) : (
+                <Text style={styles.factValue}>{placeName}</Text>
+              )
+            ) : null}
+            {placeAddress ? <Muted>{placeAddress}</Muted> : null}
+            {provider ? <Muted>{provider}</Muted> : null}
+            {mapsLink ? (
+              <Text style={styles.placeLink} onPress={() => Linking.openURL(mapsLink)}>
+                {t.events.openMaps}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
         {activity.finance_enabled && activity.price != null ? (
           <Muted>
             {t.common.price}: {activityPriceLabel(activity, t.common)}
           </Muted>
         ) : null}
-        <Muted>
-          {t.events.joinedCount}: {participantCount}
-          {capRange ? ` · ${t.events.needed}: ${capRange}` : ''}
-        </Muted>
 
-        {showJoin || showChat ? (
-          <View style={styles.primaryRow}>
-            {showJoin ? (
-              <View style={styles.primarySlot}>
-                <Button
-                  label={full ? t.events.full : t.events.join}
-                  icon="check"
-                  onPress={onJoin}
-                  disabled={full}
-                />
-              </View>
-            ) : null}
-            {showChat ? (
-              <View style={styles.primarySlot}>
-                <Button
-                  label={t.events.chat}
-                  variant="secondary"
-                  icon="comments"
-                  onPress={() => router.push(`/chat/${activity.id}`)}
-                />
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-        {showDecline || showNever || showPlanner ? (
-          <View style={styles.stack}>
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>{t.events.attendanceHeading}</Text>
+          <Text style={styles.signupLine}>{signupLine}</Text>
+          {showJoin ? (
+            <Button
+              label={full ? t.events.full : t.events.join}
+              icon="check"
+              onPress={onJoin}
+              disabled={full}
+            />
+          ) : null}
+          {showJoin && full && activity.max_participants != null ? (
+            <Muted>
+              {t.events.fullHint} {participantCount}/{activity.max_participants}
+            </Muted>
+          ) : null}
+        </View>
+
+        {showDecline || showPlanner || showNever ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t.events.optionsHeading}</Text>
             {showDecline ? (
               <Button
-                label={t.events.decline}
+                label={t.events.declineThisDate}
                 variant="secondary"
                 icon="times"
                 onPress={() => void onNotGoing()}
               />
             ) : null}
-            {showNever ? (
-              <Button
-                label={t.events.neverComing}
-                variant="secondary"
-                onPress={() => void onNeverComing()}
-              />
-            ) : null}
             {showPlanner ? (
-              <Button
-                label={following ? t.planner.unfollowSeries : t.planner.followSeries}
-                variant="secondary"
-                loading={seriesBusy}
-                onPress={() => void onToggleFollow()}
-              />
+              <>
+                <Button
+                  label={following ? t.planner.unfollowSeries : t.planner.followSeries}
+                  variant="secondary"
+                  loading={seriesBusy}
+                  onPress={() => void onToggleFollow()}
+                />
+                {following ? null : <Muted>{t.planner.followHint}</Muted>}
+              </>
+            ) : null}
+            {showNever ? (
+              <>
+                <Button
+                  label={t.events.neverComing}
+                  variant="ghost"
+                  onPress={() => void onNeverComing()}
+                />
+                <Muted>{t.events.optOutHint}</Muted>
+              </>
             ) : null}
           </View>
         ) : null}
         {canEdit || isOwner ? (
-          <View style={styles.manageRow}>
-            {canEdit ? (
-              <View style={styles.primarySlot}>
-                <Button
-                  label={t.events.edit}
-                  variant="outline"
-                  size="sm"
-                  icon="pencil"
-                  onPress={() => router.push(`/activity/edit/${activity.id}`)}
-                />
-              </View>
-            ) : null}
-            {isOwner ? (
-              <View style={styles.primarySlot}>
-                <Button
-                  label={t.events.delete}
-                  variant="dangerOutline"
-                  size="sm"
-                  icon="trash"
-                  onPress={onDelete}
-                  loading={deleting}
-                />
-              </View>
-            ) : null}
+          <View style={styles.manageSection}>
+            <Text style={styles.sectionTitle}>{t.events.manageHeading}</Text>
+            <View style={styles.manageRow}>
+              {canEdit ? (
+                <View style={styles.primarySlot}>
+                  <Button
+                    label={isSeriesActivity(activity) ? t.events.editSeries : t.events.edit}
+                    variant="outline"
+                    size="sm"
+                    icon="pencil"
+                    onPress={() => router.push(`/activity/edit/${activity.id}`)}
+                  />
+                </View>
+              ) : null}
+              {isOwner ? (
+                <View style={styles.primarySlot}>
+                  <Button
+                    label={t.events.delete}
+                    variant="dangerOutline"
+                    size="sm"
+                    icon="trash"
+                    onPress={onDelete}
+                    loading={deleting}
+                  />
+                </View>
+              ) : null}
+            </View>
           </View>
         ) : null}
         {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
 
         <View style={styles.responses}>
+          <Text style={styles.sectionTitle}>{t.events.participants}</Text>
           <ResponseGroup title={t.events.coming} people={participants} />
           <ResponseGroup title={t.events.decline} people={decliners} />
           <ResponseGroup title={t.events.noReply} people={silent} />
@@ -868,10 +831,10 @@ export default function ActivityDetailScreen() {
       <Modal visible={deleteOpen} transparent animationType="fade" onRequestClose={() => setDeleteOpen(false)}>
         <Pressable style={styles.deleteBackdrop} onPress={() => setDeleteOpen(false)}>
           <Pressable style={styles.deleteSheet} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.deleteTitle}>{t.events.delete}</Text>
-            <Muted>
-              {activity.is_recurring ? t.events.deleteRecurringPrompt : t.events.deleteConfirmPrompt}
-            </Muted>
+            <Text style={styles.deleteTitle}>
+              {activity.is_recurring ? t.events.deleteChoiceTitle : t.events.delete}
+            </Text>
+            {activity.is_recurring ? null : <Muted>{t.events.deleteConfirmPrompt}</Muted>}
             <View style={{ height: 12 }} />
             {activity.is_recurring ? (
               <>
@@ -881,13 +844,14 @@ export default function ActivityDetailScreen() {
                   loading={deleting}
                   onPress={() => confirmDelete('occurrence')}
                 />
-                <View style={{ height: 8 }} />
+                <Muted>{t.events.deleteThisOnlyHint}</Muted>
                 <Button
                   label={t.events.deleteSeries}
                   variant="danger"
                   loading={deleting}
                   onPress={() => confirmDelete('series')}
                 />
+                <Muted>{t.events.deleteSeriesHint}</Muted>
               </>
             ) : (
               <Button
@@ -945,6 +909,46 @@ const styles = StyleSheet.create({
   },
   titleMain: {
     flex: 1,
+  },
+  categoryOver: {
+    color: theme.colors.textMuted,
+    fontSize: 12,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  factBlock: {
+    marginTop: 10,
+    gap: 2,
+  },
+  factLabel: {
+    color: theme.colors.text,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  factValue: {
+    color: theme.colors.text,
+    fontSize: 15,
+  },
+  section: {
+    marginTop: 20,
+    gap: 8,
+  },
+  manageSection: {
+    marginTop: 20,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: theme.colors.border,
+    gap: 8,
+  },
+  sectionTitle: {
+    color: theme.colors.textMuted,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  signupLine: {
+    color: theme.colors.text,
+    fontSize: 15,
+    fontWeight: '600',
   },
   when: {
     color: theme.colors.primaryDark,
