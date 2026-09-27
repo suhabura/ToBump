@@ -140,7 +140,17 @@ export default function ActivityDetailScreen() {
       .eq('previous_activity_id', id)
       .eq('status', 'active')
       .maybeSingle();
-    if (next?.id && next.id !== id) {
+    const { data: openedRow } = await supabase
+      .from('activities')
+      .select('starts_at, ends_at, status')
+      .eq('id', startedFor)
+      .maybeSingle();
+    const endMs = openedRow?.ends_at ? new Date(openedRow.ends_at).getTime() : NaN;
+    const startMs = openedRow?.starts_at ? new Date(openedRow.starts_at).getTime() : NaN;
+    const occurrenceOver =
+      openedRow?.status === 'completed' ||
+      (!Number.isNaN(endMs) ? endMs <= Date.now() : !Number.isNaN(startMs) && startMs <= Date.now());
+    if (next?.id && next.id !== id && occurrenceOver) {
       router.replace({
         pathname: '/activity/[id]',
         params: {
