@@ -44,7 +44,8 @@ export default function EventsScreen() {
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoaded = useRef(false);
   const visibleOpen = openItems.filter((item) => !eventIsFull(item));
-  const shown = list === 'declined' ? declinedItems : visibleOpen;
+  const visibleDeclined = declinedItems.filter((item) => !eventIsFull(item));
+  const shown = list === 'declined' ? visibleDeclined : visibleOpen;
 
   const userId = user?.id;
 
@@ -143,7 +144,7 @@ export default function EventsScreen() {
                 : a
             );
           setOpenItems((prev) => bump(prev).filter((item) => !eventIsFull(item)));
-          setDeclinedItems(bump);
+          setDeclinedItems((prev) => bump(prev).filter((item) => !eventIsFull(item)));
         }
         scheduleLiveReload();
       };
@@ -315,7 +316,7 @@ export default function EventsScreen() {
             onPress={() => setList('open')}
           />
           <Chip
-            label={`${t.events.decline} · ${declinedItems.length}`}
+            label={`${t.events.decline} · ${visibleDeclined.length}`}
             active={list === 'declined'}
             onPress={() => setList('declined')}
           />

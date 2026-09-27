@@ -457,9 +457,13 @@ export async function fetchActivities(
       (a) => a.is_declined || a.is_series_opted_out
     );
     // One card per opted-out series; keep each single-date decline.
+    // Full dates drop first, so the next open date of a declined series stays.
+    // If every date is full, the series leaves Ne pridem.
     const declined = oneActivityPerSeries(
-      declinedRaw.map((a) =>
-        a.is_series_opted_out ? { ...a, is_declined: true } : a
+      hideFullEvents(
+        declinedRaw.map((a) =>
+          a.is_series_opted_out ? { ...a, is_declined: true } : a
+        )
       )
     ).sort(
       (a, b) => new Date(a.starts_at).getTime() - new Date(b.starts_at).getTime()
