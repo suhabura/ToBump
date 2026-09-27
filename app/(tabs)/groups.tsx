@@ -70,7 +70,11 @@ export default function GroupsScreen() {
           memberIds: (mem ?? []).map((m: { user_id: string }) => m.user_id),
         });
       }
-      setGroups(withMembers);
+      const empty = withMembers.filter((g) => g.memberIds.length === 0);
+      if (empty.length) {
+        await Promise.all(empty.map((g) => supabase.rpc('delete_friend_group', { p_group_id: g.id })));
+      }
+      setGroups(withMembers.filter((g) => g.memberIds.length > 0));
 
       const { data: fr, error: fErr } = await supabase
         .from('friendships')

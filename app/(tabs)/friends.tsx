@@ -297,6 +297,15 @@ export default function FriendsScreen() {
     const groupIds = (mine ?? []).map((g: { id: string }) => g.id);
     if (groupIds.length && pairIds.length) {
       await supabase.from('friend_group_members').delete().in('group_id', groupIds).in('user_id', pairIds);
+      const { data: left } = await supabase
+        .from('friend_group_members')
+        .select('group_id')
+        .in('group_id', groupIds);
+      const still = new Set((left ?? []).map((row: { group_id: string }) => row.group_id));
+      const empty = groupIds.filter((id) => !still.has(id));
+      for (const id of empty) {
+        await supabase.rpc('delete_friend_group', { p_group_id: id });
+      }
     }
     setFriends((prev) =>
       prev.filter((f) => f.id !== row.id && !pairIds.includes(friendshipOtherId(f, user.id)))
