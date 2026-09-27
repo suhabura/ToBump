@@ -26,7 +26,7 @@ import {
   type DeleteActivityMode,
 } from '@/lib/api';
 import { fetchActivityGuests, removeGuestAttendance, type GuestAttendanceWithGuest } from '@/lib/guests';
-import { formatRecurrence, formatRecurrenceDates, hydrateRules, isChatOpen, isSeriesActivity, rulesFromLegacy } from '@/lib/recurrence';
+import { canUseChat, formatRecurrence, formatRecurrenceDates, hydrateRules, isSeriesActivity, rulesFromLegacy } from '@/lib/recurrence';
 import { seriesKey } from '@/lib/finance';
 import { fetchSeriesFollows, setSeriesFollow } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
@@ -90,7 +90,22 @@ export default function ActivityDetailScreen() {
   const tabRef = useRef(tab);
   tabRef.current = tab;
   const [following, setFollowing] = useState(false);
+  const [chatRows, setChatRows] = useState<Parameters<typeof canUseChat>[0]['rows']>([]);
+  const [joinedChatIds, setJoinedChatIds] = useState<string[]>([]);
   const [seriesBusy, setSeriesBusy] = useState(false);
+  const routeKey = Array.isArray(id) ? id[0] : (id ?? '');
+  const routeKeyRef = useRef(routeKey);
+  routeKeyRef.current = routeKey;
+  const [chatRouteId, setChatRouteId] = useState(routeKey);
+  if (chatRouteId !== routeKey) {
+    setChatRouteId(routeKey);
+    setJoined(false);
+    setFollowing(false);
+    setChatRows([]);
+    setJoinedChatIds([]);
+    setActivity(null);
+    setLoading(true);
+  }
 
   useEffect(() => {
     setTab(financeTab ?? 'details');
@@ -98,6 +113,7 @@ export default function ActivityDetailScreen() {
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!user || !id) return;
+    const startedFor = Array.isArray(id) ? id[0] : id;
     if (!opts?.silent || !hasLoaded.current) {
       setLoading(true);
     }
@@ -219,10 +235,42 @@ export default function ActivityDetailScreen() {
     } catch {
       setGuests([]);
     }
+    let nextChatRows: Parameters<typeof canUseChat>[0]['rows'] = act
+      ? [
+          {
+            id: act.id,
+            starts_at: act.starts_at,
+            ends_at: act.ends_at,
+            status: act.status,
+            is_recurring: act.is_recurring,
+            recurrence_rules: act.recurrence_rules,
+            recurrence_weekdays: act.recurrence_weekdays,
+            recurrence_dates: act.recurrence_dates,
+          },
+        ]
+      : [];
+    let nextJoinedChatIds = joinedNow && act ? [act.id] : [];
     if (act && user) {
+      const sid = seriesKey(act);
+      const { data: sibs } = await supabase
+        .from('activities')
+        .select('id, starts_at, ends_at, status, is_recurring, recurrence_rules, recurrence_weekdays, recurrence_dates')
+        .or(`id.eq.${sid},series_id.eq.${sid}`);
+      if (sibs?.length) nextChatRows = sibs;
+      const siblingIds = nextChatRows.map((row) => row.id);
+      if (siblingIds.length) {
+        const { data: myJoins, error: joinErr } = await supabase
+          .from('activity_joins')
+          .select('activity_id')
+          .eq('user_id', user.id)
+          .in('activity_id', siblingIds);
+        nextJoinedChatIds = joinErr
+          ? nextJoinedChatIds
+          : (myJoins ?? []).map((row: { activity_id: string }) => row.activity_id);
+      }
       try {
         const followSet = await fetchSeriesFollows(user.id);
-        setFollowing(followSet.has(seriesKey(act)));
+        setFollowing(followSet.has(sid));
       } catch {
         setFollowing(false);
       }
@@ -252,6 +300,9 @@ export default function ActivityDetailScreen() {
       setSeriesOptedOut(false);
       setSeriesPrompted(false);
     }
+    if (routeKeyRef.current !== startedFor) return;
+    setChatRows(nextChatRows);
+    setJoinedChatIds(nextJoinedChatIds);
     hasLoaded.current = true;
     setLoading(false);
   }, [id, user?.id, router, financeTab]);
@@ -455,7 +506,25 @@ export default function ActivityDetailScreen() {
   }
 
   const isOwner = user?.id === activity.created_by;
-  const showChat = isChatOpen(activity) && (joined || following);
+  const showChat = canUseChat({
+    rows: chatRows.length
+      ? chatRows
+      : [
+          {
+            id: activity.id,
+            starts_at: activity.starts_at,
+            ends_at: activity.ends_at,
+            status: activity.status,
+            is_recurring: activity.is_recurring,
+            recurrence_rules: activity.recurrence_rules,
+            recurrence_weekdays: activity.recurrence_weekdays,
+            recurrence_dates: activity.recurrence_dates,
+          },
+        ],
+    activityId: activity.id,
+    joinedActivityIds: joinedChatIds,
+    followingSeries: following,
+  });
   const showJoin = !joined;
   const showDecline = joined || !declined;
   const showNever = Boolean(user && isSeriesActivity(activity) && !seriesOptedOut);

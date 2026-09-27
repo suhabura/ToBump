@@ -405,8 +405,8 @@ create policy "friendships_update" on public.friendships for update to authentic
 create policy "friendships_delete" on public.friendships for delete to authenticated
   using (from_user_id = auth.uid() or to_user_id = auth.uid());
 
--- Chat: joined to an event that has not ended, or the series is on the planner
--- while such an event still exists. Messages live on the series root, which may
+-- Chat: joined to an open event, or a series on the planner while such an event exists.
+-- A one-off ignores planner follows. Messages live on the series root, which may
 -- already be old, so access looks at sibling rows.
 create or replace function public.chat_thread_recipients(p_activity_id uuid)
 returns setof uuid
@@ -429,6 +429,51 @@ as $$
         (sib.ends_at is not null and sib.ends_at > now())
         or (sib.ends_at is null and sib.starts_at > now())
       )
+  ),
+  series_flag as (
+    select exists (
+      select 1
+      from public.activities sib
+      join series s on coalesce(sib.series_id, sib.id) = s.sid
+      where
+        (
+          coalesce(sib.is_recurring, false)
+          and (
+            cardinality(coalesce(sib.recurrence_weekdays, '{}'::int[])) > 0
+            or exists (
+              select 1
+              from jsonb_array_elements(
+                case jsonb_typeof(coalesce(sib.recurrence_rules, '[]'::jsonb))
+                  when 'array' then coalesce(sib.recurrence_rules, '[]'::jsonb)
+                  else '[]'::jsonb
+                end
+              ) as rule
+              where coalesce(rule->>'weekday', '') ~ '^[1-7]$'
+                and jsonb_typeof(rule->'date') is distinct from 'string'
+            )
+          )
+        )
+        or (
+          cardinality(coalesce(sib.recurrence_dates, '{}'::date[])) >= 2
+          and not (
+            coalesce(sib.is_recurring, false)
+            and (
+              cardinality(coalesce(sib.recurrence_weekdays, '{}'::int[])) > 0
+              or exists (
+                select 1
+                from jsonb_array_elements(
+                  case jsonb_typeof(coalesce(sib.recurrence_rules, '[]'::jsonb))
+                    when 'array' then coalesce(sib.recurrence_rules, '[]'::jsonb)
+                    else '[]'::jsonb
+                  end
+                ) as rule
+                where coalesce(rule->>'weekday', '') ~ '^[1-7]$'
+                  and jsonb_typeof(rule->'date') is distinct from 'string'
+              )
+            )
+          )
+        )
+    ) as is_series
   )
   select j.user_id
   from public.activity_joins j
@@ -437,7 +482,8 @@ as $$
   select f.user_id
   from public.series_follows f
   join series s on f.series_id = s.sid
-  where exists (select 1 from open_rows);
+  where exists (select 1 from open_rows)
+    and (select is_series from series_flag);
 $$;
 
 grant execute on function public.chat_thread_recipients(uuid) to authenticated;

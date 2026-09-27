@@ -13,7 +13,7 @@ import {
 import { Button, Loading, Muted } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { createNotification } from '@/lib/api';
-import { isChatOpen } from '@/lib/recurrence';
+import { canUseChat, isChatOpen } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
 import type { ChatMessage, Profile } from '@/lib/types';
 import { displayName } from '@/lib/types';
@@ -43,20 +43,51 @@ export default function ChatScreen() {
     (async () => {
       const first = await supabase
         .from('activities')
-        .select('title, series_id')
+        .select('title, series_id, starts_at, ends_at, status, is_recurring, recurrence_rules, recurrence_weekdays, recurrence_dates')
         .eq('id', activityId)
         .single();
       const act = first.error
         ? null
-        : (first.data as { title?: string; series_id?: string | null } | null);
+        : (first.data as {
+            title?: string;
+            series_id?: string | null;
+            starts_at?: string;
+            ends_at?: string | null;
+            status?: string | null;
+            is_recurring?: boolean;
+            recurrence_rules?: { weekday?: number; date?: string }[] | null;
+            recurrence_weekdays?: number[] | null;
+            recurrence_dates?: string[] | null;
+          } | null);
       if (cancelled) return;
       setActivityTitle(act?.title ?? '');
       const sid = act?.series_id || activityId;
       const { data: sibs } = await supabase
         .from('activities')
-        .select('id, starts_at, ends_at, status')
+        .select('id, starts_at, ends_at, status, is_recurring, recurrence_rules, recurrence_weekdays, recurrence_dates')
         .or(`id.eq.${sid},series_id.eq.${sid}`);
-      const rows = (sibs ?? []) as { id: string; starts_at: string; ends_at: string | null; status: string | null }[];
+      const rows = ((sibs ?? []) as {
+        id: string;
+        starts_at: string;
+        ends_at: string | null;
+        status: string | null;
+        is_recurring?: boolean;
+        recurrence_rules?: { weekday?: number; date?: string }[] | null;
+        recurrence_weekdays?: number[] | null;
+        recurrence_dates?: string[] | null;
+      }[]);
+      if (act?.starts_at && !rows.some((row) => row.id === activityId)) {
+        rows.push({
+          id: activityId,
+          starts_at: act.starts_at,
+          ends_at: act.ends_at ?? null,
+          status: act.status ?? null,
+          is_recurring: act.is_recurring,
+          recurrence_rules: act.recurrence_rules,
+          recurrence_weekdays: act.recurrence_weekdays,
+          recurrence_dates: act.recurrence_dates,
+        });
+      }
       const activityIds = Array.from(new Set(rows.map((s) => s.id).concat(activityId)));
       const openIds = rows.filter((row) => isChatOpen(row)).map((row) => row.id);
       const threadId = sid;
@@ -64,12 +95,17 @@ export default function ChatScreen() {
       const siblingSet = new Set(activityIds);
 
       const [{ data: myJoins }, { data: follow }] = await Promise.all([
-        openIds.length
-          ? supabase.from('activity_joins').select('activity_id').eq('user_id', user.id).in('activity_id', openIds)
+        activityIds.length
+          ? supabase.from('activity_joins').select('activity_id').eq('user_id', user.id).in('activity_id', activityIds)
           : Promise.resolve({ data: [] as { activity_id: string }[] }),
         supabase.from('series_follows').select('series_id').eq('user_id', user.id).eq('series_id', sid).maybeSingle(),
       ]);
-      const allowed = (myJoins?.length ?? 0) > 0 || (Boolean(follow) && openIds.length > 0);
+      const allowed = canUseChat({
+        rows,
+        activityId,
+        joinedActivityIds: (myJoins ?? []).map((row: { activity_id: string }) => row.activity_id),
+        followingSeries: Boolean(follow),
+      });
       if (!cancelled) setClosed(!allowed);
       if (!allowed) {
         if (!cancelled) {

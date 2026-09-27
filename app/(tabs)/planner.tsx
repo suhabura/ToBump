@@ -23,8 +23,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ensureDueRecurringActivities } from '@/lib/api';
 import { seriesKey } from '@/lib/finance';
 import {
+  canUseChat,
   expandSeriesSlots,
-  isChatOpen,
   isSeriesActivity,
   localDayKey,
   seriesEndFromRows,
@@ -653,7 +653,14 @@ export default function PlannerScreen() {
     const capRange = activityCapacityRange(item);
     const weather = eventWeatherPoint(item);
     const showJoin = future && !item.skipped && !isJoined;
-    const showChat = isChatOpen(item) && (isJoined || follows.has(seriesKey(item)));
+    const sid = seriesKey(item);
+    const seriesRows = plannerItems.filter((row) => seriesKey(row) === sid);
+    const showChat = canUseChat({
+      rows: seriesRows,
+      activityId: item.id,
+      joinedActivityIds: seriesRows.filter((row) => !row.virtual && joinedIds.has(row.id)).map((row) => row.id),
+      followingSeries: follows.has(sid),
+    });
     return (
       <View style={[styles.card, isMine ? styles.cardMine : null]}>
         <Pressable style={[styles.cardBody, weather ? styles.cardBodyWeather : null]} onPress={() => void onOpenSlot(item)}>

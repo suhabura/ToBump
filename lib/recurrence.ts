@@ -288,6 +288,51 @@ export function isChatOpen(
   return start > now;
 }
 
+type ChatAccessRow = {
+  id: string;
+  starts_at: string;
+  ends_at?: string | null;
+  status?: string | null;
+  is_recurring?: boolean;
+  recurrence_rules?: ExpandableActivity['recurrence_rules'];
+  recurrence_weekdays?: number[] | null;
+  recurrence_dates?: string[] | null;
+};
+
+function rowIsSeries(row: ChatAccessRow): boolean {
+  return isSeriesActivity({
+    id: row.id,
+    starts_at: row.starts_at,
+    is_recurring: row.is_recurring,
+    recurrence_rules: row.recurrence_rules,
+    recurrence_weekdays: row.recurrence_weekdays ?? undefined,
+    recurrence_dates: row.recurrence_dates ?? undefined,
+  });
+}
+
+/**
+ * One thread per series. A one-off opens only for someone joined to that open event.
+ * A series opens for a join on any open occurrence, or a planner follow while one exists.
+ * An invite, a friendship, or the organizer role does not count.
+ */
+export function canUseChat(input: {
+  rows: ChatAccessRow[];
+  activityId: string;
+  joinedActivityIds: string[];
+  followingSeries: boolean;
+}): boolean {
+  const rows = input.rows.filter((row) => row.id);
+  const series = rows.some(rowIsSeries);
+  const openIds = new Set(rows.filter((row) => isChatOpen(row)).map((row) => row.id));
+  const hasOpenOccurrence = series ? openIds.size > 0 : openIds.has(input.activityId);
+  if (!hasOpenOccurrence) return false;
+  const joinedOpenOccurrence = input.joinedActivityIds.some(
+    (id) => openIds.has(id) && (series || id === input.activityId)
+  );
+  if (!series) return joinedOpenOccurrence;
+  return joinedOpenOccurrence || input.followingSeries;
+}
+
 export function dayKeyOf(value: string | null | undefined): string | null {
   if (!value) return null;
   const day = String(value).slice(0, 10);
