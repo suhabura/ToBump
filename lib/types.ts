@@ -418,6 +418,14 @@ export function activityPriceLabel(
   return labels.free;
 }
 
+/** True when the join cap is set and signups, including guests, have reached it. */
+export function eventIsFull(a: {
+  max_participants?: number | null;
+  join_count?: number | null;
+}): boolean {
+  return a.max_participants != null && (a.join_count ?? 0) >= a.max_participants;
+}
+
 export function activityCapacityRange(
   a: { min_participants?: number | null; max_participants?: number | null }
 ): string | null {

@@ -20,7 +20,7 @@ import { formatDistance } from '@/lib/geo';
 import { isSeriesActivity } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
-import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName } from '@/lib/types';
+import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName, eventIsFull } from '@/lib/types';
 import { eventWeatherPoint } from '@/lib/weather';
 import { useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
@@ -43,7 +43,8 @@ export default function EventsScreen() {
   const [declineChoice, setDeclineChoice] = useState<ActivityWithRelations | null>(null);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoaded = useRef(false);
-  const shown = list === 'declined' ? declinedItems : openItems;
+  const visibleOpen = openItems.filter((item) => !eventIsFull(item));
+  const shown = list === 'declined' ? declinedItems : visibleOpen;
 
   const userId = user?.id;
 
@@ -141,7 +142,7 @@ export default function EventsScreen() {
                 ? { ...a, join_count: Math.max(0, (a.join_count ?? 0) + delta) }
                 : a
             );
-          setOpenItems(bump);
+          setOpenItems((prev) => bump(prev).filter((item) => !eventIsFull(item)));
           setDeclinedItems(bump);
         }
         scheduleLiveReload();
@@ -309,7 +310,7 @@ export default function EventsScreen() {
         <View style={styles.listWrap}>
         <View style={styles.tabs}>
           <Chip
-            label={`${t.events.openList} · ${openItems.length}`}
+            label={`${t.events.openList} · ${visibleOpen.length}`}
             active={list === 'open'}
             onPress={() => setList('open')}
           />

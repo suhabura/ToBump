@@ -38,7 +38,7 @@ import {
 } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
-import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName } from '@/lib/types';
+import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName, eventIsFull } from '@/lib/types';
 import { eventWeatherPoint } from '@/lib/weather';
 import { showAlert } from '@/lib/dialog';
 import { useLocale, useT } from '@/i18n';
@@ -652,6 +652,7 @@ export default function PlannerScreen() {
     const host = isMine ? '' : displayName(item.profiles);
     const capRange = activityCapacityRange(item);
     const weather = eventWeatherPoint(item);
+    const full = eventIsFull(item);
     const showJoin = future && !item.skipped && !isJoined;
     const sid = seriesKey(item);
     const seriesRows = plannerItems.filter((row) => seriesKey(row) === sid);
@@ -662,11 +663,14 @@ export default function PlannerScreen() {
       followingSeries: follows.has(sid),
     });
     return (
-      <View style={[styles.card, isMine ? styles.cardMine : null]}>
+      <View style={[styles.card, isMine ? styles.cardMine : null, full ? styles.cardFull : null]}>
         <Pressable style={[styles.cardBody, weather ? styles.cardBodyWeather : null]} onPress={() => void onOpenSlot(item)}>
-          <Text style={[styles.overline, isMine ? styles.roleOrganizing : styles.roleInvited]} numberOfLines={1}>
-            {isMine ? t.events.organizing : host ? t.events.invitedBy(host) : t.events.invitedBadge}
-          </Text>
+          <View style={styles.overlineRow}>
+            <Text style={[styles.overline, isMine ? styles.roleOrganizing : styles.roleInvited, styles.overlineFlex]} numberOfLines={1}>
+              {isMine ? t.events.organizing : host ? t.events.invitedBy(host) : t.events.invitedBadge}
+            </Text>
+            {full ? <Text style={styles.fullBadge}>{t.events.full}</Text> : null}
+          </View>
           <Text style={styles.cardTitle} numberOfLines={2}>
             {cat}
           </Text>
@@ -702,10 +706,11 @@ export default function PlannerScreen() {
           ) : null}
           {showJoin ? (
             <Button
-              label={t.events.join}
+              label={full ? t.events.full : t.events.join}
               size="xs"
               icon="check"
               loading={busy}
+              disabled={full || busy}
               onPress={() => void onJoinSlot(item)}
             />
           ) : null}
@@ -936,6 +941,21 @@ const styles = StyleSheet.create({
   cardMine: {
     borderColor: theme.colors.primaryMuted,
     backgroundColor: theme.colors.primarySoft,
+  },
+  cardFull: {
+    borderColor: theme.colors.warning,
+    backgroundColor: theme.colors.warningSoft,
+  },
+  overlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  overlineFlex: { flex: 1 },
+  fullBadge: {
+    color: theme.colors.warning,
+    fontSize: 12,
+    fontWeight: '700',
   },
   cardBody: {
     padding: theme.space.md,
