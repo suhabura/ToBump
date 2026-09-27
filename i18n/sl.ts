@@ -100,7 +100,7 @@ export const sl = {
     declineSeriesPrompt: 'Samo za ta termin ali za vse termine te serije?',
     neverComing: 'Odjavi me od serije',
     optOutHint:
-      'Ta termin označiš, da ne prideš. Serija gre iz planerja in prihodnjih terminov ne dobiš več.',
+      'Ta termin označiš, da ne prideš. Serija gre iz planerja in prihodnjih povabil ne dobiš več.',
     optOutDbFix:
       'Odjava od serije v bazi še ni vklopljena. V urejevalniku SQL v Supabase zaženi supabase/series_opt_out.sql in poskusi znova.',
     revert: 'Razveljavi',
@@ -182,6 +182,7 @@ export const sl = {
     followSeries: 'Dodaj v planer',
     unfollowSeries: 'Odstrani iz planerja',
     followHint: 'Spremljaj prihodnje termine te serije. To ni prijava na dogodek.',
+    unfollowHint: 'Prihodnji termini izginejo iz planerja. Prijava na ta termin ostane.',
     followShort: 'V planerju',
     skipped: 'Odpade',
     skippedBanner: 'Ta termin odpade.',

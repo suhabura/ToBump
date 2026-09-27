@@ -693,14 +693,14 @@ export default function ActivityDetailScreen() {
                   loading={seriesBusy}
                   onPress={() => void onToggleFollow()}
                 />
-                {following ? null : <Muted>{t.planner.followHint}</Muted>}
+                {following ? <Muted>{t.planner.unfollowHint}</Muted> : <Muted>{t.planner.followHint}</Muted>}
               </>
             ) : null}
             {showNever ? (
               <>
                 <Button
                   label={t.events.neverComing}
-                  variant="ghost"
+                  variant="secondary"
                   onPress={() => void onNeverComing()}
                 />
                 <Muted>{t.events.optOutHint}</Muted>

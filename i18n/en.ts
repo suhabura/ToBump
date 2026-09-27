@@ -100,7 +100,7 @@ export const en = {
     declineSeriesPrompt: 'Is this only for this date, or for every date in the series?',
     neverComing: 'Leave this series',
     optOutHint:
-      'This date is marked as not going. The series leaves your planner and you will not get future dates.',
+      'This date is marked as not going. The series leaves your planner and you will not get future invites.',
     optOutDbFix:
       'Series opt-out is not enabled in the database yet. Run supabase/series_opt_out.sql in the Supabase SQL editor, then try again.',
     revert: 'Revert',
@@ -182,6 +182,7 @@ export const en = {
     followSeries: 'Add to planner',
     unfollowSeries: 'Remove from planner',
     followHint: 'Follow future dates of this series. This is not signing up.',
+    unfollowHint: 'Future dates leave your planner. Your signup for this date stays.',
     followShort: 'On your planner',
     skipped: 'Cancelled',
     skippedBanner: 'This date is cancelled.',
