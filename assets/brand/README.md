@@ -10,11 +10,14 @@ Dve vlogi:
 Ozadje je žajbljev kamen, ne belina in ne kava.
 
 ## Logo
+Znak je prvotna risba: dve pesti s spiralo na zapestju, ki se srečata na sredini. Bela črta na zeleni ploščici.
+
 | Različica | Datoteka | Uporaba |
 |-----------|----------|---------|
-| Horizontalni | `logo-horizontal.png` | splet, header, marketing |
-| Znamenje (mark) | `mark.png` | favicon, splash, majhne površine |
-| App ikona | `app-icon.png` | iOS / Android |
+| Znak (vektor) | `mark.svg` | izvor za vse velikosti |
+| Znak | `mark.png` | header (52 px), prijava (96 px) |
+| App ikona, favicon, splash | `../images/icon.png`, `favicon.png`, `splash-icon.png` | izvoženo iz `mark.svg` |
+| Starejše | `logo-horizontal.png`, `logo-compact.png`, `app-icon.png` | se ne uporabljajo več |
 
 **Ne:** raztezati, spreminjati razmerij, dodajati senčenja, menjati barve ikone naključno.
 
