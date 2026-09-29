@@ -43,7 +43,7 @@ export default function LoginScreen() {
       <ScrollView contentContainerStyle={styles.wrap} keyboardShouldPersistTaps="handled">
         <View style={styles.hero}>
           <Image
-            source={require('../../assets/brand/mark.png')}
+            source={require('../../assets/brand/logo-lockup.png')}
             style={styles.logo}
             resizeMode="contain"
             accessibilityLabel={t.appName}
@@ -101,8 +101,8 @@ const styles = StyleSheet.create({
     gap: theme.space.sm,
   },
   logo: {
-    width: 96,
-    height: 96,
+    width: 230,
+    height: 90,
   },
   link: {
     marginTop: theme.space.md,

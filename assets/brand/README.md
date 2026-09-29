@@ -15,7 +15,8 @@ Znak je prvotna risba: dve pesti s spiralo na zapestju, ki se srečata na sredin
 | Različica | Datoteka | Uporaba |
 |-----------|----------|---------|
 | Znak (vektor) | `mark.svg` | izvor za vse velikosti |
-| Znak | `mark.png` | header (52 px), prijava (96 px) |
+| Znak | `mark.png` | ploščica, manjše površine |
+| Znak + napis | `logo-lockup.svg`, `logo-lockup.png` | header (56 px visoko), prijava (90 px). Zelen znak, temnozelen napis, brez ploščice. |
 | App ikona, favicon, splash | `../images/icon.png`, `favicon.png`, `splash-icon.png` | izvoženo iz `mark.svg` |
 | Starejše | `logo-horizontal.png`, `logo-compact.png`, `app-icon.png` | se ne uporabljajo več |
 
