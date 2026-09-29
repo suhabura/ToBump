@@ -31,6 +31,8 @@ export default function FriendsScreen() {
   const router = useRouter();
   const [friends, setFriends] = useState<FriendRow[]>([]);
   const [requests, setRequests] = useState<(Friendship & { from: Profile | null })[]>([]);
+  const [sent, setSent] = useState<(Friendship & { to: Profile | null })[]>([]);
+  const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<Profile[]>([]);
   const [searching, setSearching] = useState(false);
@@ -94,6 +96,21 @@ export default function FriendsScreen() {
       dedupeProfilesByEmail((fromProfiles as Profile[]) ?? []).map((p) => [p.id, p])
     );
     setRequests(reqRows.map((r) => ({ ...r, from: fromMap.get(r.from_user_id) ?? null })));
+
+    const { data: outgoing } = await supabase
+      .from('friendships')
+      .select('*')
+      .eq('from_user_id', user.id)
+      .eq('status', 'pending');
+    const sentRows = dedupeFriendshipsByOther((outgoing ?? []) as Friendship[], user.id);
+    const toIds = sentRows.map((r) => r.to_user_id);
+    const { data: toProfiles } = toIds.length
+      ? await supabase.from('profiles').select('*').in('id', toIds)
+      : { data: [] as Profile[] };
+    const toMap = new Map(
+      dedupeProfilesByEmail((toProfiles as Profile[]) ?? []).map((p) => [p.id, p])
+    );
+    setSent(sentRows.map((r) => ({ ...r, to: toMap.get(r.to_user_id) ?? null })));
 
     setLoading(false);
   }, [user]);
@@ -277,6 +294,36 @@ export default function FriendsScreen() {
     load();
   }
 
+  async function cancelRequest(row: Friendship) {
+    if (!user || !row.id || cancellingId) return;
+    setCancellingId(row.id);
+    const { error: rpcError } = await supabase.rpc('cancel_friend_request', {
+      p_friendship_id: row.id,
+    });
+    if (rpcError) {
+      const missing = /cancel_friend_request|PGRST202|schema cache/i.test(rpcError.message ?? '');
+      if (!missing) {
+        setCancellingId(null);
+        showAlert(t.common.error, rpcError.message);
+        return;
+      }
+      const { error } = await supabase
+        .from('friendships')
+        .delete()
+        .eq('id', row.id)
+        .eq('from_user_id', user.id)
+        .eq('status', 'pending');
+      if (error) {
+        setCancellingId(null);
+        showAlert(t.common.error, error.message);
+        return;
+      }
+    }
+    setCancellingId(null);
+    showToast(t.friends.requestCancelled);
+    load();
+  }
+
   async function removeFriend(row: FriendRow) {
     if (!user || !row.id) return;
     const pairIds = Array.from(
@@ -339,15 +386,31 @@ export default function FriendsScreen() {
           <Subtitle>{t.friends.results}</Subtitle>
           {searching && !results.length ? <Muted>{t.common.loading}</Muted> : null}
           {!searching && !results.length ? <Muted>{t.friends.noMatches}</Muted> : null}
-          {results.map((p) => (
-            <View key={p.id} style={styles.row}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{displayName(p)}</Text>
-                <Muted>{p.email}</Muted>
+          {results.map((p) => {
+            const outgoing = sent.find((row) => row.to_user_id === p.id);
+            return (
+              <View key={p.id} style={styles.row}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.name}>{displayName(p)}</Text>
+                  <Muted>{p.email}</Muted>
+                </View>
+                {outgoing ? (
+                  <>
+                    <Muted>{t.friends.pending}</Muted>
+                    <Button
+                      label={t.friends.cancelRequest}
+                      variant="ghost"
+                      size="xs"
+                      loading={cancellingId === outgoing.id}
+                      onPress={() => void cancelRequest(outgoing)}
+                    />
+                  </>
+                ) : (
+                  <Button label={t.friends.add} size="xs" onPress={() => sendRequest(p.id)} />
+                )}
               </View>
-              <Button label={t.friends.add} size="xs" onPress={() => sendRequest(p.id)} />
-            </View>
-          ))}
+            );
+          })}
         </View>
       ) : null}
 
@@ -359,6 +422,27 @@ export default function FriendsScreen() {
               <Text style={[styles.name, { flex: 1 }]}>{displayName(r.from)}</Text>
               <Button label={t.friends.accept} size="xs" onPress={() => respond(r.id, 'accepted', r.from_user_id)} />
               <Button label={t.friends.reject} variant="ghost" size="xs" onPress={() => respond(r.id, 'rejected', r.from_user_id)} />
+            </View>
+          ))}
+        </View>
+      ) : null}
+
+      {sent.length > 0 ? (
+        <View style={{ marginTop: 16 }}>
+          <Subtitle>{t.friends.sentRequests}</Subtitle>
+          {sent.map((r) => (
+            <View key={r.id} style={styles.row}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.name}>{displayName(r.to)}</Text>
+                <Muted>{t.friends.pending}</Muted>
+              </View>
+              <Button
+                label={t.friends.cancelRequest}
+                variant="ghost"
+                size="xs"
+                loading={cancellingId === r.id}
+                onPress={() => void cancelRequest(r)}
+              />
             </View>
           ))}
         </View>
