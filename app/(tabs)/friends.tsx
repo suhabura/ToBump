@@ -5,6 +5,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { createNotification } from '@/lib/api';
+import { showToast } from '@/components/Toast';
 import { showAlert } from '@/lib/dialog';
 import { dedupeFriendshipsByOther, dedupeProfilesByEmail, friendshipOtherId } from '@/lib/friends';
 import { supabase } from '@/lib/supabase';
@@ -189,7 +190,7 @@ export default function FriendsScreen() {
           from_user_id: user.id,
         });
       }
-      showAlert('OK', t.friends.requestSent);
+      showToast(t.friends.requestSent);
       setResults([]);
       setSearch('');
       load();
@@ -236,7 +237,7 @@ export default function FriendsScreen() {
     await createNotification(toUserId, 'friend_request', t.friends.newRequest(await myName()), {
       from_user_id: user.id,
     });
-    showAlert('OK', t.friends.requestSent);
+    showToast(t.friends.requestSent);
     setResults([]);
     setSearch('');
     load();
@@ -272,6 +273,7 @@ export default function FriendsScreen() {
         .update({ status: 'rejected', updated_at: new Date().toISOString() })
         .eq('id', id);
     }
+    showToast(status === 'accepted' ? t.friends.nowFriends : t.friends.requestRejected);
     load();
   }
 

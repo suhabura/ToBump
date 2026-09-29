@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { showToast } from '@/components/Toast';
 import { Button, Chip, Input, Muted, Screen, Subtitle, Title } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -33,7 +34,7 @@ export default function ProfileScreen() {
     });
     setSaving(false);
     if (error) Alert.alert(t.common.error, error);
-    else Alert.alert('OK', t.profile.saved);
+    else showToast(t.profile.saved);
   }
 
   async function savePassword() {
@@ -48,7 +49,7 @@ export default function ProfileScreen() {
     else {
       setPassword('');
       setShowPasswordForm(false);
-      Alert.alert('OK', t.profile.saved);
+      showToast(t.profile.saved);
     }
   }
 

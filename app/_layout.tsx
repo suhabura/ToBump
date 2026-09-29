@@ -2,12 +2,14 @@ import { Redirect, Stack, useSegments } from 'expo-router';
 import { DefaultTheme, ThemeProvider } from 'expo-router/react-navigation';
 import * as SplashScreen from 'expo-splash-screen';
 import { useCallback, useEffect } from 'react';
+import { View } from 'react-native';
 import 'react-native-reanimated';
 
 import { AuthProvider, useAuth } from '@/contexts/AuthContext';
 import { LocaleProvider, type Locale } from '@/i18n';
 import { theme } from '@/constants/theme';
 import { Loading } from '@/components/ui';
+import { ToastHost } from '@/components/Toast';
 
 export { ErrorBoundary } from 'expo-router';
 
@@ -70,11 +72,14 @@ export default function RootLayout() {
       <AppI18n>
         <ThemeProvider value={NavLight}>
           <AuthGate>
-            <Stack screenOptions={{ contentStyle: { backgroundColor: theme.colors.surface } }}>
-              <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="+not-found" />
-            </Stack>
+            <View style={{ flex: 1 }}>
+              <Stack screenOptions={{ contentStyle: { backgroundColor: theme.colors.surface } }}>
+                <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="+not-found" />
+              </Stack>
+              <ToastHost />
+            </View>
           </AuthGate>
         </ThemeProvider>
       </AppI18n>

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { WeatherBadge } from '@/components/WeatherBadge';
+import { showToast } from '@/components/Toast';
 import { Button, Chip, EmptyState, Loading, Muted, Screen } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEventsHeader } from '@/contexts/EventsHeaderContext';
@@ -196,6 +197,7 @@ export default function EventsScreen() {
     setBusyId(item.id);
     try {
       await joinActivity(item.id, user.id, item.created_by, item.title);
+      showToast(t.events.joinedToast(item.title));
       await load({ silent: true });
     } catch (e) {
       const msg = e instanceof Error ? e.message : t.common.error;

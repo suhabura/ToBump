@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Alert, StyleSheet, Switch, Text, View } from 'react-native';
+import { showToast } from '@/components/Toast';
 import { Button, Muted, Subtitle } from '@/components/ui';
 import { FriendPicker } from '@/components/FriendPicker';
 import { createNotification, profileDisplayName } from '@/lib/api';
@@ -151,7 +152,7 @@ export function ActivityExtraInvitePanel({ activity, userId, hasSignup = false, 
           })
         )
       );
-      Alert.alert(t.common.ok, t.events.extraInviteDone);
+      showToast(t.events.extraInviteDone);
       setInviteIds([]);
       onChanged?.();
     } catch (e) {

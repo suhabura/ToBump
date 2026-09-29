@@ -4,6 +4,7 @@ import { useFocusEffect } from 'expo-router';
 import { Button, EmptyState, Input, Loading, Muted, Screen, Subtitle } from '@/components/ui';
 import { FriendPicker } from '@/components/FriendPicker';
 import { useAuth } from '@/contexts/AuthContext';
+import { showToast } from '@/components/Toast';
 import { showAlert } from '@/lib/dialog';
 import { supabase } from '@/lib/supabase';
 import { dedupeProfilesByEmail, friendshipOtherId } from '@/lib/friends';
@@ -144,6 +145,7 @@ export default function GroupsScreen() {
     setName('');
     setSelectedMembers([]);
     setCreating(false);
+    showToast(t.groups.createdToast);
     load();
   }
 
@@ -157,6 +159,7 @@ export default function GroupsScreen() {
       setPendingDeleteId(null);
       if (editingId === id) setEditingId(null);
       setDeletingId(null);
+      showToast(t.groups.deletedToast);
       return;
     }
     if (!rpcMissing) {
@@ -182,6 +185,7 @@ export default function GroupsScreen() {
     setGroups((prev) => prev.filter((g) => g.id !== id));
     setPendingDeleteId(null);
     if (editingId === id) setEditingId(null);
+    showToast(t.groups.deletedToast);
   }
 
   async function startEdit(item: GroupWithMembers) {
@@ -233,6 +237,7 @@ export default function GroupsScreen() {
       return;
     }
     setEditingId(null);
+    showToast(t.groups.savedToast);
     load();
   }
 

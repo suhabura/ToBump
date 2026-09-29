@@ -3,6 +3,7 @@ import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { showToast } from '@/components/Toast';
 import { Button, Chip, Input, Muted } from '@/components/ui';
 import {
   EndChoiceField,
@@ -585,6 +586,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     setGroupName('');
     setGroupMemberIds([]);
     setCreatingGroup(false);
+    showToast(t.groups.createdToast);
   }
 
   function patchRule(weekday: number, patch: Partial<RecurrenceRule>) {
@@ -863,6 +865,14 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
         }
       }
 
+      const sentInvites = inviteIds.filter((uid) => uid !== userId).length > 0;
+      showToast(
+        activityId
+          ? t.events.savedToast
+          : sentInvites
+            ? t.events.createdInvitesToast
+            : t.events.createdToast
+      );
       router.replace(`/activity/${id}`);
     } catch (e) {
       const msg = e instanceof Error ? e.message : t.common.error;
