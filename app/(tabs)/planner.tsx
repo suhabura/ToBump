@@ -943,8 +943,8 @@ const styles = StyleSheet.create({
     ...theme.shadow.card,
   },
   cardFull: {
-    borderColor: theme.colors.warning,
-    backgroundColor: theme.colors.warningSoft,
+    borderColor: theme.colors.danger,
+    backgroundColor: theme.colors.dangerSoft,
   },
   cardFullIn: {
     borderColor: theme.colors.primary,
@@ -958,7 +958,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   fullMissed: {
-    color: theme.colors.warning,
+    color: theme.colors.danger,
     fontSize: 13,
     fontWeight: '700',
     lineHeight: 18,
