@@ -18,7 +18,9 @@ import {
   optOutOfSeries,
 } from '@/lib/api';
 import { formatDistance } from '@/lib/geo';
-import { isSeriesActivity } from '@/lib/recurrence';
+import { seriesKey } from '@/lib/finance';
+import { isSeriesActivity, localDayKey } from '@/lib/recurrence';
+import { fetchSkippedDays } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
 import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName, eventIsFull } from '@/lib/types';
@@ -41,6 +43,7 @@ export default function EventsScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [skippedKeys, setSkippedKeys] = useState<Set<string>>(new Set());
   const [declineChoice, setDeclineChoice] = useState<ActivityWithRelations | null>(null);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoaded = useRef(false);
@@ -69,6 +72,19 @@ export default function EventsScreen() {
         });
         setOpenItems(data.open);
         setDeclinedItems(data.declined);
+        const seriesIds = Array.from(
+          new Set([...data.open, ...data.declined].map((item) => seriesKey(item)))
+        );
+        try {
+          const skipped = await fetchSkippedDays(seriesIds);
+          const keys = new Set<string>();
+          for (const [sid, days] of skipped) {
+            for (const day of days) keys.add(`${sid}:${day}`);
+          }
+          setSkippedKeys(keys);
+        } catch {
+          setSkippedKeys(new Set());
+        }
         hasLoaded.current = true;
       } catch (e) {
         setError(e instanceof Error ? e.message : t.common.error);
@@ -342,6 +358,7 @@ export default function EventsScreen() {
             const busy = busyId === item.id;
             const host = isOrganizer ? '' : displayName(item.profiles);
             const weather = eventWeatherPoint(item);
+            const skipped = skippedKeys.has(`${seriesKey(item)}:${localDayKey(new Date(item.starts_at))}`);
             const role = isOrganizer
               ? { label: t.events.organizing, style: styles.roleOrganizing }
               : item.is_invited
@@ -357,7 +374,12 @@ export default function EventsScreen() {
                       ? { label: host, style: styles.roleQuiet }
                       : null;
             return (
-              <View style={[styles.card, isOrganizer ? styles.cardMine : null]}>
+              <View style={[styles.card, isOrganizer && !skipped ? styles.cardMine : null]}>
+                {skipped ? (
+                  <View style={styles.skipBanner}>
+                    <Text style={styles.skipBannerText}>{t.planner.skipped}</Text>
+                  </View>
+                ) : null}
                 <Pressable
                   style={[styles.cardBody, weather ? styles.cardBodyWeather : null]}
                   onPress={() => router.push(`/activity/${item.id}`)}
@@ -393,7 +415,7 @@ export default function EventsScreen() {
                   <WeatherBadge latitude={weather.latitude} longitude={weather.longitude} startsAt={item.starts_at} />
                 ) : null}
 
-                {joined ? null : (
+                {joined || skipped ? null : (
                   <View style={styles.actions} onStartShouldSetResponder={() => true}>
                     {item.is_declined ? null : (
                       <Button
@@ -503,6 +525,18 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     ...theme.shadow.card,
+  },
+  skipBanner: {
+    backgroundColor: theme.colors.danger,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  skipBannerText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   cardMine: {
     borderColor: theme.colors.primaryMuted,

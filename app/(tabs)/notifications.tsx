@@ -73,7 +73,8 @@ export default function NotificationsScreen() {
         item.type === 'message' ||
         item.type === 'activity_join' ||
         item.type === 'editor' ||
-        item.type === 'fof')
+        item.type === 'fof' ||
+        item.type === 'series_skipped')
     ) {
       router.push(`/activity/${activityId}`);
     }

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
 import { DateTimeField } from '@/components/DateTimeField';
+import { showToast } from '@/components/Toast';
 import { WeatherBadge } from '@/components/WeatherBadge';
 import { Button, Chip, EmptyState, Loading, Muted, Screen, Title } from '@/components/ui';
 import { ActivityExtraInvitePanel } from '@/components/ActivityExtraInvitePanel';
@@ -26,9 +27,9 @@ import {
   type DeleteActivityMode,
 } from '@/lib/api';
 import { fetchActivityGuests, removeGuestAttendance, type GuestAttendanceWithGuest } from '@/lib/guests';
-import { formatRecurrence, formatRecurrenceDates, hydrateRules, isSeriesActivity, rulesFromLegacy } from '@/lib/recurrence';
+import { formatRecurrence, formatRecurrenceDates, hydrateRules, isSeriesActivity, localDayKey, rulesFromLegacy } from '@/lib/recurrence';
 import { seriesKey } from '@/lib/finance';
-import { fetchSeriesFollows, setSeriesFollow } from '@/lib/seriesPlanner';
+import { fetchSeriesFollows, fetchSkippedDays, markSeriesDaySkipped, setSeriesFollow } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations, Profile } from '@/lib/types';
 import { activityPriceLabel, activityVenuePoint, categoryLabel, displayName } from '@/lib/types';
@@ -108,6 +109,8 @@ export default function ActivityDetailScreen() {
   const tabRef = useRef(tab);
   tabRef.current = tab;
   const [following, setFollowing] = useState(false);
+  const [dateSkipped, setDateSkipped] = useState(false);
+  const [skipping, setSkipping] = useState(false);
   const [seriesBusy, setSeriesBusy] = useState(false);
   const routeKey = Array.isArray(id) ? id[0] : (id ?? '');
   const routeKeyRef = useRef(routeKey);
@@ -117,6 +120,7 @@ export default function ActivityDetailScreen() {
     setSeenRouteId(routeKey);
     setJoined(false);
     setFollowing(false);
+    setDateSkipped(false);
     setActivity(null);
     setLoading(true);
   }
@@ -268,6 +272,13 @@ export default function ActivityDetailScreen() {
         setFollowing(false);
       }
       try {
+        const day = localDayKey(new Date(act.starts_at));
+        const skipped = await fetchSkippedDays([sid]);
+        setDateSkipped(skipped.get(sid)?.has(day) ?? false);
+      } catch {
+        setDateSkipped(false);
+      }
+      try {
         const optOuts = await fetchSeriesOptOuts(user.id);
         const opted = optOuts.has(sid);
         setSeriesOptedOut(opted);
@@ -289,6 +300,7 @@ export default function ActivityDetailScreen() {
       }
     } else {
       setFollowing(false);
+      setDateSkipped(false);
       setSeriesOptedOut(false);
       setSeriesPrompted(false);
     }
@@ -486,6 +498,53 @@ export default function ActivityDetailScreen() {
     }
   }
 
+  async function onSkipDate() {
+    if (!activity || !user || skipping || dateSkipped) return;
+    setSkipping(true);
+    try {
+      const sid = seriesKey(activity);
+      const starts = new Date(activity.starts_at);
+      const day = localDayKey(starts);
+      const fresh = await markSeriesDaySkipped(sid, day);
+      if (fresh) {
+        const { data: joins, error: joinsError } = await supabase
+          .from('activity_joins')
+          .select('user_id')
+          .eq('activity_id', activity.id);
+        if (joinsError) throw joinsError;
+        const dateLabel = format(starts, 'd. M. yyyy', { locale: dfLocale });
+        const message = t.planner.skippedNotice(activity.title, dateLabel);
+        const ids = ((joins ?? []) as { user_id: string }[])
+          .map((row) => row.user_id)
+          .filter((uid) => uid && uid !== user.id);
+        await Promise.all(
+          ids.map(async (uid) => {
+            const { error } = await supabase.rpc('notify_user', {
+              p_user_id: uid,
+              p_type: 'series_skipped',
+              p_message: message,
+              p_data: { activity_id: activity.id },
+            });
+            if (error) {
+              await supabase.from('notifications').insert({
+                user_id: uid,
+                type: 'series_skipped',
+                message,
+                data: { activity_id: activity.id },
+              });
+            }
+          })
+        );
+      }
+      setDateSkipped(true);
+      showToast(t.planner.skipped);
+    } catch (e) {
+      Alert.alert(t.common.error, e instanceof Error ? e.message : t.common.error);
+    } finally {
+      setSkipping(false);
+    }
+  }
+
   if (loading) return <Loading />;
   if (!activity) {
     return (
@@ -496,8 +555,8 @@ export default function ActivityDetailScreen() {
   }
 
   const isOwner = user?.id === activity.created_by;
-  const showJoin = !joined;
-  const showDecline = joined || !declined;
+  const showJoin = !joined && !dateSkipped;
+  const showDecline = !dateSkipped && (joined || !declined);
   const showNever = Boolean(user && isSeriesActivity(activity) && !seriesOptedOut);
   const showPlanner = Boolean(user && isSeriesActivity(activity));
   const participantCount = participants.length + guests.length;
@@ -564,6 +623,11 @@ export default function ActivityDetailScreen() {
             />
           ) : null}
         </View>
+        {dateSkipped ? (
+          <View style={styles.skipBanner}>
+            <Text style={styles.skipBannerText}>{t.planner.skipped}</Text>
+          </View>
+        ) : null}
 
         {activity.finance_enabled ? (
           <View style={styles.tabRow}>
@@ -725,6 +789,21 @@ export default function ActivityDetailScreen() {
                   />
                 </View>
               ) : null}
+              {canEdit && isSeriesActivity(activity) ? (
+                <View style={styles.primarySlot}>
+                  <Button
+                    label={t.events.moveTitle}
+                    variant="outline"
+                    size="sm"
+                    icon="calendar"
+                    onPress={() => {
+                      setMoveError(null);
+                      setMoveStart(new Date(activity.starts_at));
+                      setMoveOpen(true);
+                    }}
+                  />
+                </View>
+              ) : null}
               {isOwner ? (
                 <View style={styles.primarySlot}>
                   <Button
@@ -738,6 +817,18 @@ export default function ActivityDetailScreen() {
                 </View>
               ) : null}
             </View>
+            {canEdit && isSeriesActivity(activity) && !dateSkipped ? (
+              <View style={styles.action}>
+                <Muted>{t.planner.skipHint}</Muted>
+                <Button
+                  label={t.planner.skipOccurrence}
+                  variant="dangerOutline"
+                  icon="ban"
+                  loading={skipping}
+                  onPress={() => void onSkipDate()}
+                />
+              </View>
+            ) : null}
           </View>
         ) : null}
         {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
@@ -785,20 +876,6 @@ export default function ActivityDetailScreen() {
             userId={user.id}
             onChanged={() => void load({ silent: true })}
           />
-        ) : null}
-        {canEdit && isSeriesActivity(activity) ? (
-          <View style={styles.moveRow}>
-            <Button
-              label={t.events.moveTitle}
-              variant="outline"
-              icon="calendar"
-              onPress={() => {
-                setMoveError(null);
-                setMoveStart(new Date(activity.starts_at));
-                setMoveOpen(true);
-              }}
-            />
-          </View>
         ) : null}
           </>
         )}
@@ -1007,8 +1084,19 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 12,
   },
-  moveRow: {
-    marginTop: 28,
+  skipBanner: {
+    marginTop: 12,
+    backgroundColor: theme.colors.danger,
+    borderRadius: theme.radius.md,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  skipBannerText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   responses: {
     marginTop: 24,

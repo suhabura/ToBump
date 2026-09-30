@@ -475,13 +475,12 @@ export default function PlannerScreen() {
       const end = seriesEnds.get(sid);
       const template = templates.get(sid);
       if (end && day > end && template && isSeriesActivity(template)) continue;
-      if (skippedBySeries.get(sid)?.has(day)) continue;
       byKey.set(`${sid}:${day}`, {
         ...a,
         join_count: signupCount(a),
         slotKey: `${sid}:${day}`,
         virtual: false,
-        skipped: false,
+        skipped: skippedBySeries.get(sid)?.has(day) ?? false,
       });
     }
 
@@ -508,11 +507,15 @@ export default function PlannerScreen() {
         },
         rangeStart,
         rangeEnd,
-        skipped
+        new Set()
       )) {
         const mapKey = `${sid}:${slot.day}`;
-        if (skipped.has(slot.day)) continue;
-        if (byKey.has(mapKey)) continue;
+        const isSkipped = skipped.has(slot.day);
+        const existing = byKey.get(mapKey);
+        if (existing) {
+          if (isSkipped) byKey.set(mapKey, { ...existing, skipped: true });
+          continue;
+        }
         if (realByDay.get(mapKey)) continue;
         const durationMs = slot.durationMinutes != null ? slot.durationMinutes * 60_000 : null;
         byKey.set(mapKey, {
@@ -523,7 +526,7 @@ export default function PlannerScreen() {
           duration_minutes: slot.durationMinutes,
           slotKey: mapKey,
           virtual: true,
-          skipped: false,
+          skipped: isSkipped,
         });
       }
     }
@@ -534,7 +537,7 @@ export default function PlannerScreen() {
   const dayMarks = useMemo(() => {
     const flags = new Map<string, DayFlags>();
     for (const a of plannerItems) {
-      if (a.skipped || a.status === 'cancelled') continue;
+      if (a.status === 'cancelled') continue;
       const key = localDayKey(new Date(a.starts_at));
       if (Number.isNaN(new Date(a.starts_at).getTime())) continue;
       const cur = flags.get(key) ?? { joined: false, planner: false };
@@ -550,7 +553,6 @@ export default function PlannerScreen() {
     return plannerItems
       .filter(
         (a) =>
-          !a.skipped &&
           a.status !== 'cancelled' &&
           isSameDay(new Date(a.starts_at), selectedDay)
       )
@@ -566,13 +568,12 @@ export default function PlannerScreen() {
       if (Number.isNaN(starts.getTime()) || starts.getTime() < now) continue;
       const sid = seriesKey(a);
       const day = localDayKey(starts);
-      if (skippedBySeries.get(sid)?.has(day)) continue;
       byKey.set(a.id, {
         ...a,
         join_count: signupCount(a),
         slotKey: a.id,
         virtual: false,
-        skipped: false,
+        skipped: skippedBySeries.get(sid)?.has(day) ?? false,
       });
     }
     return Array.from(byKey.values()).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
@@ -662,15 +663,20 @@ export default function PlannerScreen() {
       joinedActivityIds: seriesRows.filter((row) => !row.virtual && joinedIds.has(row.id)).map((row) => row.id),
       followingSeries: follows.has(sid),
     });
-    const lockedOut = full && !isJoined;
-    const fullIn = full && isJoined;
+    const lockedOut = !item.skipped && full && !isJoined;
+    const fullIn = !item.skipped && full && isJoined;
     return (
       <View style={[styles.card, fullIn ? styles.cardFullIn : null, lockedOut ? styles.cardFull : null]}>
+        {item.skipped ? (
+          <View style={styles.skipBanner}>
+            <Text style={styles.skipBannerText}>{t.planner.skipped}</Text>
+          </View>
+        ) : null}
         <Pressable style={[styles.cardBody, weather ? styles.cardBodyWeather : null]} onPress={() => void onOpenSlot(item)}>
           <Text style={[styles.overline, isMine ? styles.roleOrganizing : styles.roleInvited]} numberOfLines={1}>
             {isMine ? t.events.organizing : host ? t.events.invitedBy(host) : t.events.invitedBadge}
           </Text>
-          {full ? (
+          {full && !item.skipped ? (
             <Text style={isJoined ? styles.fullJoined : styles.fullMissed}>
               {isJoined ? t.events.fullJoined : t.events.fullMissed}
             </Text>
@@ -949,6 +955,18 @@ const styles = StyleSheet.create({
   cardFullIn: {
     borderColor: theme.colors.primary,
     backgroundColor: theme.colors.primarySoft,
+  },
+  skipBanner: {
+    backgroundColor: theme.colors.danger,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  skipBannerText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+    letterSpacing: 0.3,
   },
   fullJoined: {
     color: theme.colors.primaryDark,

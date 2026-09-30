@@ -635,6 +635,22 @@ export async function fetchSubcategories(): Promise<Category[]> {
 }
 
 export async function joinActivity(activityId: string, userId: string, creatorId: string, title: string) {
+  const { data: row } = await supabase
+    .from('activities')
+    .select('id, series_id, starts_at')
+    .eq('id', activityId)
+    .maybeSingle();
+  if (row?.starts_at) {
+    const sid = (row.series_id as string | null) ?? row.id;
+    const day = localDayKey(new Date(row.starts_at));
+    const { data: skippedDay } = await supabase
+      .from('series_skipped_dates')
+      .select('day')
+      .eq('series_id', sid)
+      .eq('day', day)
+      .maybeSingle();
+    if (skippedDay) throw new Error(getT().planner.skipped);
+  }
   const { error } = await supabase.rpc('join_activity_safe', { p_activity_id: activityId });
   if (error) {
     const msg = error.message ?? '';

@@ -1,5 +1,7 @@
+import { getT } from '@/i18n/runtime';
 import { joinActivity, notifyActivityJoin } from '@/lib/api';
 import { seriesKey } from '@/lib/finance';
+import { localDayKey } from '@/lib/recurrence';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
 
@@ -63,15 +65,24 @@ export async function setSeriesFollow(seriesId: string, follow: boolean) {
   notifySeriesFollows();
 }
 
-export async function skipSeriesDay(seriesId: string, day: string) {
-  const { error } = await supabase.rpc('skip_series_day', { p_series_id: seriesId, p_day: day });
+export async function markSeriesDaySkipped(seriesId: string, day: string): Promise<boolean> {
+  const { data: existing, error: readError } = await supabase
+    .from('series_skipped_dates')
+    .select('day')
+    .eq('series_id', seriesId)
+    .eq('day', day)
+    .maybeSingle();
+  if (readError) throw readError;
+  if (existing) return false;
+  const { error } = await supabase.from('series_skipped_dates').insert({
+    series_id: seriesId,
+    day,
+  });
   if (error) {
-    const { error: ins } = await supabase.from('series_skipped_dates').insert({
-      series_id: seriesId,
-      day,
-    });
-    if (ins) throw error;
+    if (error.code === '23505') return false;
+    throw error;
   }
+  return true;
 }
 
 export async function unskipSeriesDay(seriesId: string, day: string) {
@@ -85,6 +96,14 @@ export async function joinSeriesOccurrence(
   userId: string
 ): Promise<string> {
   const sid = seriesKey(activity);
+  const day = localDayKey(startsAt);
+  const { data: skippedDay } = await supabase
+    .from('series_skipped_dates')
+    .select('day')
+    .eq('series_id', sid)
+    .eq('day', day)
+    .maybeSingle();
+  if (skippedDay) throw new Error(getT().planner.skipped);
   const { data, error } = await supabase.rpc('join_series_occurrence', {
     p_series_id: sid,
     p_starts_at: startsAt.toISOString(),
