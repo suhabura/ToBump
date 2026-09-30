@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Alert, StyleSheet, Switch, Text, View } from 'react-native';
 import { showToast } from '@/components/Toast';
-import { Button, Muted, Subtitle } from '@/components/ui';
+import { Button, Muted } from '@/components/ui';
 import { FriendPicker } from '@/components/FriendPicker';
 import { createNotification, profileDisplayName } from '@/lib/api';
 import { dedupeProfilesByEmail } from '@/lib/friends';
@@ -13,7 +13,6 @@ import { theme } from '@/constants/theme';
 type Props = {
   activity: ActivityWithRelations;
   userId: string;
-  hasSignup?: boolean;
   onChanged?: () => void;
 };
 
@@ -26,9 +25,8 @@ function basePrivacy(activity: ActivityWithRelations): Privacy {
 }
 
 /** Organizer opens this occurrence to more people — does not change the series template. */
-export function ActivityExtraInvitePanel({ activity, userId, hasSignup = false, onChanged }: Props) {
+export function ActivityExtraInvitePanel({ activity, userId, onChanged }: Props) {
   const t = useT();
-  const [open, setOpen] = useState(false);
   const [friends, setFriends] = useState<Profile[]>([]);
   const [inviteIds, setInviteIds] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -36,7 +34,6 @@ export function ActivityExtraInvitePanel({ activity, userId, hasSignup = false, 
   const fofOn = activity.privacy === 'friends_of_friends';
 
   useEffect(() => {
-    if (!open) return;
     void (async () => {
       try {
         const { data: fr } = await supabase
@@ -61,7 +58,7 @@ export function ActivityExtraInvitePanel({ activity, userId, hasSignup = false, 
         setFriends([]);
       }
     })();
-  }, [open, userId]);
+  }, [userId]);
 
   async function setParticipantsFriends(on: boolean) {
     setFofBusy(true);
@@ -163,60 +160,32 @@ export function ActivityExtraInvitePanel({ activity, userId, hasSignup = false, 
   }
 
   return (
-    <View style={{ gap: 10, marginTop: 16 }}>
-      <View style={styles.headerRow}>
-        <Subtitle>{t.events.extraInviteNeedPeople}</Subtitle>
-        {open ? (
-          <Text style={styles.link} onPress={() => setOpen(false)}>
-            {t.common.cancel}
-          </Text>
-        ) : null}
-      </View>
-      <Muted>{fofOn ? t.events.extraInviteFofOn : t.events.extraInviteStatusInvite}</Muted>
-      {!hasSignup ? <Muted>{t.events.fofWaiting}</Muted> : null}
-      {!open ? (
-        <Button
-          label={t.events.extraInviteOpenDate}
-          variant="secondary"
-          size="sm"
-          onPress={() => setOpen(true)}
+    <View style={{ gap: 12, marginTop: 16 }}>
+      <Muted>{t.events.extraInviteIntro}</Muted>
+      <View style={styles.setting}>
+        <Text style={styles.settingLabel}>{t.events.friendsOfFriends}</Text>
+        <Switch
+          value={fofOn}
+          disabled={fofBusy}
+          onValueChange={(v) => void setParticipantsFriends(v)}
+          trackColor={{ true: theme.colors.primary, false: theme.colors.border }}
         />
-      ) : (
-        <View style={{ gap: 12 }}>
-          <Muted>{t.events.extraInviteFofHint}</Muted>
-          <View style={styles.setting}>
-            <Text style={styles.settingLabel}>{t.events.friendsOfFriends}</Text>
-            <Switch
-              value={fofOn}
-              disabled={fofBusy}
-              onValueChange={(v) => void setParticipantsFriends(v)}
-              trackColor={{ true: theme.colors.primary, false: theme.colors.border }}
-            />
-          </View>
-          <Text style={styles.moreLabel}>{t.events.extraInviteMorePeople}</Text>
-          <FriendPicker
-            friends={friends}
-            selectedIds={inviteIds}
-            onChange={setInviteIds}
-            label={t.form.selectFriends}
-            placeholder={t.form.searchFriends}
-            emptyHint={t.form.noFriends}
-          />
-          <Button label={t.events.extraInviteApply} loading={busy} onPress={() => void submit()} />
-        </View>
-      )}
+      </View>
+      <Text style={styles.moreLabel}>{t.events.extraInviteMorePeople}</Text>
+      <FriendPicker
+        friends={friends}
+        selectedIds={inviteIds}
+        onChange={setInviteIds}
+        label={t.form.selectFriends}
+        placeholder={t.form.searchFriends}
+        emptyHint={t.form.noFriends}
+      />
+      <Button label={t.events.extraInviteApply} loading={busy} onPress={() => void submit()} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  link: { color: theme.colors.primary, fontWeight: '600', fontSize: 14 },
   setting: {
     flexDirection: 'row',
     alignItems: 'center',

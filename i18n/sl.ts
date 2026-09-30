@@ -153,12 +153,8 @@ export const sl = {
     openMaps: 'Odpri v Zemljevidih',
     officialProvider: 'Uradni ponudnik',
     tobumpBooking: 'ToBump rezervacija',
-    extraInviteNeedPeople: 'Potrebuješ več ljudi?',
-    extraInviteOpenDate: 'Odpri ta termin',
-    extraInviteStatusInvite: 'Ta termin: samo prvotno povabljeni.',
-    extraInviteFofHint:
-      'Prvotno povabljeni se še vedno lahko prijavijo. Prijatelji udeležencev ta termin odprejo tudi njihovim prijateljem. Prihodnji termini ostanejo, kot so bili.',
-    extraInviteFofOn: 'Ta termin je odprt tudi za prijatelje udeležencev.',
+    extraInviteIntro:
+      'Ta termin lahko odpreš še za prijatelje tistih, ki so se že prijavili, ali povabiš določene osebe. Prvotno povabljeni se še vedno lahko prijavijo. Prihodnji termini ostanejo, kot so bili. Organizator se ne šteje kot prijava.',
     extraInviteMorePeople: 'Povabi še osebe',
     extraInviteApply: 'Pošlji povabila',
     extraInviteDone: 'Povabila za ta dogodek so posodobljena.',

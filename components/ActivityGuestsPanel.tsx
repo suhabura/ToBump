@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
-import { Button, Chip, Input, Muted, Subtitle } from '@/components/ui';
+import { Button, Chip, Input, Muted } from '@/components/ui';
 import {
   addGuestToActivity,
   fetchSeriesGuests,
@@ -92,12 +92,6 @@ export function ActivityGuestsPanel({ activity, canManage, guestsOnEvent = [], o
 
   return (
     <View style={{ gap: 10, marginTop: 16 }}>
-      <View style={styles.headerRow}>
-        <Subtitle>{t.guests.title}</Subtitle>
-        <Text style={styles.link} onPress={() => setShowAdd((v) => !v)}>
-          {showAdd ? t.common.cancel : t.guests.add}
-        </Text>
-      </View>
       <Muted>{t.guests.hint}</Muted>
 
       {knownNotHere.length > 0 ? (
@@ -117,6 +111,12 @@ export function ActivityGuestsPanel({ activity, canManage, guestsOnEvent = [], o
           </View>
         </View>
       ) : null}
+
+      <Button
+        label={showAdd ? t.common.cancel : t.guests.add}
+        variant={showAdd ? 'ghost' : 'secondary'}
+        onPress={() => setShowAdd((v) => !v)}
+      />
 
       {showAdd ? (
         <View style={styles.form}>
@@ -145,13 +145,6 @@ export function ActivityGuestsPanel({ activity, canManage, guestsOnEvent = [], o
 }
 
 const styles = StyleSheet.create({
-  headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 8,
-  },
-  link: { color: theme.colors.primary, fontWeight: '700' },
   chipRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   form: {
     gap: 8,

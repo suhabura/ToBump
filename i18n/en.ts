@@ -153,12 +153,8 @@ export const en = {
     openMaps: 'Open in Maps',
     officialProvider: 'Official provider',
     tobumpBooking: 'ToBump booking',
-    extraInviteNeedPeople: 'Need more people?',
-    extraInviteOpenDate: 'Open this date',
-    extraInviteStatusInvite: 'This date: original invitees only.',
-    extraInviteFofHint:
-      'Original invitees can still join. Participants’ friends also opens this date to friends of people who already signed up. Later dates stay as they were.',
-    extraInviteFofOn: 'This date is also open to friends of participants.',
+    extraInviteIntro:
+      'You can open this date to friends of people who already joined, or invite specific people. Original invitees can still join. Later dates stay as they were. The organizer does not count as a signup.',
     extraInviteMorePeople: 'Invite specific people',
     extraInviteApply: 'Send invites',
     extraInviteDone: 'Invites updated for this event.',

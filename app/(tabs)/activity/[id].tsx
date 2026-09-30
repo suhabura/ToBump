@@ -771,20 +771,18 @@ export default function ActivityDetailScreen() {
           </View>
           <ResponseGroup title={t.events.decline} people={decliners} />
           <ResponseGroup title={t.events.noReply} people={silent} />
+          <ActivityGuestsPanel
+            activity={activity}
+            canManage={isOwner || canEdit}
+            guestsOnEvent={guests}
+            onChanged={load}
+          />
         </View>
-
-        <ActivityGuestsPanel
-          activity={activity}
-          canManage={isOwner || canEdit}
-          guestsOnEvent={guests}
-          onChanged={load}
-        />
 
         {canEdit && user ? (
           <ActivityExtraInvitePanel
             activity={activity}
             userId={user.id}
-            hasSignup={participants.length > 0}
             onChanged={() => void load({ silent: true })}
           />
         ) : null}
