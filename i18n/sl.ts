@@ -111,6 +111,8 @@ export const sl = {
     declineDbFix:
       'Odgovori »ne pridem« v bazi še niso vklopljeni. V urejevalniku SQL v Supabase zaženi supabase/activity_declines.sql in poskusi znova.',
     full: 'Polno',
+    fullJoined: 'Poln – srečno na dogodku.',
+    fullMissed: 'Poln – žal nisi med udeleženci.',
     eventFull: 'Dogodek se je ravnokar zapolnil. Poskusi drugega.',
     privacy: 'Zasebnost',
     public: 'Javno',

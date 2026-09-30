@@ -662,15 +662,18 @@ export default function PlannerScreen() {
       joinedActivityIds: seriesRows.filter((row) => !row.virtual && joinedIds.has(row.id)).map((row) => row.id),
       followingSeries: follows.has(sid),
     });
+    const lockedOut = full && !isJoined;
     return (
-      <View style={[styles.card, isMine ? styles.cardMine : null, full ? styles.cardFull : null]}>
+      <View style={[styles.card, lockedOut ? styles.cardFull : null]}>
         <Pressable style={[styles.cardBody, weather ? styles.cardBodyWeather : null]} onPress={() => void onOpenSlot(item)}>
-          <View style={styles.overlineRow}>
-            <Text style={[styles.overline, isMine ? styles.roleOrganizing : styles.roleInvited, styles.overlineFlex]} numberOfLines={1}>
-              {isMine ? t.events.organizing : host ? t.events.invitedBy(host) : t.events.invitedBadge}
+          <Text style={styles.overline} numberOfLines={1}>
+            {isMine ? t.events.organizing : host ? t.events.invitedBy(host) : t.events.invitedBadge}
+          </Text>
+          {full ? (
+            <Text style={isJoined ? styles.fullJoined : styles.fullMissed}>
+              {isJoined ? t.events.fullJoined : t.events.fullMissed}
             </Text>
-            {full ? <Text style={styles.fullBadge}>{t.events.full}</Text> : null}
-          </View>
+          ) : null}
           <Text style={styles.cardTitle} numberOfLines={2}>
             {cat}
           </Text>
@@ -706,7 +709,7 @@ export default function PlannerScreen() {
           ) : null}
           {showJoin ? (
             <Button
-              label={full ? t.events.full : t.events.join}
+              label={t.events.join}
               size="xs"
               icon="check"
               loading={busy}
@@ -938,24 +941,23 @@ const styles = StyleSheet.create({
     position: 'relative',
     ...theme.shadow.card,
   },
-  cardMine: {
-    borderColor: theme.colors.primaryMuted,
-    backgroundColor: theme.colors.primarySoft,
-  },
   cardFull: {
     borderColor: theme.colors.warning,
     backgroundColor: theme.colors.warningSoft,
   },
-  overlineRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  overlineFlex: { flex: 1 },
-  fullBadge: {
-    color: theme.colors.warning,
-    fontSize: 12,
+  fullJoined: {
+    color: theme.colors.primaryDark,
+    fontSize: 13,
     fontWeight: '700',
+    lineHeight: 18,
+    marginBottom: 4,
+  },
+  fullMissed: {
+    color: theme.colors.warning,
+    fontSize: 13,
+    fontWeight: '700',
+    lineHeight: 18,
+    marginBottom: 4,
   },
   cardBody: {
     padding: theme.space.md,
@@ -976,9 +978,8 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 14,
     marginBottom: 4,
+    color: theme.colors.textMuted,
   },
-  roleOrganizing: { color: theme.colors.primaryDark },
-  roleInvited: { color: theme.colors.warning },
   when: {
     color: theme.colors.primaryDark,
     fontSize: 13,

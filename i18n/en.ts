@@ -111,6 +111,8 @@ export const en = {
     declineDbFix:
       "Can't-come replies are not enabled in the database yet. Run supabase/activity_declines.sql in the Supabase SQL editor, then try again.",
     full: 'Full',
+    fullJoined: 'Full – enjoy the event.',
+    fullMissed: 'Full – you are not on the list.',
     eventFull: 'This event just filled up. Try another one.',
     privacy: 'Privacy',
     public: 'Public',
