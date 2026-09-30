@@ -673,12 +673,6 @@ export default function ActivityDetailScreen() {
                 disabled={full}
               />
             ) : null}
-          </View>
-        </View>
-
-        {showDecline || showPlanner || showNever ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t.events.optionsHeading}</Text>
             {showDecline ? (
               <Button
                 label={t.events.declineThisDate}
@@ -687,6 +681,12 @@ export default function ActivityDetailScreen() {
                 onPress={() => void onNotGoing()}
               />
             ) : null}
+          </View>
+        </View>
+
+        {showPlanner || showNever ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>{t.events.optionsHeading}</Text>
             {showPlanner ? (
               <View style={styles.action}>
                 <Muted>{following ? t.planner.unfollowHint : t.planner.followHint}</Muted>
