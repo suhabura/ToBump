@@ -658,20 +658,22 @@ export default function ActivityDetailScreen() {
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>{t.events.attendanceHeading}</Text>
-          <Text style={styles.signupLine}>{signupLine}</Text>
-          {showJoin ? (
-            <Button
-              label={full ? t.events.full : t.events.join}
-              icon="check"
-              onPress={onJoin}
-              disabled={full}
-            />
-          ) : null}
-          {showJoin && full && activity.max_participants != null ? (
-            <Muted>
-              {t.events.fullHint} {participantCount}/{activity.max_participants}
-            </Muted>
-          ) : null}
+          <View style={styles.action}>
+            <Text style={styles.signupLine}>{signupLine}</Text>
+            {showJoin && full && activity.max_participants != null ? (
+              <Muted>
+                {t.events.fullHint} {participantCount}/{activity.max_participants}
+              </Muted>
+            ) : null}
+            {showJoin ? (
+              <Button
+                label={full ? t.events.full : t.events.join}
+                icon="check"
+                onPress={onJoin}
+                disabled={full}
+              />
+            ) : null}
+          </View>
         </View>
 
         {showDecline || showPlanner || showNever ? (
@@ -686,25 +688,25 @@ export default function ActivityDetailScreen() {
               />
             ) : null}
             {showPlanner ? (
-              <>
+              <View style={styles.action}>
+                <Muted>{following ? t.planner.unfollowHint : t.planner.followHint}</Muted>
                 <Button
                   label={following ? t.planner.unfollowSeries : t.planner.followSeries}
                   variant="secondary"
                   loading={seriesBusy}
                   onPress={() => void onToggleFollow()}
                 />
-                {following ? <Muted>{t.planner.unfollowHint}</Muted> : <Muted>{t.planner.followHint}</Muted>}
-              </>
+              </View>
             ) : null}
             {showNever ? (
-              <>
+              <View style={styles.action}>
+                <Muted>{t.events.optOutHint}</Muted>
                 <Button
                   label={t.events.neverComing}
                   variant="secondary"
                   onPress={() => void onNeverComing()}
                 />
-                <Muted>{t.events.optOutHint}</Muted>
-              </>
+              </View>
             ) : null}
           </View>
         ) : null}
@@ -850,22 +852,26 @@ export default function ActivityDetailScreen() {
             {activity.is_recurring ? null : <Muted>{t.events.deleteConfirmPrompt}</Muted>}
             <View style={{ height: 12 }} />
             {activity.is_recurring ? (
-              <>
-                <Button
-                  label={t.events.deleteThisOnly}
-                  variant="secondary"
-                  loading={deleting}
-                  onPress={() => confirmDelete('occurrence')}
-                />
-                <Muted>{t.events.deleteThisOnlyHint}</Muted>
-                <Button
-                  label={t.events.deleteSeries}
-                  variant="danger"
-                  loading={deleting}
-                  onPress={() => confirmDelete('series')}
-                />
-                <Muted>{t.events.deleteSeriesHint}</Muted>
-              </>
+              <View style={styles.deleteChoices}>
+                <View style={styles.action}>
+                  <Muted>{t.events.deleteThisOnlyHint}</Muted>
+                  <Button
+                    label={t.events.deleteThisOnly}
+                    variant="secondary"
+                    loading={deleting}
+                    onPress={() => confirmDelete('occurrence')}
+                  />
+                </View>
+                <View style={styles.action}>
+                  <Muted>{t.events.deleteSeriesHint}</Muted>
+                  <Button
+                    label={t.events.deleteSeries}
+                    variant="danger"
+                    loading={deleting}
+                    onPress={() => confirmDelete('series')}
+                  />
+                </View>
+              </View>
             ) : (
               <Button
                 label={t.events.delete}
@@ -944,7 +950,13 @@ const styles = StyleSheet.create({
   },
   section: {
     marginTop: 20,
-    gap: 8,
+    gap: 16,
+  },
+  action: {
+    gap: 4,
+  },
+  deleteChoices: {
+    gap: 16,
   },
   manageSection: {
     marginTop: 20,
