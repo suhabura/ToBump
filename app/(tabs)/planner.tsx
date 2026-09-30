@@ -663,10 +663,11 @@ export default function PlannerScreen() {
       followingSeries: follows.has(sid),
     });
     const lockedOut = full && !isJoined;
+    const fullIn = full && isJoined;
     return (
-      <View style={[styles.card, lockedOut ? styles.cardFull : null]}>
+      <View style={[styles.card, fullIn ? styles.cardFullIn : null, lockedOut ? styles.cardFull : null]}>
         <Pressable style={[styles.cardBody, weather ? styles.cardBodyWeather : null]} onPress={() => void onOpenSlot(item)}>
-          <Text style={styles.overline} numberOfLines={1}>
+          <Text style={[styles.overline, isMine ? styles.roleOrganizing : styles.roleInvited]} numberOfLines={1}>
             {isMine ? t.events.organizing : host ? t.events.invitedBy(host) : t.events.invitedBadge}
           </Text>
           {full ? (
@@ -945,6 +946,10 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.warning,
     backgroundColor: theme.colors.warningSoft,
   },
+  cardFullIn: {
+    borderColor: theme.colors.primary,
+    backgroundColor: theme.colors.primarySoft,
+  },
   fullJoined: {
     color: theme.colors.primaryDark,
     fontSize: 13,
@@ -978,8 +983,9 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     lineHeight: 14,
     marginBottom: 4,
-    color: theme.colors.textMuted,
   },
+  roleOrganizing: { color: theme.colors.primaryDark },
+  roleInvited: { color: theme.colors.warning },
   when: {
     color: theme.colors.primaryDark,
     fontSize: 13,
