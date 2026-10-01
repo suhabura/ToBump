@@ -713,27 +713,29 @@ export default function PlannerScreen() {
         {weather ? (
           <WeatherBadge latitude={weather.latitude} longitude={weather.longitude} startsAt={item.starts_at} />
         ) : null}
-        <View style={styles.actions} onStartShouldSetResponder={() => true}>
-          {showChat ? (
-            <Button
-              label={t.events.chat}
-              variant="outline"
-              size="xs"
-              icon="comments"
-              onPress={() => router.push(`/chat/${item.id}`)}
-            />
-          ) : null}
-          {showJoin ? (
-            <Button
-              label={t.events.join}
-              size="xs"
-              icon="check"
-              loading={busy}
-              disabled={full || busy}
-              onPress={() => void onJoinSlot(item)}
-            />
-          ) : null}
-        </View>
+        {showChat || showJoin ? (
+          <View style={styles.actions} onStartShouldSetResponder={() => true}>
+            {showChat ? (
+              <Button
+                label={t.events.chat}
+                variant="outline"
+                size="xs"
+                icon="comments"
+                onPress={() => router.push(`/chat/${item.id}`)}
+              />
+            ) : null}
+            {showJoin ? (
+              <Button
+                label={t.events.join}
+                size="xs"
+                icon="check"
+                loading={busy}
+                disabled={full || busy}
+                onPress={() => void onJoinSlot(item)}
+              />
+            ) : null}
+          </View>
+        ) : null}
       </View>
     );
   }
@@ -862,8 +864,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginTop: 12,
-    marginBottom: 4,
+    marginTop: 0,
+    marginBottom: 16,
   },
   calCard: {
     backgroundColor: theme.colors.surface,
@@ -945,7 +947,7 @@ const styles = StyleSheet.create({
   },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   legendText: { fontSize: 12, fontWeight: '600', color: theme.colors.textMuted },
-  section: { marginBottom: theme.space.sm },
+  section: { marginBottom: 12 },
   card: {
     width: '100%',
     backgroundColor: theme.colors.surface,
