@@ -374,13 +374,7 @@ export default function EventsScreen() {
                       ? { label: host, style: styles.roleQuiet }
                       : null;
             return (
-              <View
-                style={[
-                  styles.card,
-                  skipped ? styles.cardSkipped : null,
-                  isOrganizer && !skipped ? styles.cardMine : null,
-                ]}
-              >
+              <View style={[styles.card, skipped ? styles.cardSkipped : null]}>
                 {skipped ? (
                   <View style={styles.skipBanner}>
                     <Text style={styles.skipBannerText}>{t.planner.skipped}</Text>
@@ -547,10 +541,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.3,
-  },
-  cardMine: {
-    borderColor: theme.colors.primaryMuted,
-    backgroundColor: theme.colors.primarySoft,
   },
   cardBody: {
     padding: theme.space.md,
