@@ -666,21 +666,30 @@ export default function PlannerScreen() {
     const lockedOut = !item.skipped && full && !isJoined;
     const fullIn = !item.skipped && full && isJoined;
     return (
-      <View style={[styles.card, fullIn ? styles.cardFullIn : null, lockedOut ? styles.cardFull : null]}>
+      <View
+        style={[
+          styles.card,
+          item.skipped || lockedOut ? styles.cardFull : null,
+          fullIn ? styles.cardFullIn : null,
+        ]}
+      >
         {item.skipped ? (
           <View style={styles.skipBanner}>
-            <Text style={styles.skipBannerText}>{t.planner.skipped}</Text>
+            <Text style={styles.bannerText}>{t.planner.skipped}</Text>
+          </View>
+        ) : fullIn ? (
+          <View style={styles.fullInBanner}>
+            <Text style={styles.bannerText}>{t.events.fullJoined}</Text>
+          </View>
+        ) : lockedOut ? (
+          <View style={styles.skipBanner}>
+            <Text style={styles.bannerText}>{t.events.fullMissed}</Text>
           </View>
         ) : null}
         <Pressable style={[styles.cardBody, weather ? styles.cardBodyWeather : null]} onPress={() => void onOpenSlot(item)}>
           <Text style={[styles.overline, isMine ? styles.roleOrganizing : styles.roleInvited]} numberOfLines={1}>
             {isMine ? t.events.organizing : host ? t.events.invitedBy(host) : t.events.invitedBadge}
           </Text>
-          {full && !item.skipped ? (
-            <Text style={isJoined ? styles.fullJoined : styles.fullMissed}>
-              {isJoined ? t.events.fullJoined : t.events.fullMissed}
-            </Text>
-          ) : null}
           <Text style={styles.cardTitle} numberOfLines={2}>
             {cat}
           </Text>
@@ -962,25 +971,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     alignItems: 'center',
   },
-  skipBannerText: {
+  fullInBanner: {
+    backgroundColor: theme.colors.primary,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  bannerText: {
     color: '#fff',
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.3,
-  },
-  fullJoined: {
-    color: theme.colors.primaryDark,
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
-    marginBottom: 4,
-  },
-  fullMissed: {
-    color: theme.colors.danger,
-    fontSize: 13,
-    fontWeight: '700',
-    lineHeight: 18,
-    marginBottom: 4,
+    textAlign: 'center',
   },
   cardBody: {
     padding: theme.space.md,
