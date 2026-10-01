@@ -1,3 +1,5 @@
+import { supabase } from '@/lib/supabase';
+
 export type GeoPoint = {
   latitude: number;
   longitude: number;
@@ -5,7 +7,8 @@ export type GeoPoint = {
 
 export type GeoPlace = GeoPoint & {
   label: string;
-  source?: 'google' | 'photon' | 'nominatim' | 'device';
+  source?: 'google' | 'photon' | 'nominatim' | 'device' | 'saved';
+  placeId?: string;
 };
 
 /** Approximate Slovenia bounding box (for search bias). */
@@ -223,31 +226,34 @@ async function searchGoogleAutocomplete(query: string, bias?: GeoPoint | null): 
 async function searchGooglePlacesNew(query: string, bias?: GeoPoint | null): Promise<GeoPlace[]> {
   const key = googleKey();
   if (!key) return [];
-  const center = bias ?? SI_CENTER;
   try {
     const res = await fetch('https://places.googleapis.com/v1/places:searchText', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'X-Goog-Api-Key': key,
-        'X-Goog-FieldMask': 'places.displayName,places.formattedAddress,places.location',
+        'X-Goog-FieldMask': 'places.id,places.displayName,places.formattedAddress,places.location',
       },
       body: JSON.stringify({
         textQuery: query,
         languageCode: 'sl',
-        regionCode: 'SI',
         maxResultCount: 8,
-        locationBias: {
-          circle: {
-            center: { latitude: center.latitude, longitude: center.longitude },
-            radius: 80_000,
-          },
-        },
+        ...(bias
+          ? {
+              locationRestriction: {
+                circle: {
+                  center: { latitude: bias.latitude, longitude: bias.longitude },
+                  radius: 50_000,
+                },
+              },
+            }
+          : {}),
       }),
     });
     if (!res.ok) return [];
     const json = (await res.json()) as {
       places?: {
+        id?: string;
         displayName?: { text?: string };
         formattedAddress?: string;
         location?: { latitude: number; longitude: number };
@@ -263,6 +269,7 @@ async function searchGooglePlacesNew(query: string, bias?: GeoPoint | null): Pro
           latitude: p.location!.latitude,
           longitude: p.location!.longitude,
           source: 'google' as const,
+          placeId: p.id,
         };
       });
   } catch {
@@ -389,13 +396,138 @@ async function expandMultiToken(query: string, bias?: GeoPoint | null): Promise<
 }
 
 export type SearchPlacesOptions = {
-  /** Prefer results near this point (GPS / existing profile coords). */
+  /** Venue search stays inside this circle. Area search ignores it. */
   bias?: GeoPoint | null;
+  /** area = pick a town for the profile. venue = courts around that town. */
+  mode?: 'venue' | 'area';
 };
 
+const AREA_RADIUS_M = 50_000;
+
+function withinArea(place: GeoPoint, center: GeoPoint): boolean {
+  return distanceMeters(place, center) <= AREA_RADIUS_M;
+}
+
+function byDistance(places: GeoPlace[], center: GeoPoint): GeoPlace[] {
+  return [...places].sort((a, b) => distanceMeters(center, a) - distanceMeters(center, b));
+}
+
+function likePattern(query: string): string | null {
+  const safe = query.replace(/[%_,]/g, ' ').trim();
+  if (safe.length < 2) return null;
+  return `%${safe}%`;
+}
+
+async function searchKnownPlaces(query: string, bias: GeoPoint): Promise<GeoPlace[]> {
+  const pattern = likePattern(query);
+  if (!pattern) return [];
+  const out: GeoPlace[] = [];
+  try {
+    const { data, error } = await supabase
+      .from('enterprises')
+      .select('name, address, latitude, longitude')
+      .or(`name.ilike.*${pattern.slice(1, -1)}*,address.ilike.*${pattern.slice(1, -1)}*`)
+      .limit(20);
+    if (!error) {
+      for (const row of data ?? []) {
+        if (row.latitude == null || row.longitude == null) continue;
+        out.push({
+          label: [row.name, row.address].filter(Boolean).join(', '),
+          latitude: row.latitude,
+          longitude: row.longitude,
+          source: 'saved',
+        });
+      }
+    }
+  } catch {
+    /* table or policy may be missing */
+  }
+  try {
+    const { data, error } = await supabase
+      .from('saved_places')
+      .select('label, latitude, longitude, google_place_id')
+      .ilike('label', pattern)
+      .limit(20);
+    if (!error) {
+      for (const row of data ?? []) {
+        out.push({
+          label: row.label,
+          latitude: row.latitude,
+          longitude: row.longitude,
+          source: 'saved',
+          placeId: row.google_place_id ?? undefined,
+        });
+      }
+    }
+  } catch {
+    /* saved_places may not be created yet */
+  }
+  return dedupePlaces(out.filter((p) => withinArea(p, bias)));
+}
+
+async function readPlaceCache(query: string, bias: GeoPoint): Promise<GeoPlace[] | null> {
+  const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    const { data, error } = await supabase
+      .from('place_query_cache')
+      .select('results, fetched_at')
+      .eq('query_norm', normalizeSearchText(query))
+      .gte('fetched_at', since)
+      .limit(8);
+    if (error || !data?.length) return null;
+    const near = data.find(
+      (row) =>
+        Math.abs(Number((row.results as { center?: GeoPoint } | null)?.center?.latitude) - bias.latitude) < 0.3 &&
+        Math.abs(Number((row.results as { center?: GeoPoint } | null)?.center?.longitude) - bias.longitude) < 0.3
+    );
+    const places = (near?.results as { places?: GeoPlace[] } | undefined)?.places;
+    if (!places?.length) return null;
+    return places.filter((p) => withinArea(p, bias));
+  } catch {
+    return null;
+  }
+}
+
+async function writePlaceCache(query: string, bias: GeoPoint, places: GeoPlace[]): Promise<void> {
+  try {
+    await supabase.from('place_query_cache').insert({
+      query_norm: normalizeSearchText(query),
+      results: { center: bias, places },
+      fetched_at: new Date().toISOString(),
+    });
+  } catch {
+    /* cache is optional */
+  }
+}
+
+export async function rememberPlace(place: GeoPlace): Promise<void> {
+  try {
+    const { data: auth } = await supabase.auth.getUser();
+    if (!auth.user) return;
+    if (place.placeId) {
+      const { data: existing } = await supabase
+        .from('saved_places')
+        .select('id')
+        .eq('google_place_id', place.placeId)
+        .maybeSingle();
+      if (existing) return;
+    }
+    await supabase.from('saved_places').insert({
+      label: place.label,
+      latitude: place.latitude,
+      longitude: place.longitude,
+      google_place_id: place.placeId ?? null,
+      source: place.source ?? 'picked',
+      created_by: auth.user.id,
+    });
+  } catch {
+    /* table may be missing until the SQL is applied */
+  }
+}
+
 /**
- * Address search like Google Maps. Autocomplete order is kept; text search
- * only fills gaps. OpenStreetMap is used when Google returns nothing.
+ * Venue search stays within 50 km of the profile town.
+ * Area search is for choosing that town and is not limited to one country.
  */
 export async function searchPlaces(
   query: string,
@@ -403,24 +535,62 @@ export async function searchPlaces(
 ): Promise<GeoPlace[]> {
   const q = query.trim();
   if (q.length < 2) return [];
-  const bias = options?.bias ?? SI_CENTER;
+  const mode = options?.mode ?? 'venue';
+  const bias = options?.bias ?? null;
 
-  const [autocomplete, textSearch, photon] = await Promise.all([
-    searchGoogleAutocomplete(q, bias),
-    searchGooglePlacesNew(q, bias),
-    searchPhoton(q, bias, false),
-  ]);
-
-  const google = dedupePlaces([...autocomplete, ...textSearch]);
-  if (google.length) return google.slice(0, 8);
-
-  const maps = dedupePlaces(photon);
-  if (maps.length) {
-    return rankPlaces(maps, q, bias).slice(0, 8);
+  if (mode === 'area') {
+    const [google, photon] = await Promise.all([
+      searchGooglePlacesNew(q, null),
+      searchPhoton(q, bias, false),
+    ]);
+    const places = dedupePlaces([...google, ...photon]);
+    return (bias ? byDistance(places, bias) : places).slice(0, 8);
   }
 
-  const nominatim = await searchNominatim(q, { bias });
-  return rankPlaces(dedupePlaces(nominatim), q, bias).slice(0, 8);
+  if (!bias) return [];
+
+  const known = byDistance(await searchKnownPlaces(q, bias), bias);
+  if (known.length >= 3) return known.slice(0, 8);
+
+  const cached = await readPlaceCache(q, bias);
+  if (cached?.length) return byDistance(dedupePlaces([...known, ...cached]), bias).slice(0, 8);
+
+  const google = (await searchGooglePlacesNew(q, bias)).filter((p) => withinArea(p, bias));
+  if (google.length) {
+    await writePlaceCache(q, bias, google);
+    return byDistance(dedupePlaces([...known, ...google]), bias).slice(0, 8);
+  }
+
+  const d = 0.45;
+  const bbox = `${bias.longitude - d},${bias.latitude - d},${bias.longitude + d},${bias.latitude + d}`;
+  const photonUrl =
+    `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}` +
+    `&lang=default&limit=8&lat=${bias.latitude}&lon=${bias.longitude}&bbox=${bbox}`;
+  let photon: GeoPlace[] = [];
+  try {
+    const res = await fetch(photonUrl, { headers: { 'User-Agent': UA, Accept: 'application/json' } });
+    if (res.ok) {
+      const json = (await res.json()) as {
+        features?: { geometry: { coordinates: [number, number] }; properties: Record<string, unknown> }[];
+      };
+      photon = (json.features ?? []).map((f) => ({
+        label: formatPhotonLabel(f.properties),
+        latitude: f.geometry.coordinates[1],
+        longitude: f.geometry.coordinates[0],
+        source: 'photon' as const,
+      }));
+    }
+  } catch {
+    photon = [];
+  }
+  const local = photon.filter((p) => withinArea(p, bias));
+  if (local.length) return byDistance(dedupePlaces([...known, ...local]), bias).slice(0, 8);
+
+  const nominatim = await searchNominatim(q, { bias, bounded: true });
+  return byDistance(
+    dedupePlaces([...known, ...nominatim.filter((p) => withinArea(p, bias))]),
+    bias
+  ).slice(0, 8);
 }
 
 export async function reverseGeocode(point: GeoPoint): Promise<string> {

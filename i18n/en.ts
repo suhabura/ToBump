@@ -29,6 +29,9 @@ export const en = {
     emailNotConfirmed:
       'Email not confirmed yet. In Supabase → Authentication → Providers → Email turn off “Confirm email”, or confirm the message.',
     needSignupFields: 'Fill in first name, email, and password (min. 6 characters).',
+    needArea: 'Pick the town around which we should suggest courts. A city such as Kranj is enough.',
+    areaLabel: 'Around which place',
+    areaHint: 'It does not have to be your home address. A town such as Kranj is enough.',
     accountCreated:
       'Account created. If email confirmation is required, check your inbox — or turn off Confirm email in Supabase. Then log in.',
     forgotHint: 'Enter your account email and we’ll send a password reset link.',
@@ -231,6 +234,8 @@ export const en = {
     edit: 'Edit profile',
     phone: 'Phone',
     location: 'Location',
+    areaLabel: 'Town for court suggestions',
+    areaHint: 'Court suggestions stay within about 50 km of this place.',
     settings: 'Notification settings',
     changePassword: 'New password',
     notifications: 'Notifications',
@@ -687,6 +692,7 @@ export const en = {
     searching: 'Searching…',
     noResults: 'No map matches — try a street, venue or town name.',
     searchFailed: 'Location search failed.',
+    needArea: 'On your profile, pick the town around which we should search for courts.',
     allowAccess: 'Allow location access.',
     gpsFailed: "Couldn't get your location.",
     gettingGps: 'Getting…',

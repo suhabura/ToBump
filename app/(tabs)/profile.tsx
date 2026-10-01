@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { showToast } from '@/components/Toast';
+import { LocationField } from '@/components/LocationField';
 import { Button, Chip, Input, Muted, Screen, Subtitle, Title } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
@@ -15,6 +16,11 @@ export default function ProfileScreen() {
   const router = useRouter();
   const [firstName, setFirstName] = useState(profile?.first_name ?? '');
   const [lastName, setLastName] = useState(profile?.last_name ?? '');
+  const [area, setArea] = useState<{ address: string; latitude: number | null; longitude: number | null }>({
+    address: profile?.location ?? '',
+    latitude: profile?.latitude ?? null,
+    longitude: profile?.longitude ?? null,
+  });
   const [password, setPassword] = useState('');
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -24,6 +30,11 @@ export default function ProfileScreen() {
     if (!profile) return;
     setFirstName(profile.first_name ?? '');
     setLastName(profile.last_name ?? '');
+    setArea({
+      address: profile.location ?? '',
+      latitude: profile.latitude ?? null,
+      longitude: profile.longitude ?? null,
+    });
   }, [profile]);
 
   async function save() {
@@ -31,6 +42,9 @@ export default function ProfileScreen() {
     const { error } = await updateProfile({
       first_name: firstName.trim(),
       last_name: lastName.trim(),
+      location: area.address.trim() || null,
+      latitude: area.latitude,
+      longitude: area.longitude,
     });
     setSaving(false);
     if (error) Alert.alert(t.common.error, error);
@@ -61,6 +75,16 @@ export default function ProfileScreen() {
         <View style={{ height: 12 }} />
         <Input label={t.auth.firstName} value={firstName} onChangeText={setFirstName} />
         <Input label={t.auth.lastName} value={lastName} onChangeText={setLastName} />
+        <Muted>{t.profile.areaHint}</Muted>
+        <LocationField
+          purpose="area"
+          label={t.profile.areaLabel}
+          address={area.address}
+          latitude={area.latitude}
+          longitude={area.longitude}
+          showMyLocation={false}
+          onChange={setArea}
+        />
         <Button label={t.profile.save} onPress={save} loading={saving} />
 
         <View style={{ height: 24 }} />

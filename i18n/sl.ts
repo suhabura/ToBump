@@ -29,6 +29,9 @@ export const sl = {
     emailNotConfirmed:
       'E-pošta še ni potrjena. V Supabase → Authentication → Providers → Email izklopite “Confirm email” ali potrdite sporočilo.',
     needSignupFields: 'Izpolnite ime, e-pošto in geslo (vsaj 6 znakov).',
+    needArea: 'Izberi kraj, okoli katerega naj predlagamo igrišča. Dovolj je mesto, na primer Kranj.',
+    areaLabel: 'Okoli katerega kraja',
+    areaHint: 'Ni nujno tvoj domači naslov. Dovolj je mesto, na primer Kranj.',
     accountCreated:
       'Račun je ustvarjen. Če je potrebna potrditev e-pošte, preverite predal — ali v Supabase izklopite Confirm email. Nato se prijavite.',
     forgotHint: 'Vnesite e-pošto računa in poslali bomo povezavo za ponastavitev gesla.',
@@ -231,6 +234,8 @@ export const sl = {
     edit: 'Uredi profil',
     phone: 'Telefon',
     location: 'Lokacija',
+    areaLabel: 'Kraj za predloge igrišč',
+    areaHint: 'Predlogi igrišč so v krogu približno 50 km okoli tega kraja.',
     settings: 'Nastavitve obvestil',
     changePassword: 'Novo geslo',
     notifications: 'Obvestila',
@@ -685,6 +690,7 @@ export const sl = {
     searching: 'Iščem…',
     noResults: 'Ni zadetkov v zemljevidih — poskusi ulico, prizorišče ali kraj.',
     searchFailed: 'Iskanje lokacije ni uspelo.',
+    needArea: 'Na profilu izberi kraj, okoli katerega naj iščemo igrišča.',
     allowAccess: 'Dovoli dostop do lokacije.',
     gpsFailed: 'Lokacije ni bilo mogoče pridobiti.',
     gettingGps: 'Pridobivam…',

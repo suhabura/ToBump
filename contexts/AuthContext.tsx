@@ -14,7 +14,13 @@ type AuthContextValue = {
   refreshProfile: () => Promise<void>;
   refreshSettings: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
-  signUp: (email: string, password: string, firstName: string, lastName: string) => Promise<{ error?: string }>;
+  signUp: (
+    email: string,
+    password: string,
+    firstName: string,
+    lastName: string,
+    area?: { location: string; latitude: number; longitude: number }
+  ) => Promise<{ error?: string }>;
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<{ error?: string }>;
   updateProfile: (patch: Partial<Profile>) => Promise<{ error?: string }>;
@@ -98,14 +104,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
         return { error: error?.message };
       },
-      async signUp(email, password, firstName, lastName) {
-        const { error } = await supabase.auth.signUp({
+      async signUp(email, password, firstName, lastName, area) {
+        const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password,
           options: {
-            data: { first_name: firstName.trim(), last_name: lastName.trim() },
+            data: {
+              first_name: firstName.trim(),
+              last_name: lastName.trim(),
+              location: area?.location ?? '',
+              latitude: area != null ? String(area.latitude) : '',
+              longitude: area != null ? String(area.longitude) : '',
+            },
           },
         });
+        if (!error && data.session && area) {
+          await supabase
+            .from('profiles')
+            .update({
+              location: area.location,
+              latitude: area.latitude,
+              longitude: area.longitude,
+            })
+            .eq('id', data.session.user.id);
+        }
         return { error: error?.message };
       },
       async signOut() {

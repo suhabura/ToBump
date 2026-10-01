@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import { Linking, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import * as Location from 'expo-location';
 import { Button, Input, Muted } from '@/components/ui';
+import { useAuth } from '@/contexts/AuthContext';
 import {
-  SI_CENTER,
   distanceMeters,
   formatDistance,
   mapsUrl,
+  rememberPlace,
   reverseGeocode,
   searchPlaces,
   type GeoPlace,
@@ -35,8 +36,8 @@ type Props = {
   onDraftChange?: (text: string) => void;
   /** Clear selection (shows × on the selected cloud). */
   onClear?: () => void;
-  /** When false, do not repeat the typed/selected address under the input. */
-  showSelectionCard?: boolean;
+  /** area = choose the town for suggestions. venue = courts around that town. */
+  purpose?: 'venue' | 'area';
 };
 
 export function LocationField({
@@ -52,8 +53,10 @@ export function LocationField({
   onDraftChange,
   onClear,
   showSelectionCard = true,
+  purpose = 'venue',
 }: Props) {
   const t = useT();
+  const { profile } = useAuth();
   const [query, setQuery] = useState(address);
   const [focused, setFocused] = useState(false);
   const [results, setResults] = useState<GeoPlace[]>([]);
@@ -61,7 +64,11 @@ export function LocationField({
   const [gpsLoading, setGpsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [bias, setBias] = useState<GeoPoint | null>(
-    latitude != null && longitude != null ? { latitude, longitude } : SI_CENTER
+    purpose === 'venue' && profile?.latitude != null && profile.longitude != null
+      ? { latitude: profile.latitude, longitude: profile.longitude }
+      : latitude != null && longitude != null
+        ? { latitude, longitude }
+        : null
   );
   const picking = useRef(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,12 +78,14 @@ export function LocationField({
   }, [address, focused]);
 
   useEffect(() => {
-    if (latitude != null && longitude != null) {
-      setBias({ latitude, longitude });
+    if (purpose !== 'venue') return;
+    if (profile?.latitude != null && profile.longitude != null) {
+      setBias({ latitude: profile.latitude, longitude: profile.longitude });
     }
-  }, [latitude, longitude]);
+  }, [purpose, profile?.latitude, profile?.longitude]);
 
   useEffect(() => {
+    if (purpose === 'venue') return;
     let cancelled = false;
     (async () => {
       try {
@@ -89,13 +98,13 @@ export function LocationField({
           setBias({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
         }
       } catch {
-        /* keep SI / profile bias */
+        /* area search still works without a nearby point */
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [purpose]);
 
   useEffect(() => {
     if (timer.current) clearTimeout(timer.current);
@@ -108,11 +117,23 @@ export function LocationField({
       setResults([]);
       return;
     }
+    const area =
+      purpose === 'venue' && profile?.latitude != null && profile.longitude != null
+        ? { latitude: profile.latitude, longitude: profile.longitude }
+        : null;
+    if (purpose === 'venue' && !area) {
+      setResults([]);
+      setError(t.location.needArea);
+      return;
+    }
     timer.current = setTimeout(async () => {
       setSearching(true);
       setError(null);
       try {
-        const places = await searchPlaces(q, { bias });
+        const places = await searchPlaces(q, {
+          mode: purpose,
+          bias: purpose === 'venue' ? area : bias,
+        });
         setResults(places);
         if (!places.length) setError(null);
       } catch {
@@ -125,7 +146,7 @@ export function LocationField({
     return () => {
       if (timer.current) clearTimeout(timer.current);
     };
-  }, [query, address, latitude, longitude, bias, t.location.searchFailed]);
+  }, [query, address, latitude, longitude, bias, purpose, profile?.latitude, profile?.longitude, t.location.searchFailed, t.location.needArea]);
 
   function pick(place: GeoPlace) {
     picking.current = true;
@@ -138,6 +159,7 @@ export function LocationField({
     onDraftChange?.(place.label);
     setResults([]);
     setFocused(false);
+    if (purpose === 'venue') void rememberPlace(place);
   }
 
   function confirmManual() {
