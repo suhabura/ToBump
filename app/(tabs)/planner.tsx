@@ -15,7 +15,7 @@ import {
 import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, FlatList, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { WeatherBadge } from '@/components/WeatherBadge';
 import { Button, Chip, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
@@ -310,13 +310,56 @@ export default function PlannerScreen() {
   const [view, setView] = useState<'date' | 'upcoming' | 'organizing'>('date');
   const hasLoaded = useRef(false);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const swipeX = useRef(new Animated.Value(0)).current;
+  const peakDx = useRef(0);
+  const swipeLock = useRef(false);
+  const calWidth = useRef(280);
   const monthSwipe = useRef(
     PanResponder.create({
       onMoveShouldSetPanResponder: (_, gesture) =>
-        Math.abs(gesture.dx) > 18 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.2,
+        !swipeLock.current && Math.abs(gesture.dx) > 14 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.3,
+      onMoveShouldSetPanResponderCapture: (_, gesture) =>
+        !swipeLock.current && Math.abs(gesture.dx) > 14 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.3,
+      onPanResponderTerminationRequest: () => false,
+      onPanResponderGrant: () => {
+        peakDx.current = 0;
+        swipeX.stopAnimation();
+        swipeX.setValue(0);
+      },
+      onPanResponderMove: (_, gesture) => {
+        if (Math.abs(gesture.dx) > Math.abs(peakDx.current)) peakDx.current = gesture.dx;
+        const limit = Math.max(calWidth.current, 160);
+        swipeX.setValue(Math.max(-limit, Math.min(limit, gesture.dx)));
+      },
       onPanResponderRelease: (_, gesture) => {
-        if (Math.abs(gesture.dx) < 48 || Math.abs(gesture.dx) < Math.abs(gesture.dy)) return;
-        setMonth((current) => (gesture.dx < 0 ? addMonths(current, 1) : subMonths(current, 1)));
+        if (swipeLock.current) return;
+        const distance = Math.abs(peakDx.current) >= Math.abs(gesture.dx) ? peakDx.current : gesture.dx;
+        const dir = Math.sign(distance);
+        const flicked = Math.abs(gesture.vx) > 0.45 && Math.sign(gesture.vx) === dir;
+        const commit = dir !== 0 && (Math.abs(distance) >= 56 || (flicked && Math.abs(distance) >= 28));
+        if (!commit) {
+          Animated.spring(swipeX, { toValue: 0, useNativeDriver: false, speed: 20, bounciness: 0 }).start();
+          return;
+        }
+        swipeLock.current = true;
+        const width = Math.max(calWidth.current, 160);
+        const out = dir * width;
+        Animated.timing(swipeX, { toValue: out, duration: 160, useNativeDriver: false }).start(({ finished }) => {
+          if (!finished) {
+            swipeLock.current = false;
+            swipeX.setValue(0);
+            return;
+          }
+          setMonth((current) => (dir < 0 ? addMonths(current, 1) : subMonths(current, 1)));
+          swipeX.setValue(-out);
+          Animated.timing(swipeX, { toValue: 0, duration: 180, useNativeDriver: false }).start(() => {
+            swipeLock.current = false;
+          });
+        });
+      },
+      onPanResponderTerminate: () => {
+        peakDx.current = 0;
+        Animated.spring(swipeX, { toValue: 0, useNativeDriver: false, speed: 20, bounciness: 0 }).start();
       },
     })
   ).current;
@@ -771,7 +814,13 @@ export default function PlannerScreen() {
                     </Text>
                   ))}
                 </View>
-                <View style={styles.grid} {...monthSwipe.panHandlers}>
+                <View
+                  style={styles.gridClip}
+                  onLayout={(e) => {
+                    calWidth.current = e.nativeEvent.layout.width;
+                  }}
+                >
+                  <Animated.View style={[styles.grid, { transform: [{ translateX: swipeX }] }]} {...monthSwipe.panHandlers}>
                   {days.map((day) => {
                     const inMonth = isSameMonth(day, month);
                     const selected = isSameDay(day, selectedDay);
@@ -802,6 +851,7 @@ export default function PlannerScreen() {
                       </Pressable>
                     );
                   })}
+                  </Animated.View>
                 </View>
                 <View style={styles.legend}>
                   <View style={styles.legendItem}>
@@ -904,6 +954,7 @@ const styles = StyleSheet.create({
     color: theme.colors.textMuted,
     textTransform: 'uppercase',
   },
+  gridClip: { width: '100%', overflow: 'hidden' },
   grid: { flexDirection: 'row', flexWrap: 'wrap' },
   dayCell: {
     width: '14.28%',
