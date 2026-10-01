@@ -197,6 +197,7 @@ async function searchGoogleAutocomplete(query: string, bias?: GeoPoint | null): 
       body: JSON.stringify({
         input: query,
         languageCode: 'sl',
+        regionCode: 'SI',
         locationBias: {
           circle: {
             center: { latitude: center.latitude, longitude: center.longitude },
@@ -212,7 +213,7 @@ async function searchGoogleAutocomplete(query: string, bias?: GeoPoint | null): 
     const ids = (json.suggestions ?? [])
       .map((s) => s.placePrediction?.placeId)
       .filter((id): id is string => Boolean(id))
-      .slice(0, 6);
+      .slice(0, 8);
     const details = await Promise.all(ids.map((id) => googlePlaceDetails(id, key)));
     return details.filter((p): p is GeoPlace => p != null);
   } catch {
@@ -393,8 +394,8 @@ export type SearchPlacesOptions = {
 };
 
 /**
- * Address search like Google Maps: Places Autocomplete/Text Search,
- * then OpenStreetMap (Photon) if Google is unavailable.
+ * Address search like Google Maps. Autocomplete order is kept; text search
+ * only fills gaps. OpenStreetMap is used when Google returns nothing.
  */
 export async function searchPlaces(
   query: string,
@@ -411,17 +412,15 @@ export async function searchPlaces(
   ]);
 
   const google = dedupePlaces([...autocomplete, ...textSearch]);
-  if (google.length) {
-    return rankPlaces(google, q, bias).slice(0, 10);
-  }
+  if (google.length) return google.slice(0, 8);
 
   const maps = dedupePlaces(photon);
   if (maps.length) {
-    return rankPlaces(maps, q, bias).slice(0, 10);
+    return rankPlaces(maps, q, bias).slice(0, 8);
   }
 
   const nominatim = await searchNominatim(q, { bias });
-  return rankPlaces(dedupePlaces(nominatim), q, bias).slice(0, 10);
+  return rankPlaces(dedupePlaces(nominatim), q, bias).slice(0, 8);
 }
 
 export async function reverseGeocode(point: GeoPoint): Promise<string> {
