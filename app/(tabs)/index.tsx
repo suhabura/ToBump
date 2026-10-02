@@ -23,7 +23,7 @@ import { isSeriesActivity, localDayKey } from '@/lib/recurrence';
 import { fetchSkippedDays } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
-import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName, eventIsFull } from '@/lib/types';
+import { activityCapacityRange, activityLocationLabel, activityPriceLabel, displayName, eventIsFull } from '@/lib/types';
 import { eventWeatherPoint } from '@/lib/weather';
 import { useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
@@ -354,7 +354,7 @@ export default function EventsScreen() {
               item.max_participants != null && (item.join_count ?? 0) >= item.max_participants;
             const location = activityLocationLabel(item);
             const capRange = activityCapacityRange(item);
-            const cat = categoryLabel(item.categories) ?? item.title;
+            const cat = item.title;
             const busy = busyId === item.id;
             const host = isOrganizer ? '' : displayName(item.profiles);
             const weather = eventWeatherPoint(item);

@@ -14,10 +14,7 @@ import {
 
 const STORAGE_KEY = 'tobump_locale';
 
-export const LOCALES: { code: Locale; label: string }[] = [
-  { code: 'en', label: 'English' },
-  { code: 'sl', label: 'Slovenščina' },
-];
+export const LOCALES: { code: Locale; label: string }[] = [{ code: 'en', label: 'English' }];
 
 export function resolveActivityCategoryKey(input: string, locale: Locale = getLocale()): string | null {
   return resolveCategoryKey(input, getCategoryLabels(locale));
@@ -31,8 +28,7 @@ type I18nContextValue = {
 
 const I18nContext = createContext<I18nContextValue | undefined>(undefined);
 
-function normalizeLocale(value: unknown): Locale {
-  if (value === 'sl' || value === 'en') return value;
+function normalizeLocale(_value: unknown): Locale {
   return 'en';
 }
 

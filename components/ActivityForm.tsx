@@ -50,7 +50,7 @@ import {
 import { supabase } from '@/lib/supabase';
 import type { Category, Enterprise, FinanceWhoPays, FundingMode, Privacy, Profile } from '@/lib/types';
 import { displayName } from '@/lib/types';
-import { categoryDisplayName, resolveActivityCategoryKey, useLocale, useT } from '@/i18n';
+import { resolveActivityCategoryKey, useLocale, useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
 type Props = {
@@ -209,11 +209,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const router = useRouter();
   const t = useT();
   const { locale } = useLocale();
-  const [title, setTitle] = useState(() => {
-    const raw = initial?.title ?? '';
-    const key = resolveActivityCategoryKey(raw);
-    return key ? categoryDisplayName(key, locale) : raw;
-  });
+  const [title, setTitle] = useState(initial?.title ?? '');
   const [startsAt, setStartsAt] = useState<Date | null>(parseInitialDate(initial?.starts_at));
   const [price, setPrice] = useState(
     initial?.finance_enabled && initial?.price != null ? String(initial.price) : ''
@@ -345,13 +341,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     if (recurrenceMode !== 'weekly') return null;
     return firstOccurrence(seriesFromDate, rules, { now: new Date(), until: recurrenceUntil });
   }, [recurrenceMode, seriesFromDate, rules, recurrenceUntil]);
-
-  useEffect(() => {
-    const key = resolveActivityCategoryKey(title, locale);
-    if (key) setTitle(categoryDisplayName(key, locale));
-    // Re-label when UI language changes; ignore free-text that isn't a known category
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [locale]);
 
   function onVenueLocationChange(next: {
     address: string;
@@ -572,7 +561,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
   function setRecurringMode(mode: 'once' | 'weekly' | 'dates') {
     setRecurrenceMode(mode);
-    if (mode !== 'once') setMoreOpen(true);
     if (mode === 'once') {
       setRules([]);
       setRecurrenceUntil(null);
@@ -705,17 +693,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
     if (Object.keys(missing).length || !startToSave || minNum === 'invalid' || minNum == null || maxNum === 'invalid') {
       setFieldErrors(missing);
-      if (
-        missing.dates ||
-        missing.weekdays ||
-        missing.seriesEnd ||
-        missing.first ||
-        missing.price ||
-        (missing.when && recurrenceMode !== 'once') ||
-        (missing.end && recurrenceMode !== 'once')
-      ) {
-        setMoreOpen(true);
-      }
       return;
     }
 
@@ -726,7 +703,7 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       const category_id = categoryKey
         ? matchedCategoryId ?? (await findCategoryId(categoryKey))
         : null;
-      const titleToSave = (categoryKey ?? title.trim()).trim();
+      const titleToSave = title.trim();
       if (!titleToSave) {
         setFieldErrors({ title: t.form.needActivityStart });
         return;

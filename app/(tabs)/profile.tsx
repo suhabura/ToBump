@@ -3,15 +3,14 @@ import { Alert, ScrollView, StyleSheet, Switch, Text, View } from 'react-native'
 import { useRouter } from 'expo-router';
 import { showToast } from '@/components/Toast';
 import { LocationField } from '@/components/LocationField';
-import { Button, Chip, Input, Muted, Screen, Subtitle, Title } from '@/components/ui';
+import { Button, Input, Muted, Screen, Subtitle, Title } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/lib/supabase';
-import { LOCALES, useLocale, useT, type Locale } from '@/i18n';
+import { useT } from '@/i18n';
 import { theme } from '@/constants/theme';
 
 export default function ProfileScreen() {
   const t = useT();
-  const { locale, setLocale } = useLocale();
   const { profile, settings, updateProfile, updateSettings, signOut } = useAuth();
   const router = useRouter();
   const [firstName, setFirstName] = useState(profile?.first_name ?? '');
@@ -86,20 +85,6 @@ export default function ProfileScreen() {
           onChange={setArea}
         />
         <Button label={t.profile.save} onPress={save} loading={saving} />
-
-        <View style={{ height: 24 }} />
-        <Subtitle>{t.profile.language}</Subtitle>
-        <Muted>{t.profile.languageHint}</Muted>
-        <View style={styles.langRow}>
-          {LOCALES.map((item) => (
-            <Chip
-              key={item.code}
-              label={item.label}
-              active={locale === item.code}
-              onPress={() => setLocale(item.code as Locale)}
-            />
-          ))}
-        </View>
 
         <View style={{ height: 24 }} />
         <Subtitle>{t.profile.settings}</Subtitle>
@@ -188,7 +173,6 @@ function SettingRow({
 }
 
 const styles = StyleSheet.create({
-  langRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8, marginBottom: 8 },
   setting: {
     flexDirection: 'row',
     alignItems: 'center',

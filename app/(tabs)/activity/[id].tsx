@@ -32,7 +32,7 @@ import { seriesKey } from '@/lib/finance';
 import { fetchSeriesFollows, fetchSkippedDays, markSeriesDaySkipped, setSeriesFollow } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations, Profile } from '@/lib/types';
-import { activityPriceLabel, activityVenuePoint, categoryLabel, displayName } from '@/lib/types';
+import { activityPriceLabel, activityVenuePoint, displayName } from '@/lib/types';
 import { eventWeatherPoint } from '@/lib/weather';
 import { mapsUrl } from '@/lib/geo';
 import { useLocale, useT } from '@/i18n';
@@ -561,9 +561,6 @@ export default function ActivityDetailScreen() {
   const showPlanner = Boolean(user && isSeriesActivity(activity));
   const participantCount = participants.length + guests.length;
   const signupLine = signupSummary(participantCount, activity, t.events);
-  const category = categoryLabel(activity.categories);
-  const showCategory =
-    Boolean(category) && category!.trim().toLowerCase() !== activity.title.trim().toLowerCase();
   const weather = eventWeatherPoint(activity);
   const place = activity.enterprises;
   const placeName = place?.name ?? activity.venue_text?.trim() ?? null;
@@ -611,7 +608,6 @@ export default function ActivityDetailScreen() {
       <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
         <View style={styles.titleRow}>
           <View style={styles.titleMain}>
-            {showCategory ? <Text style={styles.categoryOver}>{category}</Text> : null}
             <Title>{activity.title}</Title>
           </View>
           {weather ? (
@@ -1003,12 +999,6 @@ const styles = StyleSheet.create({
   },
   titleMain: {
     flex: 1,
-  },
-  categoryOver: {
-    color: theme.colors.textMuted,
-    fontSize: 12,
-    fontWeight: '600',
-    marginBottom: 2,
   },
   factBlock: {
     marginTop: 10,

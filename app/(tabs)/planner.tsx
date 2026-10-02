@@ -38,7 +38,7 @@ import {
 } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
-import { activityCapacityRange, activityLocationLabel, activityPriceLabel, categoryLabel, displayName, eventIsFull } from '@/lib/types';
+import { activityCapacityRange, activityLocationLabel, activityPriceLabel, displayName, eventIsFull } from '@/lib/types';
 import { eventWeatherPoint } from '@/lib/weather';
 import { showAlert } from '@/lib/dialog';
 import { useLocale, useT } from '@/i18n';
@@ -692,7 +692,7 @@ export default function PlannerScreen() {
     const isMine = item.created_by === user?.id;
     const isJoined = !item.virtual && joinedIds.has(item.id);
     const busy = busyKey === item.slotKey;
-    const cat = categoryLabel(item.categories) ?? item.title;
+    const cat = item.title;
     const host = isMine ? '' : displayName(item.profiles);
     const capRange = activityCapacityRange(item);
     const weather = eventWeatherPoint(item);
