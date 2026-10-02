@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, PanResponder, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { WeatherBadge } from '@/components/WeatherBadge';
-import { Button, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
+import { Button, Chip, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureDueRecurringActivities } from '@/lib/api';
 import { seriesKey } from '@/lib/finance';
@@ -308,6 +308,7 @@ export default function PlannerScreen() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [chip, setChip] = useState<'following' | 'signed' | 'organizing'>('following');
   const hasLoaded = useRef(false);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipeX = useRef(new Animated.Value(0)).current;
@@ -747,16 +748,20 @@ export default function PlannerScreen() {
   const selectedHeading = selectedIsToday
     ? t.planner.todayHeading
     : format(selectedDay, 'EEEE, d. M. yyyy', { locale: dfLocale });
-  const categorySections = [
-    following.length ? { key: 'following', title: t.planner.following, data: following } : null,
-    upcoming.length ? { key: 'signed', title: t.planner.upcomingEvents, data: upcoming } : null,
-    organizing.length ? { key: 'organizing', title: t.planner.organizing, data: organizing } : null,
-  ].filter((section): section is { key: string; title: string; data: PlannerItem[] } => section != null);
+  const chips = [
+    following.length ? { key: 'following' as const, label: t.planner.following, data: following } : null,
+    upcoming.length ? { key: 'signed' as const, label: t.planner.upcomingEvents, data: upcoming } : null,
+    organizing.length ? { key: 'organizing' as const, label: t.planner.organizing, data: organizing } : null,
+  ].filter((item): item is { key: 'following' | 'signed' | 'organizing'; label: string; data: PlannerItem[] } => item != null);
+  const selectedKey = chips.some((item) => item.key === chip) ? chip : (chips[0]?.key ?? null);
+  const selectedEvents = chips.find((item) => item.key === selectedKey)?.data ?? [];
   const sections = calendarOpen
     ? selectedDayEvents.length
       ? [{ key: 'day', title: '', data: selectedDayEvents }]
       : []
-    : categorySections;
+    : selectedEvents.length
+      ? [{ key: 'list', title: '', data: selectedEvents }]
+      : [];
   const emptyTitle = calendarOpen ? t.planner.emptyDay : t.planner.emptyPlanner;
 
   async function onJoinSlot(item: PlannerItem) {
@@ -894,7 +899,7 @@ export default function PlannerScreen() {
           sections={sections}
           keyExtractor={(i) => i.slotKey}
           stickySectionHeadersEnabled={false}
-          extraData={`${calendarOpen}:${dayKey(selectedDay)}:${joinedIds.size}:${follows.size}:${busyKey}:${organizing.length}:${following.length}`}
+          extraData={`${calendarOpen}:${selectedKey}:${dayKey(selectedDay)}:${joinedIds.size}:${follows.size}:${busyKey}:${organizing.length}:${following.length}`}
           contentContainerStyle={styles.listContent}
           renderSectionHeader={({ section }) =>
             section.title ? (
@@ -906,14 +911,6 @@ export default function PlannerScreen() {
           ListHeaderComponent={
             calendarOpen ? (
             <View style={styles.column}>
-              <Pressable
-                onPress={() => setCalendarOpen(false)}
-                style={styles.backBtn}
-                accessibilityRole="button"
-                accessibilityLabel={t.planner.back}>
-                <FontAwesome name="angle-left" size={18} color={theme.colors.primary} />
-                <Text style={styles.backText}>{t.planner.back}</Text>
-              </Pressable>
               <View style={styles.calCard}>
                 <View style={styles.monthRow}>
                   <Pressable onPress={() => setMonth((m) => subMonths(m, 1))} style={styles.monthBtn}>
@@ -986,6 +983,17 @@ export default function PlannerScreen() {
                 <Subtitle>{selectedHeading}</Subtitle>
               </View>
             </View>
+            ) : chips.length ? (
+              <View style={styles.tabs}>
+                {chips.map((item) => (
+                  <Chip
+                    key={item.key}
+                    label={item.label}
+                    active={item.key === selectedKey}
+                    onPress={() => setChip(item.key)}
+                  />
+                ))}
+              </View>
             ) : null
           }
           ListEmptyComponent={<EmptyState title={emptyTitle} />}
@@ -993,11 +1001,15 @@ export default function PlannerScreen() {
         />
         <View style={styles.fabWrap} pointerEvents="box-none">
           <Pressable
-            onPress={() => setCalendarOpen(true)}
-            style={({ pressed }) => [styles.fab, pressed ? { opacity: 0.9, transform: [{ scale: 0.96 }] } : null]}
+            onPress={() => setCalendarOpen((open) => !open)}
+            style={({ pressed }) => [
+              styles.fab,
+              calendarOpen ? styles.fabOpen : null,
+              pressed ? { opacity: 0.9, transform: [{ scale: 0.96 }] } : null,
+            ]}
             accessibilityRole="button"
             accessibilityLabel={t.planner.calendar}>
-            <FontAwesome name="calendar" size={22} color="#fff" />
+            <FontAwesome name="calendar" size={22} color={calendarOpen ? theme.colors.primaryDark : '#fff'} />
           </Pressable>
         </View>
         </>
@@ -1016,18 +1028,11 @@ const styles = StyleSheet.create({
   column: {
     width: '100%',
   },
-  backBtn: {
+  tabs: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    alignSelf: 'flex-start',
-    marginBottom: 12,
-    paddingVertical: 4,
-  },
-  backText: {
-    color: theme.colors.primary,
-    fontWeight: '700',
-    fontSize: 16,
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 16,
   },
   fabWrap: {
     position: 'absolute',
@@ -1048,6 +1053,11 @@ const styles = StyleSheet.create({
     shadowRadius: 10,
     shadowOffset: { width: 0, height: 4 },
     elevation: 6,
+  },
+  fabOpen: {
+    backgroundColor: theme.colors.primarySoft,
+    borderWidth: 2,
+    borderColor: theme.colors.primary,
   },
   calCard: {
     backgroundColor: theme.colors.surface,
