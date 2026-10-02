@@ -10,6 +10,38 @@ import { useT } from '@/i18n';
 import { notificationSinceIso, pruneOldNotifications } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
+const LOCKUP_W = 1144;
+const LOCKUP_H = 448;
+const LOCKUP_DISPLAY_H = 56;
+const lockupScale = LOCKUP_DISPLAY_H / LOCKUP_H;
+
+function LockupCrop({
+  from,
+  to,
+  label,
+  style,
+}: {
+  from: number;
+  to: number;
+  label?: string;
+  style?: object;
+}) {
+  const width = Math.round((to - from) * lockupScale);
+  return (
+    <View
+      style={[styles.lockupClip, { width }, style]}
+      accessibilityLabel={label}
+      accessibilityRole={label ? 'image' : undefined}>
+      <Image
+        source={require('../../assets/brand/logo-lockup.png')}
+        style={[styles.lockupImage, { left: Math.round(-from * lockupScale) }]}
+        resizeMode="stretch"
+        accessible={false}
+      />
+    </View>
+  );
+}
+
 function TabIcon({
   name,
   color,
@@ -100,17 +132,10 @@ function TabAppHeader({ unread, events }: { unread: number; events?: boolean }) 
       ) : (
         <View style={styles.headerBar} accessibilityRole="header">
           <View style={styles.headerSlot}>
-            <Text style={styles.brandTab} numberOfLines={1}>
-              {t.appName}
-            </Text>
+            <LockupCrop from={486} to={1144} label={t.appName} style={styles.brandWord} />
           </View>
           <View style={styles.logoWrap} pointerEvents="none">
-            <Image
-              source={require('../../assets/brand/mark.png')}
-              style={styles.brandLogo}
-              resizeMode="contain"
-              accessibilityLabel={t.appName}
-            />
+            <LockupCrop from={40} to={410} />
           </View>
           <View style={[styles.headerSlot, styles.headerSlotRight]}>
             {events ? (
@@ -379,17 +404,18 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  brandLogo: {
-    height: 48,
-    width: 48,
+  lockupClip: {
+    height: LOCKUP_DISPLAY_H,
+    overflow: 'hidden',
   },
-  brandTab: {
+  lockupImage: {
+    position: 'absolute',
+    top: 0,
+    width: Math.round(LOCKUP_W * lockupScale),
+    height: LOCKUP_DISPLAY_H,
+  },
+  brandWord: {
     marginLeft: 12,
-    maxWidth: '100%',
-    fontSize: 18,
-    fontWeight: '700',
-    color: theme.colors.primaryDark,
-    letterSpacing: -0.2,
   },
   tabIconWrap: {
     borderRadius: 12,
