@@ -15,10 +15,10 @@ import {
 import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, FlatList, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, PanResponder, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { WeatherBadge } from '@/components/WeatherBadge';
-import { Button, Chip, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
+import { Button, EmptyState, Loading, Screen, Subtitle } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { ensureDueRecurringActivities } from '@/lib/api';
 import { seriesKey } from '@/lib/finance';
@@ -307,7 +307,7 @@ export default function PlannerScreen() {
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
-  const [view, setView] = useState<'date' | 'upcoming' | 'organizing'>('date');
+  const [calendarOpen, setCalendarOpen] = useState(false);
   const hasLoaded = useRef(false);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipeX = useRef(new Animated.Value(0)).current;
@@ -645,6 +645,98 @@ export default function PlannerScreen() {
     return Array.from(bySeries.values()).sort((a, b) => a.starts_at.localeCompare(b.starts_at));
   }, [organizingRows, skippedBySeries, user?.id]);
 
+  const following = useMemo(() => {
+    const from = startOfDay(new Date());
+    const horizon = addDays(from, 90);
+    const joinedDay = new Set(
+      joinedFuture
+        .filter((a) => a.status === 'active')
+        .map((a) => `${seriesKey(a)}:${localDayKey(new Date(a.starts_at))}`)
+    );
+    const bySeries = new Map<string, ActivityWithRelations[]>();
+    for (const row of items) {
+      const sid = seriesKey(row);
+      if (!follows.has(sid) || row.created_by === user?.id) continue;
+      const rows = bySeries.get(sid) ?? [];
+      rows.push(row);
+      bySeries.set(sid, rows);
+    }
+    const out: PlannerItem[] = [];
+    for (const [sid, rows] of bySeries) {
+      const template = rows.reduce((best, row) => {
+        const score = (row.recurrence_dates?.length ?? 0) + (row.recurrence_rules?.length ?? 0);
+        const bestScore = (best.recurrence_dates?.length ?? 0) + (best.recurrence_rules?.length ?? 0);
+        return score > bestScore ? row : best;
+      });
+      const skipped = skippedBySeries.get(sid) ?? new Set<string>();
+      if (!isSeriesActivity(template)) {
+        const starts = new Date(template.starts_at);
+        if (
+          template.status !== 'cancelled' &&
+          starts.getTime() >= Date.now() &&
+          !joinedIds.has(template.id)
+        ) {
+          out.push({
+            ...template,
+            join_count: signupCount(template),
+            slotKey: template.id,
+            virtual: false,
+            skipped: false,
+          });
+        }
+        continue;
+      }
+      const endRaw = seriesEndFromRows(rows);
+      const until = endRaw ? new Date(`${endRaw}T12:00:00`) : horizon;
+      const rangeEnd = until.getTime() < horizon.getTime() ? until : horizon;
+      let seriesStart = template.starts_at;
+      for (const row of rows) {
+        if (new Date(row.starts_at).getTime() < new Date(seriesStart).getTime()) seriesStart = row.starts_at;
+      }
+      const extraDates = Array.from(new Set(rows.flatMap((row) => row.recurrence_dates ?? [])));
+      const realByDay = new Map(rows.map((row) => [`${sid}:${localDayKey(new Date(row.starts_at))}`, row]));
+      for (const slot of expandSeriesSlots(
+        {
+          ...template,
+          starts_at: seriesStart,
+          recurrence_until: endRaw ?? template.recurrence_until,
+          recurrence_dates: extraDates,
+        },
+        from,
+        rangeEnd,
+        new Set()
+      )) {
+        if (slot.startsAt.getTime() < Date.now()) continue;
+        const mapKey = `${sid}:${slot.day}`;
+        if (joinedDay.has(mapKey)) continue;
+        const real = realByDay.get(mapKey);
+        if (real?.status === 'cancelled' || (real && joinedIds.has(real.id))) continue;
+        const durationMs = slot.durationMinutes != null ? slot.durationMinutes * 60_000 : null;
+        if (real) {
+          out.push({
+            ...real,
+            join_count: signupCount(real),
+            slotKey: mapKey,
+            virtual: false,
+            skipped: skipped.has(slot.day),
+          });
+        } else {
+          out.push({
+            ...template,
+            join_count: 0,
+            starts_at: slot.startsAt.toISOString(),
+            ends_at: durationMs != null ? new Date(slot.startsAt.getTime() + durationMs).toISOString() : null,
+            duration_minutes: slot.durationMinutes,
+            slotKey: mapKey,
+            virtual: true,
+            skipped: skipped.has(slot.day),
+          });
+        }
+      }
+    }
+    return out.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
+  }, [items, follows, joinedFuture, joinedIds, skippedBySeries, user?.id]);
+
   const weekLabels = useMemo(
     () => days.slice(0, 7).map((d) => format(d, 'EEEEEE', { locale: dfLocale })),
     [days, dfLocale]
@@ -655,9 +747,17 @@ export default function PlannerScreen() {
   const selectedHeading = selectedIsToday
     ? t.planner.todayHeading
     : format(selectedDay, 'EEEE, d. M. yyyy', { locale: dfLocale });
-  const shown = view === 'date' ? selectedDayEvents : view === 'upcoming' ? upcoming : organizing;
-  const emptyTitle =
-    view === 'date' ? t.planner.emptyDay : view === 'upcoming' ? t.planner.empty : t.planner.organizingEmpty;
+  const categorySections = [
+    following.length ? { key: 'following', title: t.planner.following, data: following } : null,
+    upcoming.length ? { key: 'signed', title: t.planner.upcomingEvents, data: upcoming } : null,
+    organizing.length ? { key: 'organizing', title: t.planner.organizing, data: organizing } : null,
+  ].filter((section): section is { key: string; title: string; data: PlannerItem[] } => section != null);
+  const sections = calendarOpen
+    ? selectedDayEvents.length
+      ? [{ key: 'day', title: '', data: selectedDayEvents }]
+      : []
+    : categorySections;
+  const emptyTitle = calendarOpen ? t.planner.emptyDay : t.planner.emptyPlanner;
 
   async function onJoinSlot(item: PlannerItem) {
     if (!user) return;
@@ -788,13 +888,32 @@ export default function PlannerScreen() {
       {loading && !hasLoaded.current ? (
         <Loading />
       ) : (
-        <FlatList
-          data={shown}
+        <>
+        <SectionList
+          style={{ flex: 1 }}
+          sections={sections}
           keyExtractor={(i) => i.slotKey}
-          extraData={`${view}:${dayKey(selectedDay)}:${joinedIds.size}:${follows.size}:${busyKey}:${organizing.length}`}
+          stickySectionHeadersEnabled={false}
+          extraData={`${calendarOpen}:${dayKey(selectedDay)}:${joinedIds.size}:${follows.size}:${busyKey}:${organizing.length}:${following.length}`}
           contentContainerStyle={styles.listContent}
+          renderSectionHeader={({ section }) =>
+            section.title ? (
+              <View style={styles.section}>
+                <Subtitle>{section.title}</Subtitle>
+              </View>
+            ) : null
+          }
           ListHeaderComponent={
+            calendarOpen ? (
             <View style={styles.column}>
+              <Pressable
+                onPress={() => setCalendarOpen(false)}
+                style={styles.backBtn}
+                accessibilityRole="button"
+                accessibilityLabel={t.planner.back}>
+                <FontAwesome name="angle-left" size={18} color={theme.colors.primary} />
+                <Text style={styles.backText}>{t.planner.back}</Text>
+              </Pressable>
               <View style={styles.calCard}>
                 <View style={styles.monthRow}>
                   <Pressable onPress={() => setMonth((m) => subMonths(m, 1))} style={styles.monthBtn}>
@@ -832,7 +951,6 @@ export default function PlannerScreen() {
                         onPress={() => {
                           setSelectedDay(startOfDay(day));
                           if (!isSameMonth(day, month)) setMonth(startOfMonth(day));
-                          setView('date');
                         }}
                         style={[
                           styles.dayCell,
@@ -864,37 +982,25 @@ export default function PlannerScreen() {
                   </View>
                 </View>
               </View>
-
-              <View style={styles.tabs}>
-                <Chip
-                  label={t.planner.byDate}
-                  active={view === 'date'}
-                  onPress={() => setView('date')}
-                />
-                <Chip
-                  label={t.planner.upcomingEvents}
-                  active={view === 'upcoming'}
-                  onPress={() => setView('upcoming')}
-                />
-                <Chip
-                  label={t.planner.organizing}
-                  active={view === 'organizing'}
-                  onPress={() => setView('organizing')}
-                />
+              <View style={styles.section}>
+                <Subtitle>{selectedHeading}</Subtitle>
               </View>
-
-              {view === 'date' ? (
-                <View style={styles.section}>
-                  <Subtitle>{selectedHeading}</Subtitle>
-                </View>
-              ) : null}
             </View>
+            ) : null
           }
           ListEmptyComponent={<EmptyState title={emptyTitle} />}
-          renderItem={({ item }) =>
-            renderEventCard(item)
-          }
+          renderItem={({ item }) => renderEventCard(item)}
         />
+        <View style={styles.fabWrap} pointerEvents="box-none">
+          <Pressable
+            onPress={() => setCalendarOpen(true)}
+            style={({ pressed }) => [styles.fab, pressed ? { opacity: 0.9, transform: [{ scale: 0.96 }] } : null]}
+            accessibilityRole="button"
+            accessibilityLabel={t.planner.calendar}>
+            <FontAwesome name="calendar" size={22} color="#fff" />
+          </Pressable>
+        </View>
+        </>
       )}
     </Screen>
   );
@@ -902,7 +1008,7 @@ export default function PlannerScreen() {
 
 const styles = StyleSheet.create({
   listContent: {
-    paddingBottom: 32,
+    paddingBottom: 96,
     width: '100%',
     maxWidth: 720,
     alignSelf: 'center',
@@ -910,12 +1016,38 @@ const styles = StyleSheet.create({
   column: {
     width: '100%',
   },
-  tabs: {
+  backBtn: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 0,
-    marginBottom: 16,
+    alignItems: 'center',
+    gap: 6,
+    alignSelf: 'flex-start',
+    marginBottom: 12,
+    paddingVertical: 4,
+  },
+  backText: {
+    color: theme.colors.primary,
+    fontWeight: '700',
+    fontSize: 16,
+  },
+  fabWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 12,
+    alignItems: 'center',
+  },
+  fab: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: theme.colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#355A3C',
+    shadowOpacity: 0.28,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 6,
   },
   calCard: {
     backgroundColor: theme.colors.surface,
