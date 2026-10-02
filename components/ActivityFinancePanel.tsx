@@ -50,7 +50,6 @@ import { theme } from '@/constants/theme';
 type Props = {
   activity: ActivityWithRelations;
   userId: string;
-  canManage: boolean;
   attendees: Profile[];
 };
 
@@ -129,8 +128,9 @@ function errorMessage(e: unknown, fallback: string): string {
   return fallback;
 }
 
-export function ActivityFinancePanel({ activity, userId, canManage, attendees }: Props) {
+export function ActivityFinancePanel({ activity, userId, attendees }: Props) {
   const t = useT();
+  const isOrganizer = activity.created_by === userId;
   const sid = seriesKey(activity);
   const [tab, setTab] = useState<Tab>('overview');
   const [personFilter, setPersonFilter] = useState<PersonFilter>('all');
@@ -466,7 +466,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   }, [obligations]);
 
   async function onRecordPayment() {
-    if (!canManage || !detailUserId) return;
+    if (!isOrganizer || !detailUserId) return;
     const n = Number(payAmount.replace(',', '.'));
     if (!Number.isFinite(n) || n <= 0) {
       Alert.alert(t.common.error, t.finance.needAmount);
@@ -501,7 +501,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   }
 
   async function onSaveSettings() {
-    if (!canManage || !detailUserId || !financeSettings) return;
+    if (!isOrganizer || !detailUserId || !financeSettings) return;
     const n = Number(editAmount.replace(',', '.'));
     if (!Number.isFinite(n) || n < 0) {
       Alert.alert(t.common.error, t.finance.needAmount);
@@ -528,7 +528,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   }
 
   async function onChargeIfNeeded() {
-    if (!canManage || !detailUserId || !financeSettings) return;
+    if (!isOrganizer || !detailUserId || !financeSettings) return;
     setBusy(true);
     try {
       const { amount } = resolveMemberFinance(financeSettings, overrideMap, detailUserId);
@@ -547,7 +547,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   }
 
   async function onToggleGuestPaid(guest: GuestDebtRow, paid: boolean) {
-    if (!canManage) return;
+    if (!isOrganizer) return;
     setBusy(true);
     try {
       await setGuestAttendancePaid(guest.attendanceId, paid);
@@ -560,7 +560,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
   }
 
   async function onAddExpense() {
-    if (!canManage) return;
+    if (!isOrganizer) return;
     const n = Number(expAmount.replace(',', '.'));
     if (!expTitle.trim()) {
       Alert.alert(t.common.error, t.finance.needTitle);
@@ -596,6 +596,33 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
 
   if (loading) return <Muted>{t.common.loading}</Muted>;
 
+  if (!isOrganizer) {
+    const mine = personRows.find((row) => row.userId === userId) ?? null;
+    return (
+      <View style={{ gap: 12 }}>
+        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <View style={styles.card}>
+          <Text style={styles.infoTitle}>{t.finance.yourBalance}</Text>
+          {mine ? (
+            <>
+              {personChargeLines(mine, t).map((line) => (
+                <Muted key={line}>{line}</Muted>
+              ))}
+              <Text style={styles.amountLine}>
+                {t.finance.paidLabel}: {formatEuro(mine.paid)}
+              </Text>
+              <Text style={styles.amountLine}>
+                {t.finance.openBalance}: {formatEuro(mine.open)}
+              </Text>
+            </>
+          ) : (
+            <Muted>{t.finance.nothingForYou}</Muted>
+          )}
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={{ gap: 12 }}>
       {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -610,7 +637,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
           active={tab === 'transactions'}
           onPress={() => setTab('transactions')}
         />
-        {canManage ? (
+        {isOrganizer ? (
           <Chip
             label={t.finance.addExpenseAction}
             active={tab === 'expense'}
@@ -618,8 +645,6 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
           />
         ) : null}
       </View>
-
-      {!canManage ? <Muted>{t.finance.viewOnly}</Muted> : null}
 
       {tab === 'overview' ? (
         <View style={{ gap: 12 }}>
@@ -720,7 +745,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
                     </View>
                     <StatusBadge status={status} t={t} />
                   </View>
-                  {canManage ? (
+                  {isOrganizer ? (
                     <View style={[styles.actions, { paddingHorizontal: 4, paddingBottom: 8 }]}>
                       {g.status !== 'paid' ? (
                         <Pressable disabled={busy} onPress={() => void onToggleGuestPaid(g, true)}>
@@ -783,7 +808,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
                         {t.finance.openBalance}: {formatEuro(detailRow.open)}
                       </Muted>
 
-                      {canManage ? (
+                      {isOrganizer ? (
                         <>
                           {!editing ? (
                             <View style={styles.actions}>
@@ -949,7 +974,7 @@ export function ActivityFinancePanel({ activity, userId, canManage, attendees }:
         </View>
       ) : null}
 
-      {tab === 'expense' && canManage ? (
+      {tab === 'expense' && isOrganizer ? (
         <View style={styles.card}>
           <Subtitle>{t.finance.addExpenseAction}</Subtitle>
           <Muted>{t.finance.fromBudgetHint}</Muted>

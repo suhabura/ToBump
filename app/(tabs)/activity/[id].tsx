@@ -61,6 +61,7 @@ function signupSummary(
 }
 
 function ResponseGroup({ title, people }: { title: string; people: Profile[] }) {
+  if (!people.length) return null;
   return (
     <View style={styles.responseGroup}>
       <Text style={styles.responseTitle}>
@@ -101,7 +102,8 @@ export default function ActivityDetailScreen() {
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoaded = useRef(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [tab, setTab] = useState<'details' | 'finance'>(financeTab ?? 'details');
+  const [tab, setTab] = useState<'details' | 'finance' | 'edit'>(financeTab ?? 'details');
+  const [editPart, setEditPart] = useState<'event' | 'series'>('event');
   const tabRef = useRef(tab);
   tabRef.current = tab;
   const [following, setFollowing] = useState(false);
@@ -583,6 +585,20 @@ export default function ActivityDetailScreen() {
     : null;
   const full =
     activity.max_participants != null && participantCount >= activity.max_participants;
+  const whenText = `${format(new Date(activity.starts_at), 'EEEE, d MMMM yyyy · HH:mm', { locale: dfLocale })}${
+    activity.ends_at ? ` – ${format(new Date(activity.ends_at), 'HH:mm', { locale: dfLocale })}` : ''
+  }`;
+  const seriesUntilText = seriesEvent
+    ? activity.recurrence_until
+      ? format(new Date(`${activity.recurrence_until}T12:00:00`), 'd MMM yyyy', { locale: dfLocale })
+      : t.events.seriesOpen
+    : null;
+  const page =
+    tab === 'finance' && activity.finance_enabled
+      ? 'finance'
+      : tab === 'edit' && (canEdit || isOwner)
+        ? 'edit'
+        : 'details';
 
   async function onRemoveGuest(attendanceId: string) {
     try {
@@ -629,189 +645,82 @@ export default function ActivityDetailScreen() {
           </View>
         ) : null}
 
-        {activity.finance_enabled ? (
-          <View style={styles.tabRow}>
-            <Chip
-              label={t.finance.details}
-              active={tab === 'details'}
-              onPress={() => setTab('details')}
-            />
-            <Chip
-              label={t.finance.tab}
-              active={tab === 'finance'}
-              onPress={() => setTab('finance')}
-            />
-          </View>
-        ) : null}
-
-        {tab === 'finance' && activity.finance_enabled && user ? (
-          <ActivityFinancePanel
-            activity={activity}
-            userId={user.id}
-            canManage={isOwner || canEdit}
-            attendees={participants}
-          />
-        ) : (
-          <>
-        <Text style={styles.when}>
-          {format(new Date(activity.starts_at), 'EEEE, d MMMM yyyy · HH:mm', { locale: dfLocale })}
-          {activity.ends_at
-            ? ` – ${format(new Date(activity.ends_at), 'HH:mm', { locale: dfLocale })}`
-            : ''}
-        </Text>
-        {seriesEvent ? (
-          <Text style={styles.factLine}>
-            {activity.recurrence_until
-              ? t.events.seriesUntil(
-                  format(new Date(`${activity.recurrence_until}T12:00:00`), 'd MMM yyyy', { locale: dfLocale })
-                )
-              : t.events.seriesOpen}
-          </Text>
-        ) : null}
-        {activity.profiles ? (
-          <View style={styles.factBlock}>
-            <Text style={styles.factLabel}>{t.events.organizer}</Text>
-            <Text style={styles.factValue}>{displayName(activity.profiles)}</Text>
-          </View>
-        ) : null}
-        {placeName || mapsLink ? (
-          <View style={styles.factBlock}>
-            <Text style={styles.factLabel}>{t.events.where}</Text>
-            {placeName ? (
-              place ? (
-                <Text
-                  style={styles.placeLink}
-                  onPress={() => router.push(`/enterprise/${activity.enterprise_id}`)}>
-                  {place.name}
-                </Text>
-              ) : (
-                <Text style={styles.factValue}>{placeName}</Text>
-              )
-            ) : null}
-            {placeAddress ? <Muted>{placeAddress}</Muted> : null}
-            {provider ? <Muted>{provider}</Muted> : null}
-            {mapsLink ? (
-              <Text style={styles.placeLink} onPress={() => Linking.openURL(mapsLink)}>
-                {t.events.openMaps}
-              </Text>
-            ) : null}
-          </View>
-        ) : null}
-        {weather ? (
-          <WeatherBadge
-            latitude={weather.latitude}
-            longitude={weather.longitude}
-            startsAt={activity.starts_at}
-          />
-        ) : null}
-        {activity.finance_enabled && activity.price != null ? (
-          <Muted>
-            {t.common.price}: {activityPriceLabel(activity, t.common)}
-          </Muted>
-        ) : null}
-        <Text style={styles.signupLine}>{signupLine}</Text>
-
-        <View style={styles.responses}>
-          <Text style={styles.sectionTitle}>{t.events.participants}</Text>
-          <View style={styles.responseGroup}>
-            <Text style={styles.responseTitle}>
-              {t.events.coming} · {participants.length + guests.length}
-            </Text>
-            {participants.map((person) => (
-              <Text key={person.id} style={styles.responseName}>
-                {displayName(person)}
-              </Text>
-            ))}
-            {guests.map((g) => {
-              const gName = g.activity_guests?.name ?? '—';
-              return (
-                <View key={g.id} style={styles.guestRow}>
-                  <Text style={styles.guestName}>
-                    {gName} <Text style={styles.guestTag}>({t.guests.guest})</Text>
-                  </Text>
-                  {isOwner || canEdit ? (
-                    <Pressable onPress={() => onRemoveGuest(g.id)}>
-                      <Text style={styles.guestRemove}>{t.guests.remove}</Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-              );
-            })}
-          </View>
-          <ResponseGroup title={t.events.decline} people={decliners} />
-          <ResponseGroup title={t.events.noReply} people={silent} />
-          <ActivityGuestsPanel
-            activity={activity}
-            canManage={isOwner || canEdit}
-            guestsOnEvent={guests}
-            onChanged={load}
-          />
-        </View>
-
-        <View style={styles.section}>
-          {showJoin && full && activity.max_participants != null ? (
-            <Muted>
-              {t.events.fullHint} {participantCount}/{activity.max_participants}
-            </Muted>
+        <View style={styles.tabRow}>
+          <Chip label={t.finance.details} active={page === 'details'} onPress={() => setTab('details')} />
+          {activity.finance_enabled ? (
+            <Chip label={t.finance.tab} active={page === 'finance'} onPress={() => setTab('finance')} />
           ) : null}
-          {showJoin ? (
-            <Button
-              label={full ? t.events.full : t.events.join}
-              icon="check"
-              onPress={() => void onJoin()}
-              disabled={full}
-            />
-          ) : null}
-          {showDecline ? (
-            <Button
-              label={t.events.decline}
-              variant="secondary"
-              icon="times"
-              onPress={() => void onNotGoing()}
-            />
+          {canEdit || isOwner ? (
+            <Chip label={t.events.edit} active={page === 'edit'} onPress={() => setTab('edit')} />
           ) : null}
         </View>
 
-        {canEdit || isOwner ? (
+        {page === 'finance' && user ? (
+          <ActivityFinancePanel activity={activity} userId={user.id} attendees={participants} />
+        ) : null}
+
+        {page === 'edit' ? (
           <View style={styles.manageSection}>
-            <Text style={styles.sectionTitle}>
-              {seriesEvent ? t.events.thisEventHeading : t.events.manageHeading}
-            </Text>
-            {canEdit && user ? (
-              <ActivityExtraInvitePanel
-                activity={activity}
-                userId={user.id}
-                onChanged={() => void load({ silent: true })}
-              />
-            ) : null}
-            {canEdit ? (
-              <Button
-                label={seriesEvent ? t.events.editThisParams : t.events.edit}
-                variant="outline"
-                icon="pencil"
-                onPress={() =>
-                  router.push({
-                    pathname: '/activity/edit/[id]',
-                    params: seriesEvent ? { id: activity.id, scope: 'date' } : { id: activity.id },
-                  })
-                }
-              />
-            ) : null}
-            {canEdit && seriesEvent && !dateSkipped ? (
-              <View style={styles.action}>
-                <Muted>{t.planner.skipHint}</Muted>
-                <Button
-                  label={t.planner.skipOccurrence}
-                  variant="dangerOutline"
-                  icon="ban"
-                  loading={skipping}
-                  onPress={() => void onSkipDate()}
+            {seriesEvent ? (
+              <View style={styles.tabRow}>
+                <Chip
+                  label={t.events.thisEventHeading}
+                  active={editPart === 'event'}
+                  onPress={() => setEditPart('event')}
+                />
+                <Chip
+                  label={t.events.seriesHeading}
+                  active={editPart === 'series'}
+                  onPress={() => setEditPart('series')}
                 />
               </View>
             ) : null}
-            {seriesEvent ? (
+            {!seriesEvent || editPart === 'event' ? (
               <>
-                <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t.events.seriesHeading}</Text>
+                {canEdit && user ? (
+                  <ActivityExtraInvitePanel
+                    activity={activity}
+                    userId={user.id}
+                    onChanged={() => void load({ silent: true })}
+                  />
+                ) : null}
+                {canEdit ? (
+                  <Button
+                    label={seriesEvent ? t.events.editThisParams : t.events.edit}
+                    variant="outline"
+                    icon="pencil"
+                    onPress={() =>
+                      router.push({
+                        pathname: '/activity/edit/[id]',
+                        params: seriesEvent ? { id: activity.id, scope: 'date' } : { id: activity.id },
+                      })
+                    }
+                  />
+                ) : null}
+                {canEdit && seriesEvent && !dateSkipped ? (
+                  <View style={styles.action}>
+                    <Muted>{t.planner.skipHint}</Muted>
+                    <Button
+                      label={t.planner.skipOccurrence}
+                      variant="dangerOutline"
+                      icon="ban"
+                      loading={skipping}
+                      onPress={() => void onSkipDate()}
+                    />
+                  </View>
+                ) : null}
+                {!seriesEvent && isOwner ? (
+                  <Button
+                    label={t.events.delete}
+                    variant="dangerOutline"
+                    icon="trash"
+                    onPress={onDelete}
+                    loading={deleting}
+                  />
+                ) : null}
+              </>
+            ) : (
+              <>
                 {canEdit ? (
                   <Button
                     label={t.events.editSeries}
@@ -833,20 +742,141 @@ export default function ActivityDetailScreen() {
                   </View>
                 ) : null}
               </>
-            ) : isOwner ? (
-              <Button
-                label={t.events.delete}
-                variant="dangerOutline"
-                icon="trash"
-                onPress={onDelete}
-                loading={deleting}
-              />
-            ) : null}
+            )}
+            {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
           </View>
         ) : null}
-        {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
+
+        {page === 'details' ? (
+          <>
+            <View style={styles.factCard}>
+              <View style={styles.factLineRow}>
+                <Text style={styles.factLabel}>{t.events.starts}</Text>
+                <Text style={styles.factValue}>{whenText}</Text>
+              </View>
+              {seriesUntilText ? (
+                <View style={styles.factLineRow}>
+                  <Text style={styles.factLabel}>{t.events.ends}</Text>
+                  <Text style={styles.factValue}>{seriesUntilText}</Text>
+                </View>
+              ) : null}
+              {placeName || mapsLink ? (
+                <View style={styles.factLineRow}>
+                  <Text style={styles.factLabel}>{t.events.where}</Text>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    {placeName ? (
+                      place ? (
+                        <Text
+                          style={styles.placeLink}
+                          onPress={() => router.push(`/enterprise/${activity.enterprise_id}`)}>
+                          {place.name}
+                        </Text>
+                      ) : (
+                        <Text style={styles.factValue}>{placeName}</Text>
+                      )
+                    ) : null}
+                    {placeAddress ? <Muted>{placeAddress}</Muted> : null}
+                    {provider ? <Muted>{provider}</Muted> : null}
+                    {mapsLink ? (
+                      <Text style={styles.placeLink} onPress={() => Linking.openURL(mapsLink)}>
+                        {t.events.openMaps}
+                      </Text>
+                    ) : null}
+                  </View>
+                </View>
+              ) : null}
+              {activity.profiles ? (
+                <View style={styles.factLineRow}>
+                  <Text style={styles.factLabel}>{t.events.organizer}</Text>
+                  <Text style={styles.factValue}>{displayName(activity.profiles)}</Text>
+                </View>
+              ) : null}
+              <View style={styles.factLineRow}>
+                <Text style={styles.factLabel}>{t.events.joinedCount}</Text>
+                <Text style={styles.factValue}>{signupLine}</Text>
+              </View>
+              {activity.finance_enabled && activity.price != null ? (
+                <View style={styles.factLineRow}>
+                  <Text style={styles.factLabel}>{t.common.price}</Text>
+                  <Text style={styles.factValue}>{activityPriceLabel(activity, t.common)}</Text>
+                </View>
+              ) : null}
+            </View>
+            {weather ? (
+              <WeatherBadge
+                latitude={weather.latitude}
+                longitude={weather.longitude}
+                startsAt={activity.starts_at}
+              />
+            ) : null}
+
+            <View style={styles.actionRow}>
+              {showJoin ? (
+                <View style={styles.actionFlex}>
+                  {full && activity.max_participants != null ? (
+                    <Muted>
+                      {t.events.fullHint} {participantCount}/{activity.max_participants}
+                    </Muted>
+                  ) : null}
+                  <Button
+                    label={full ? t.events.full : t.events.join}
+                    icon="check"
+                    onPress={() => void onJoin()}
+                    disabled={full}
+                  />
+                </View>
+              ) : null}
+              {showDecline ? (
+                <View style={styles.actionFlex}>
+                  <Button
+                    label={t.events.decline}
+                    variant="secondary"
+                    icon="times"
+                    onPress={() => void onNotGoing()}
+                  />
+                </View>
+              ) : null}
+            </View>
+
+            <View style={styles.responses}>
+              {participants.length || guests.length ? (
+                <View style={styles.responseGroup}>
+                  <Text style={styles.responseTitle}>
+                    {t.events.coming} · {participants.length + guests.length}
+                  </Text>
+                  {participants.map((person) => (
+                    <Text key={person.id} style={styles.responseName}>
+                      {displayName(person)}
+                    </Text>
+                  ))}
+                  {guests.map((g) => {
+                    const gName = g.activity_guests?.name ?? '—';
+                    return (
+                      <View key={g.id} style={styles.guestRow}>
+                        <Text style={styles.guestName}>
+                          {gName} <Text style={styles.guestTag}>({t.guests.guest})</Text>
+                        </Text>
+                        {isOwner || canEdit ? (
+                          <Pressable onPress={() => onRemoveGuest(g.id)}>
+                            <Text style={styles.guestRemove}>{t.guests.remove}</Text>
+                          </Pressable>
+                        ) : null}
+                      </View>
+                    );
+                  })}
+                </View>
+              ) : null}
+              <ResponseGroup title={t.events.decline} people={decliners} />
+              <ResponseGroup title={t.events.noReply} people={silent} />
+              <ActivityGuestsPanel
+                activity={activity}
+                canManage={isOwner || canEdit}
+                guestsOnEvent={guests}
+                onChanged={load}
+              />
+            </View>
           </>
-        )}
+        ) : null}
       </ScrollView>
 
       <Modal visible={deleteOpen} transparent animationType="fade" onRequestClose={() => setDeleteOpen(false)}>
@@ -903,12 +933,28 @@ const styles = StyleSheet.create({
     marginTop: 10,
     gap: 2,
   },
+  factCard: {
+    marginTop: 4,
+    gap: 10,
+    backgroundColor: theme.colors.surface,
+    borderRadius: theme.radius.md,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    padding: 12,
+  },
+  factLineRow: {
+    flexDirection: 'row',
+    gap: 12,
+    alignItems: 'flex-start',
+  },
   factLabel: {
-    color: theme.colors.text,
+    width: 96,
+    color: theme.colors.textMuted,
     fontSize: 13,
     fontWeight: '700',
   },
   factValue: {
+    flex: 1,
     color: theme.colors.text,
     fontSize: 15,
   },
@@ -1071,6 +1117,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     fontWeight: '600',
   },
-  actionRow: { flexDirection: 'row', gap: 8 },
+  actionRow: { flexDirection: 'row', gap: 8, marginTop: 16, alignItems: 'flex-end' },
   actionFlex: { flex: 1 },
 });

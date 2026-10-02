@@ -616,6 +616,8 @@ export const en = {
     someoneElsePaid: 'Someone else paid',
     noObligations: 'No events where you have money involved.',
     yourBalanceSettled: 'Settled',
+    yourBalance: 'Your balance',
+    nothingForYou: 'Nothing for you to pay on this event.',
     openBalances: 'Open',
     archiveBalances: (n: number) => `Archive (${n})`,
     noOpenBalances: 'No open balances.',

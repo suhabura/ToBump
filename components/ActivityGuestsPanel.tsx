@@ -91,27 +91,7 @@ export function ActivityGuestsPanel({ activity, canManage, guestsOnEvent = [], o
   const knownNotHere = seriesGuests.filter((g) => !g.attended_this);
 
   return (
-    <View style={{ gap: 10, marginTop: 16 }}>
-      <Muted>{t.guests.hint}</Muted>
-
-      {knownNotHere.length > 0 ? (
-        <View style={{ gap: 6 }}>
-          <Muted>{t.guests.seriesGuests}</Muted>
-          <View style={styles.chipRow}>
-            {knownNotHere.map((g) => (
-              <Chip
-                key={g.id}
-                label={`${g.name} (${g.attendance_count}×)`}
-                onPress={() => {
-                  setName(g.name);
-                  setShowAdd(true);
-                }}
-              />
-            ))}
-          </View>
-        </View>
-      ) : null}
-
+    <View style={{ gap: 10, marginTop: 8 }}>
       <Button
         label={showAdd ? t.common.cancel : t.guests.add}
         variant={showAdd ? 'ghost' : 'secondary'}
@@ -120,6 +100,21 @@ export function ActivityGuestsPanel({ activity, canManage, guestsOnEvent = [], o
 
       {showAdd ? (
         <View style={styles.form}>
+          <Muted>{t.guests.hint}</Muted>
+          {knownNotHere.length > 0 ? (
+            <View style={{ gap: 6 }}>
+              <Muted>{t.guests.seriesGuests}</Muted>
+              <View style={styles.chipRow}>
+                {knownNotHere.map((g) => (
+                  <Chip
+                    key={g.id}
+                    label={`${g.name} (${g.attendance_count}×)`}
+                    onPress={() => setName(g.name)}
+                  />
+                ))}
+              </View>
+            </View>
+          ) : null}
           <Input label={t.guests.name} value={name} onChangeText={setName} placeholder={t.guests.nameHint} />
           <Muted>{t.guests.payment}</Muted>
           <View style={styles.chipRow}>

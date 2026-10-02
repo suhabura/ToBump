@@ -615,6 +615,8 @@ export const sl = {
     someoneElsePaid: 'Plačal je kdo drug',
     noObligations: 'Nisi vpet v finance nobenega dogodka.',
     yourBalanceSettled: 'Poravnano',
+    yourBalance: 'Tvoje stanje',
+    nothingForYou: 'Zate na tem dogodku ni plačila.',
     openBalances: 'Odprto',
     archiveBalances: (n: number) => `Arhiv (${n})`,
     noOpenBalances: 'Ni odprtih bilanc.',
