@@ -308,7 +308,7 @@ export default function PlannerScreen() {
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
   const [selectedDay, setSelectedDay] = useState(() => startOfDay(new Date()));
   const [calendarOpen, setCalendarOpen] = useState(false);
-  const [chip, setChip] = useState<'following' | 'signed' | 'organizing'>('following');
+  const [chip, setChip] = useState<'following' | 'signed' | 'organizing'>('signed');
   const hasLoaded = useRef(false);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const swipeX = useRef(new Animated.Value(0)).current;
@@ -419,6 +419,12 @@ export default function PlannerScreen() {
       void load({ silent: true });
     });
   }, [load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setChip('signed');
+    }, [])
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -749,8 +755,8 @@ export default function PlannerScreen() {
     ? t.planner.todayHeading
     : format(selectedDay, 'EEEE, d. M. yyyy', { locale: dfLocale });
   const chips = [
-    following.length ? { key: 'following' as const, label: t.planner.following, data: following } : null,
     upcoming.length ? { key: 'signed' as const, label: t.planner.upcomingEvents, data: upcoming } : null,
+    following.length ? { key: 'following' as const, label: t.planner.following, data: following } : null,
     organizing.length ? { key: 'organizing' as const, label: t.planner.organizing, data: organizing } : null,
   ].filter((item): item is { key: 'following' | 'signed' | 'organizing'; label: string; data: PlannerItem[] } => item != null);
   const selectedKey = chips.some((item) => item.key === chip) ? chip : (chips[0]?.key ?? null);
