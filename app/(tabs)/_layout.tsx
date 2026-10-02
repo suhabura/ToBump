@@ -10,8 +10,20 @@ import { useT } from '@/i18n';
 import { notificationSinceIso, pruneOldNotifications } from '@/lib/api';
 import { supabase } from '@/lib/supabase';
 
-function TabIcon({ name, color }: { name: React.ComponentProps<typeof FontAwesome>['name']; color: string }) {
-  return <FontAwesome size={22} name={name} color={color} style={{ marginBottom: -2 }} />;
+function TabIcon({
+  name,
+  color,
+  focused,
+}: {
+  name: React.ComponentProps<typeof FontAwesome>['name'];
+  color: string;
+  focused: boolean;
+}) {
+  return (
+    <View style={[styles.tabIconWrap, focused ? styles.tabIconActive : null]}>
+      <FontAwesome size={22} name={name} color={color} />
+    </View>
+  );
 }
 
 function HeaderIcon({
@@ -45,15 +57,7 @@ function HeaderIcon({
   );
 }
 
-function TabAppHeader({
-  title,
-  unread,
-  events,
-}: {
-  title: string;
-  unread: number;
-  events?: boolean;
-}) {
+function TabAppHeader({ unread, events }: { unread: number; events?: boolean }) {
   const t = useT();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -97,12 +101,12 @@ function TabAppHeader({
         <View style={styles.headerBar} accessibilityRole="header">
           <View style={styles.headerSlot}>
             <Text style={styles.brandTab} numberOfLines={1}>
-              {title}
+              {t.appName}
             </Text>
           </View>
           <View style={styles.logoWrap} pointerEvents="none">
             <Image
-              source={require('../../assets/brand/logo-lockup.png')}
+              source={require('../../assets/brand/mark.png')}
               style={styles.brandLogo}
               resizeMode="contain"
               accessibilityLabel={t.appName}
@@ -227,13 +231,19 @@ export default function TabLayout() {
           headerStatusBarHeight: 0,
           tabBarActiveTintColor: theme.colors.primary,
           tabBarInactiveTintColor: theme.colors.textMuted,
+          tabBarShowLabel: true,
+          tabBarLabel: ({ focused, color, children }) => (
+            <Text style={[styles.tabLabel, focused ? styles.tabLabelActive : null, { color }]}>
+              {children}
+            </Text>
+          ),
           tabBarStyle: {
             backgroundColor: theme.colors.surface,
             borderTopColor: theme.colors.border,
-            paddingTop: 4,
+            paddingTop: 6,
             ...(Platform.OS === 'web'
-              ? { height: 52, paddingBottom: 0 }
-              : { height: 52 + insets.bottom, paddingBottom: insets.bottom }),
+              ? { height: 64, paddingBottom: 6 }
+              : { height: 64 + insets.bottom, paddingBottom: insets.bottom }),
           },
           headerStyle: { backgroundColor: theme.colors.surface },
           headerTintColor: theme.colors.text,
@@ -243,33 +253,41 @@ export default function TabLayout() {
           name="index"
           options={{
             title: t.tabs.events,
-            header: () => <TabAppHeader title={t.tabs.events} unread={unread} events />,
-            tabBarIcon: ({ color }) => <TabIcon name="list-alt" color={String(color)} />,
+            header: () => <TabAppHeader unread={unread} events />,
+            tabBarIcon: ({ color, focused }) => (
+              <TabIcon name="list-alt" color={String(color)} focused={focused} />
+            ),
           }}
         />
         <Tabs.Screen
           name="planner"
           options={{
             title: t.tabs.planner,
-            header: () => <TabAppHeader title={t.tabs.planner} unread={unread} />,
-            tabBarIcon: ({ color }) => <TabIcon name="calendar" color={String(color)} />,
+            header: () => <TabAppHeader unread={unread} />,
+            tabBarIcon: ({ color, focused }) => (
+              <TabIcon name="calendar" color={String(color)} focused={focused} />
+            ),
           }}
         />
         <Tabs.Screen
           name="friends"
           options={{
             title: t.tabs.friends,
-            header: () => <TabAppHeader title={t.tabs.friends} unread={unread} />,
+            header: () => <TabAppHeader unread={unread} />,
             tabBarBadge: pendingFriends > 0 ? pendingFriends : undefined,
-            tabBarIcon: ({ color }) => <TabIcon name="users" color={String(color)} />,
+            tabBarIcon: ({ color, focused }) => (
+              <TabIcon name="users" color={String(color)} focused={focused} />
+            ),
           }}
         />
         <Tabs.Screen
           name="profile"
           options={{
             title: t.tabs.profile,
-            header: () => <TabAppHeader title={t.tabs.profile} unread={unread} />,
-            tabBarIcon: ({ color }) => <TabIcon name="user" color={String(color)} />,
+            header: () => <TabAppHeader unread={unread} />,
+            tabBarIcon: ({ color, focused }) => (
+              <TabIcon name="user" color={String(color)} focused={focused} />
+            ),
           }}
         />
 
@@ -362,16 +380,32 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   brandLogo: {
-    height: 56,
-    width: 143,
+    height: 48,
+    width: 48,
   },
   brandTab: {
     marginLeft: 12,
     maxWidth: '100%',
-    fontSize: 16,
+    fontSize: 18,
     fontWeight: '700',
-    color: theme.colors.text,
+    color: theme.colors.primaryDark,
     letterSpacing: -0.2,
+  },
+  tabIconWrap: {
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
+  },
+  tabIconActive: {
+    backgroundColor: theme.colors.primarySoft,
+  },
+  tabLabel: {
+    fontSize: 11,
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  tabLabelActive: {
+    fontWeight: '800',
   },
   headerSide: {
     width: 48,
