@@ -1,8 +1,7 @@
 import { Link, useRouter } from 'expo-router';
 import { useState } from 'react';
 import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { Button, Input, Muted, Title } from '@/components/ui';
-import { LocationField } from '@/components/LocationField';
+import { Button, Input, Title } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { useT } from '@/i18n';
 import { theme } from '@/constants/theme';
@@ -15,11 +14,6 @@ export default function RegisterScreen() {
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [area, setArea] = useState<{ address: string; latitude: number | null; longitude: number | null }>({
-    address: '',
-    latitude: null,
-    longitude: null,
-  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
@@ -31,16 +25,8 @@ export default function RegisterScreen() {
       setError(t.auth.needSignupFields);
       return;
     }
-    if (area.latitude == null || area.longitude == null) {
-      setError(t.auth.needArea);
-      return;
-    }
     setLoading(true);
-    const { error: err } = await signUp(email, password, firstName, lastName, {
-      location: area.address.trim(),
-      latitude: area.latitude,
-      longitude: area.longitude,
-    });
+    const { error: err } = await signUp(email, password, firstName, lastName);
     setLoading(false);
     if (err) {
       setError(err);
@@ -74,16 +60,6 @@ export default function RegisterScreen() {
           onChangeText={setEmail}
         />
         <Input label={t.auth.password} secureTextEntry value={password} onChangeText={setPassword} />
-        <Muted>{t.auth.areaHint}</Muted>
-        <LocationField
-          purpose="area"
-          label={t.auth.areaLabel}
-          address={area.address}
-          latitude={area.latitude}
-          longitude={area.longitude}
-          showMyLocation={false}
-          onChange={setArea}
-        />
         <Button label={t.auth.register} onPress={onSubmit} loading={loading} />
         <Link href="/(auth)/login" style={styles.link}>
           {t.auth.hasAccount} {t.auth.login}
