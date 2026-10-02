@@ -15,11 +15,8 @@ import { WeatherWeek } from '@/components/WeatherBadge';
 import { DateTimeField } from '@/components/DateTimeField';
 import { DateMultiField } from '@/components/DateMultiField';
 import { LocationField } from '@/components/LocationField';
-import { SuggestInput } from '@/components/SuggestInput';
 import { FriendPicker } from '@/components/FriendPicker';
 import {
-  DEFAULT_SUBCATEGORIES,
-  MAIN_CATEGORY_NAMES,
   ensureDefaultCategories,
   findCategoryId,
   saveActivity,
@@ -298,16 +295,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const [groupSaving, setGroupSaving] = useState(false);
   const [financeEnabled, setFinanceEnabled] = useState(Boolean(initial?.finance_enabled));
   const [showWeather, setShowWeather] = useState(Boolean(initial?.show_weather));
-  const [moreOpen, setMoreOpen] = useState(
-    () =>
-      Boolean(initial?.is_recurring) ||
-      (initial?.recurrence_dates?.length ?? 0) >= 2 ||
-      Boolean(initial?.finance_enabled) ||
-      Boolean(initial?.show_weather) ||
-      initial?.min_participants != null ||
-      initial?.max_participants != null ||
-      Boolean(initial?.editor_user_ids?.length)
-  );
   const [fundingMode, setFundingMode] = useState<FundingMode>(() => {
     const raw = initial?.funding_mode;
     if (raw === 'annual' || raw === 'fixed') return 'fixed';
@@ -353,18 +340,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       return Number.isNaN(moved.getTime()) ? current : moved;
     });
   }
-
-  // Only English canonical names from seed + DB English rows — show localized labels once
-  const activitySuggestions = useMemo(() => {
-    const englishKeys = new Set(DEFAULT_SUBCATEGORIES);
-    for (const c of categories) {
-      if (MAIN_CATEGORY_NAMES.some((m) => m.toLowerCase() === c.name.toLowerCase())) continue;
-      if (DEFAULT_SUBCATEGORIES.some((k) => k.toLowerCase() === c.name.toLowerCase())) {
-        englishKeys.add(DEFAULT_SUBCATEGORIES.find((k) => k.toLowerCase() === c.name.toLowerCase())!);
-      }
-    }
-    return Array.from(englishKeys).map((key) => categoryDisplayName(key, locale));
-  }, [categories, locale]);
 
   const computedFirst = useMemo(() => {
     if (recurrenceMode !== 'weekly') return null;
@@ -891,19 +866,19 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
   const fieldNote = (key: string) =>
     fieldErrors[key] ? <Text style={styles.fieldError}>{fieldErrors[key]}</Text> : null;
   const fieldSummary = Array.from(new Set(Object.values(fieldErrors)));
+  const keepMapVenue = Boolean(
+    activityId &&
+      (initial?.enterprise_id ||
+        (initial?.venue_latitude != null && initial?.venue_longitude != null))
+  );
 
   return (
     <ScrollView contentContainerStyle={styles.wrap} keyboardShouldPersistTaps="handled">
-      <SuggestInput
+      <Input
         label={req(t.form.activity)}
         value={title}
         onChangeText={setTitle}
-        suggestions={activitySuggestions}
         placeholder={t.form.activityPlaceholder}
-        resolveAlias={(text) => {
-          const key = resolveActivityCategoryKey(text, locale);
-          return key ? categoryDisplayName(key, locale) : null;
-        }}
       />
       {fieldNote('title')}
 
@@ -946,11 +921,13 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       {fieldNote('capacity')}
 
       <Text style={styles.section}>{req(t.events.venue)}</Text>
-      <View style={styles.row}>
-        <Chip label={t.form.venueManual} active={!geoLocation} onPress={() => setVenueMode(false)} />
-        <Chip label={t.form.addGeoLocation} active={geoLocation} onPress={() => setVenueMode(true)} />
-      </View>
-      {geoLocation ? (
+      {keepMapVenue ? (
+        <View style={styles.row}>
+          <Chip label={t.form.venueManual} active={!geoLocation} onPress={() => setVenueMode(false)} />
+          <Chip label={t.form.addGeoLocation} active={geoLocation} onPress={() => setVenueMode(true)} />
+        </View>
+      ) : null}
+      {keepMapVenue && geoLocation ? (
         <LocationField
           label={t.form.geoSearch}
           address={venueText}
@@ -971,131 +948,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       )}
       {fieldNote('venue')}
 
-      {recurrenceMode === 'once' ? (
-        <View>
-          <Text style={styles.section}>{req(t.form.when)}</Text>
-          <DateTimeField
-            label={req(t.events.starts)}
-            value={startsAt}
-            onChange={setStartsAt}
-            minimumDate={new Date()}
-          />
-          <EndChoiceField value={endChoice} onChange={setEndChoice} start={startsAt} />
-          {fieldNote('when')}
-          {fieldNote('end')}
-        </View>
-      ) : null}
-
-      <Text style={styles.section}>{req(t.form.whoInvite)}</Text>
-      {activityId && isRecurring ? <Muted>{t.events.seriesInviteEditHint}</Muted> : null}
-      <View style={styles.row}>
-        {(
-          [
-            { key: 'invite' as const, label: t.events.inviteOnly },
-            { key: 'group' as const, label: t.events.group },
-            { key: 'friends' as const, label: t.events.friendsOnly },
-          ] as const
-        ).map((p) => (
-          <Chip
-            key={p.key}
-            label={p.label}
-            active={privacy === p.key}
-            onPress={() => setPrivacy(p.key)}
-          />
-        ))}
-      </View>
-
-      {privacy === 'invite' ? (
-        <View>
-          <Text style={styles.section}>{req(t.form.selectFriends)}</Text>
-          {friends.length === 0 ? <Muted>{t.form.acceptFriendsHint}</Muted> : null}
-          <FriendPicker
-            friends={friends}
-            selectedIds={inviteIds}
-            onChange={setInviteIds}
-            label={t.form.selectFriends}
-            placeholder={t.form.searchFriends}
-            emptyHint={t.form.noFriends}
-          />
-          {fieldNote('people')}
-        </View>
-      ) : null}
-
-      {privacy === 'friends' ? (
-        <>
-          <Muted>{t.form.allFriendsInvited(friends.length)}</Muted>
-          {fieldNote('people')}
-        </>
-      ) : null}
-
-      {privacy === 'group' ? (
-        <View>
-          <Text style={styles.section}>{req(t.form.selectGroup)}</Text>
-          {groups.length === 0 ? (
-            <Muted>{t.form.noGroups}</Muted>
-          ) : (
-            <View style={styles.rowWrap}>
-              {groups.map((g) => (
-                <Chip
-                  key={g.id}
-                  label={g.name}
-                  active={selectedGroupId === g.id}
-                  onPress={() => setSelectedGroupId(g.id)}
-                />
-              ))}
-            </View>
-          )}
-          {selectedGroupId && groupMembers.length ? (
-            <View style={{ marginTop: 8, gap: 6 }}>
-              <Muted>{t.form.groupMembers}</Muted>
-              <View style={styles.rowWrap}>
-                {groupMembers.map((p) => (
-                  <Chip key={p.id} label={displayName(p)} active onPress={() => {}} />
-                ))}
-              </View>
-            </View>
-          ) : selectedGroupId ? (
-            <Muted>{t.form.groupEmpty}</Muted>
-          ) : null}
-          {!activityId ? (
-            <View style={{ marginTop: 8 }}>
-              <Button
-                label={creatingGroup ? t.common.cancel : t.groups.newGroup}
-                variant="secondary"
-                onPress={() => setCreatingGroup((open) => !open)}
-              />
-              {creatingGroup ? (
-                <View style={{ marginTop: 12 }}>
-                  <Input
-                    label={t.groups.name}
-                    value={groupName}
-                    onChangeText={setGroupName}
-                    placeholder={t.groups.namePlaceholder}
-                  />
-                  <Muted>{t.groups.members}</Muted>
-                  <FriendPicker
-                    friends={friends}
-                    selectedIds={groupMemberIds}
-                    onChange={setGroupMemberIds}
-                    label={t.groups.addMember}
-                    placeholder={t.form.searchFriends}
-                    emptyHint={t.form.noFriends}
-                  />
-                  <Button label={t.groups.create} onPress={() => void createGroupInline()} loading={groupSaving} />
-                </View>
-              ) : null}
-            </View>
-          ) : null}
-          {fieldNote('people')}
-        </View>
-      ) : null}
-
-      <Text style={[styles.link, { marginTop: 8, marginBottom: 8 }]} onPress={() => setMoreOpen((open) => !open)}>
-        {moreOpen ? t.form.moreHide : t.form.more}
-      </Text>
-
-      {moreOpen ? (
-      <View>
       <Text style={styles.section}>{req(t.form.recurrence)}</Text>
       {activityId ? (
         <Muted>
@@ -1288,13 +1140,26 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
                     onChange={(end) =>
                       setExtraSlots((prev) => prev.map((item) => (item.date === slot.date ? { ...item, end } : item)))
                     }
-                  />
+                    />
                 </View>
               ))}
             </View>
           ) : null}
         </View>
-      ) : null}
+      ) : (
+        <View>
+          <Text style={styles.section}>{req(t.form.when)}</Text>
+          <DateTimeField
+            label={req(t.events.starts)}
+            value={startsAt}
+            onChange={setStartsAt}
+            minimumDate={new Date()}
+          />
+          <EndChoiceField value={endChoice} onChange={setEndChoice} start={startsAt} />
+          {fieldNote('when')}
+          {fieldNote('end')}
+        </View>
+      )}
 
       {geoLocation && venueLatitude != null && venueLongitude != null ? (
         <>
@@ -1314,6 +1179,110 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             />
           ) : null}
         </>
+      ) : null}
+
+      <Text style={styles.section}>{req(t.form.whoInvite)}</Text>
+      {activityId && isRecurring ? <Muted>{t.events.seriesInviteEditHint}</Muted> : null}
+      <View style={styles.row}>
+        {(
+          [
+            { key: 'invite' as const, label: t.events.inviteOnly },
+            { key: 'group' as const, label: t.events.group },
+            { key: 'friends' as const, label: t.events.friendsOnly },
+          ] as const
+        ).map((p) => (
+          <Chip
+            key={p.key}
+            label={p.label}
+            active={privacy === p.key}
+            onPress={() => setPrivacy(p.key)}
+          />
+        ))}
+      </View>
+
+      {privacy === 'invite' ? (
+        <View>
+          <Text style={styles.section}>{req(t.form.selectFriends)}</Text>
+          {friends.length === 0 ? <Muted>{t.form.acceptFriendsHint}</Muted> : null}
+          <FriendPicker
+            friends={friends}
+            selectedIds={inviteIds}
+            onChange={setInviteIds}
+            label={t.form.selectFriends}
+            placeholder={t.form.searchFriends}
+            emptyHint={t.form.noFriends}
+          />
+          {fieldNote('people')}
+        </View>
+      ) : null}
+
+      {privacy === 'friends' ? (
+        <>
+          <Muted>{t.form.allFriendsInvited(friends.length)}</Muted>
+          {fieldNote('people')}
+        </>
+      ) : null}
+
+      {privacy === 'group' ? (
+        <View>
+          <Text style={styles.section}>{req(t.form.selectGroup)}</Text>
+          {groups.length === 0 ? (
+            <Muted>{t.form.noGroups}</Muted>
+          ) : (
+            <View style={styles.rowWrap}>
+              {groups.map((g) => (
+                <Chip
+                  key={g.id}
+                  label={g.name}
+                  active={selectedGroupId === g.id}
+                  onPress={() => setSelectedGroupId(g.id)}
+                />
+              ))}
+            </View>
+          )}
+          {selectedGroupId && groupMembers.length ? (
+            <View style={{ marginTop: 8, gap: 6 }}>
+              <Muted>{t.form.groupMembers}</Muted>
+              <View style={styles.rowWrap}>
+                {groupMembers.map((p) => (
+                  <Chip key={p.id} label={displayName(p)} active onPress={() => {}} />
+                ))}
+              </View>
+            </View>
+          ) : selectedGroupId ? (
+            <Muted>{t.form.groupEmpty}</Muted>
+          ) : null}
+          {!activityId ? (
+            <View style={{ marginTop: 8 }}>
+              <Button
+                label={creatingGroup ? t.common.cancel : t.groups.newGroup}
+                variant="secondary"
+                onPress={() => setCreatingGroup((open) => !open)}
+              />
+              {creatingGroup ? (
+                <View style={{ marginTop: 12 }}>
+                  <Input
+                    label={t.groups.name}
+                    value={groupName}
+                    onChangeText={setGroupName}
+                    placeholder={t.groups.namePlaceholder}
+                  />
+                  <Muted>{t.groups.members}</Muted>
+                  <FriendPicker
+                    friends={friends}
+                    selectedIds={groupMemberIds}
+                    onChange={setGroupMemberIds}
+                    label={t.groups.addMember}
+                    placeholder={t.form.searchFriends}
+                    emptyHint={t.form.noFriends}
+                  />
+                  <Button label={t.groups.create} onPress={() => void createGroupInline()} loading={groupSaving} />
+                </View>
+              ) : null}
+            </View>
+          ) : null}
+          {fieldNote('people')}
+        </View>
       ) : null}
 
       <Text style={styles.section}>{t.form.finance}</Text>
@@ -1397,8 +1366,6 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
             </View>
           )}
         </View>
-      ) : null}
-      </View>
       ) : null}
 
       <View style={{ height: 16 }} />
