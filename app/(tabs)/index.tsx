@@ -48,6 +48,7 @@ export default function EventsScreen() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [skippedKeys, setSkippedKeys] = useState<Set<string>>(new Set());
   const [choiceItem, setChoiceItem] = useState<ActivityWithRelations | null>(null);
+  const [choiceKind, setChoiceKind] = useState<'join' | 'decline'>('join');
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoaded = useRef(false);
   const visibleOpen = openItems.filter((item) => !eventIsFull(item));
@@ -215,15 +216,20 @@ export default function EventsScreen() {
     }, [load, search, userId, configured, scheduleLiveReload])
   );
 
-  function shouldAskSeriesChoice(item: ActivityWithRelations) {
+  function shouldAskJoin(item: ActivityWithRelations) {
     return isSeriesActivity(item) && !item.is_series_opted_out && !item.series_join_prompted;
+  }
+
+  function shouldAskDecline(item: ActivityWithRelations) {
+    return isSeriesActivity(item) && !item.is_series_opted_out && !item.series_decline_prompted;
   }
 
   async function onJoin(item: ActivityWithRelations) {
     if (!user) return;
     const full = item.max_participants != null && (item.join_count ?? 0) >= item.max_participants;
     if (full) return;
-    if (shouldAskSeriesChoice(item)) {
+    if (shouldAskJoin(item)) {
+      setChoiceKind('join');
       setChoiceItem(item);
       return;
     }
@@ -256,7 +262,8 @@ export default function EventsScreen() {
       }
       return;
     }
-    if (shouldAskSeriesChoice(item)) {
+    if (shouldAskDecline(item)) {
+      setChoiceKind('decline');
       setChoiceItem(item);
       return;
     }
@@ -332,7 +339,6 @@ export default function EventsScreen() {
       if (item.is_joined) await leaveActivity(item.id, user.id);
       else await declineActivity(item.id, user.id);
       await markSeriesDeclinePrompted(item.id, user.id);
-      await markSeriesJoinPrompted(item.id, user.id);
       await load({ silent: true });
     } catch (e) {
       choiceError(e);
@@ -348,7 +354,6 @@ export default function EventsScreen() {
     setBusyId(item.id);
     try {
       await optOutOfSeries(item.id, user.id);
-      await markSeriesJoinPrompted(item.id, user.id);
       await load({ silent: true });
     } catch (e) {
       choiceError(e);
@@ -500,6 +505,7 @@ export default function EventsScreen() {
 
       <SeriesChoiceSheet
         visible={Boolean(choiceItem)}
+        kind={choiceKind}
         onClose={() => setChoiceItem(null)}
         onJoinThis={() => void onChoiceJoinThis()}
         onJoinFollow={() => void onChoiceJoinFollow()}

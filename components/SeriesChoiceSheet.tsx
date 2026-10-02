@@ -5,6 +5,7 @@ import { useT } from '@/i18n';
 
 type Props = {
   visible: boolean;
+  kind: 'join' | 'decline';
   onClose: () => void;
   onJoinThis: () => void;
   onJoinFollow: () => void;
@@ -12,9 +13,10 @@ type Props = {
   onNotInterested: () => void;
 };
 
-/** First Pridem or Ne pridem on a series. Asked once, on the event page and on Events. */
+/** First Join or first I can't come on a series. Each is asked once. */
 export function SeriesChoiceSheet({
   visible,
+  kind,
   onClose,
   onJoinThis,
   onJoinFollow,
@@ -27,15 +29,21 @@ export function SeriesChoiceSheet({
       <Pressable style={styles.backdrop} onPress={onClose}>
         <Pressable style={styles.sheet} onPress={(e) => e.stopPropagation()}>
           <Text style={styles.title}>{t.events.seriesChoiceTitle}</Text>
-          <Muted>{t.events.seriesChoicePrompt}</Muted>
+          <Muted>{kind === 'join' ? t.events.joinChoicePrompt : t.events.declineChoicePrompt}</Muted>
           <View style={{ height: 12 }} />
-          <Button label={t.events.joinThisEvent} onPress={onJoinThis} />
-          <View style={{ height: 8 }} />
-          <Button label={t.events.joinAndFollow} variant="secondary" onPress={onJoinFollow} />
-          <View style={{ height: 8 }} />
-          <Button label={t.events.declineThisEvent} variant="secondary" onPress={onDeclineThis} />
-          <View style={{ height: 8 }} />
-          <Button label={t.events.seriesNotInterested} variant="secondary" onPress={onNotInterested} />
+          {kind === 'join' ? (
+            <>
+              <Button label={t.events.joinThisEvent} onPress={onJoinThis} />
+              <View style={{ height: 8 }} />
+              <Button label={t.events.joinAndFollow} variant="secondary" onPress={onJoinFollow} />
+            </>
+          ) : (
+            <>
+              <Button label={t.events.declineThisEvent} onPress={onDeclineThis} />
+              <View style={{ height: 8 }} />
+              <Button label={t.events.seriesNotInterested} variant="secondary" onPress={onNotInterested} />
+            </>
+          )}
           <View style={{ height: 8 }} />
           <Button label={t.common.cancel} variant="ghost" onPress={onClose} />
         </Pressable>

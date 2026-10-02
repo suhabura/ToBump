@@ -92,7 +92,8 @@ export default function ActivityDetailScreen() {
   const [declined, setDeclined] = useState(false);
   const [seriesOptedOut, setSeriesOptedOut] = useState(false);
   const [joinPrompted, setJoinPrompted] = useState(false);
-  const [choiceOpen, setChoiceOpen] = useState(false);
+  const [declinePrompted, setDeclinePrompted] = useState(false);
+  const [choiceKind, setChoiceKind] = useState<'join' | 'decline' | null>(null);
   const [guests, setGuests] = useState<GuestAttendanceWithGuest[]>([]);
   const [joined, setJoined] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
@@ -119,6 +120,9 @@ export default function ActivityDetailScreen() {
     setJoined(false);
     setFollowing(false);
     setDateSkipped(false);
+    setJoinPrompted(false);
+    setDeclinePrompted(false);
+    setChoiceKind(null);
     setActivity(null);
     setLoading(true);
   }
@@ -282,25 +286,36 @@ export default function ActivityDetailScreen() {
         setSeriesOptedOut(opted);
         if (opted) {
           setJoinPrompted(true);
+          setDeclinePrompted(true);
         } else {
-          const { data: promptRow, error: promptErr } = await supabase
-            .from('series_join_prompts')
-            .select('series_id')
-            .eq('series_id', sid)
-            .eq('user_id', user.id)
-            .maybeSingle();
-          if (promptErr) setJoinPrompted(false);
-          else setJoinPrompted(Boolean(promptRow));
+          const [joinRow, declineRow] = await Promise.all([
+            supabase
+              .from('series_join_prompts')
+              .select('series_id')
+              .eq('series_id', sid)
+              .eq('user_id', user.id)
+              .maybeSingle(),
+            supabase
+              .from('series_decline_prompts')
+              .select('series_id')
+              .eq('series_id', sid)
+              .eq('user_id', user.id)
+              .maybeSingle(),
+          ]);
+          setJoinPrompted(!joinRow.error && Boolean(joinRow.data));
+          setDeclinePrompted(!declineRow.error && Boolean(declineRow.data));
         }
       } catch {
         setSeriesOptedOut(false);
         setJoinPrompted(false);
+        setDeclinePrompted(false);
       }
     } else {
       setFollowing(false);
       setDateSkipped(false);
       setSeriesOptedOut(false);
       setJoinPrompted(false);
+      setDeclinePrompted(false);
     }
     if (routeKeyRef.current !== startedFor) return;
     hasLoaded.current = true;
@@ -374,14 +389,18 @@ export default function ActivityDetailScreen() {
     );
   }
 
-  function askSeriesChoice() {
+  function askJoinChoice() {
     return Boolean(activity && isSeriesActivity(activity) && !seriesOptedOut && !joinPrompted);
+  }
+
+  function askDeclineChoice() {
+    return Boolean(activity && isSeriesActivity(activity) && !seriesOptedOut && !declinePrompted);
   }
 
   async function onJoin() {
     if (!user || !activity) return;
-    if (askSeriesChoice()) {
-      setChoiceOpen(true);
+    if (askJoinChoice()) {
+      setChoiceKind('join');
       return;
     }
     try {
@@ -401,8 +420,8 @@ export default function ActivityDetailScreen() {
         void load({ silent: true });
         return;
       }
-      if (askSeriesChoice()) {
-        setChoiceOpen(true);
+      if (askDeclineChoice()) {
+        setChoiceKind('decline');
         return;
       }
       if (joined) await leaveActivity(activity.id, user.id);
@@ -422,7 +441,7 @@ export default function ActivityDetailScreen() {
 
   async function onJoinThis() {
     if (!user || !activity) return;
-    setChoiceOpen(false);
+    setChoiceKind(null);
     try {
       await joinActivity(activity.id, user.id, activity.created_by, activity.title);
       await rememberSeriesChoice();
@@ -435,7 +454,7 @@ export default function ActivityDetailScreen() {
 
   async function onJoinAndFollow() {
     if (!user || !activity) return;
-    setChoiceOpen(false);
+    setChoiceKind(null);
     try {
       await joinActivity(activity.id, user.id, activity.created_by, activity.title);
       await setSeriesFollow(seriesKey(activity), true);
@@ -450,12 +469,12 @@ export default function ActivityDetailScreen() {
 
   async function onDeclineThisEvent() {
     if (!user || !activity) return;
-    setChoiceOpen(false);
+    setChoiceKind(null);
     try {
       if (joined) await leaveActivity(activity.id, user.id);
       else await declineActivity(activity.id, user.id);
       await markSeriesDeclinePrompted(activity.id, user.id);
-      await rememberSeriesChoice();
+      setDeclinePrompted(true);
       void load({ silent: true });
     } catch (e) {
       void load({ silent: true });
@@ -465,10 +484,10 @@ export default function ActivityDetailScreen() {
 
   async function onSeriesNotInterested() {
     if (!user || !activity) return;
-    setChoiceOpen(false);
+    setChoiceKind(null);
     try {
       await optOutOfSeries(activity.id, user.id);
-      await rememberSeriesChoice();
+      setDeclinePrompted(true);
       setFollowing(false);
       void load({ silent: true });
     } catch (e) {
@@ -909,8 +928,9 @@ export default function ActivityDetailScreen() {
       </Modal>
 
       <SeriesChoiceSheet
-        visible={choiceOpen}
-        onClose={() => setChoiceOpen(false)}
+        visible={choiceKind != null}
+        kind={choiceKind ?? 'join'}
+        onClose={() => setChoiceKind(null)}
         onJoinThis={() => void onJoinThis()}
         onJoinFollow={() => void onJoinAndFollow()}
         onDeclineThis={() => void onDeclineThisEvent()}
