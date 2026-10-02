@@ -144,6 +144,13 @@ create table if not exists public.series_decline_prompts (
   primary key (series_id, user_id)
 );
 
+create table if not exists public.series_join_prompts (
+  series_id uuid not null references public.activities(id) on delete cascade,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (series_id, user_id)
+);
+
 create table if not exists public.activity_invites (
   id uuid primary key default gen_random_uuid(),
   activity_id uuid not null references public.activities(id) on delete cascade,
@@ -375,6 +382,14 @@ create policy "series_decline_prompts_select" on public.series_decline_prompts f
 create policy "series_decline_prompts_insert" on public.series_decline_prompts for insert to authenticated
   with check (user_id = auth.uid());
 create policy "series_decline_prompts_delete" on public.series_decline_prompts for delete to authenticated
+  using (user_id = auth.uid());
+
+alter table public.series_join_prompts enable row level security;
+create policy "series_join_prompts_select" on public.series_join_prompts for select to authenticated
+  using (user_id = auth.uid());
+create policy "series_join_prompts_insert" on public.series_join_prompts for insert to authenticated
+  with check (user_id = auth.uid());
+create policy "series_join_prompts_delete" on public.series_join_prompts for delete to authenticated
   using (user_id = auth.uid());
 
 -- Invites

@@ -11,7 +11,8 @@ import { supabase } from '@/lib/supabase';
 import type { Activity, FundingMode, Privacy } from '@/lib/types';
 
 export default function EditActivityScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id, scope } = useLocalSearchParams<{ id: string; scope?: string | string[] }>();
+  const editScope = (Array.isArray(scope) ? scope[0] : scope) === 'date' ? 'date' : undefined;
   const t = useT();
   const { user } = useAuth();
   const [forbidden, setForbidden] = useState(false);
@@ -167,7 +168,13 @@ export default function EditActivityScreen() {
 
   return (
     <Screen style={{ padding: 0 }}>
-      <ActivityForm userId={user.id} activityId={id} initial={initial} isCreator={isCreator} />
+      <ActivityForm
+        userId={user.id}
+        activityId={id}
+        initial={initial}
+        isCreator={isCreator}
+        editScope={editScope}
+      />
     </Screen>
   );
 }

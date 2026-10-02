@@ -342,6 +342,8 @@ export type ActivityWithRelations = Activity & {
   is_series_opted_out?: boolean;
   /** First Ne pridem dialog already answered for this series */
   series_decline_prompted?: boolean;
+  /** First Pridem / Ne pridem series choice already answered */
+  series_join_prompted?: boolean;
   is_invited?: boolean;
   is_from_friend?: boolean;
   /** FoF / friends-privacy event visible to you without a formal invite */

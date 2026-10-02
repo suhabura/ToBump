@@ -20,6 +20,7 @@ import {
   ensureDefaultCategories,
   findCategoryId,
   saveActivity,
+  updateOccurrenceBasics,
   type ActivityInput,
 } from '@/lib/api';
 import { dedupeProfilesByEmail } from '@/lib/friends';
@@ -56,6 +57,8 @@ import { theme } from '@/constants/theme';
 type Props = {
   userId: string;
   activityId?: string;
+  /** This occurrence only: date, place, time, and headcount. */
+  editScope?: 'date';
   /** Only the creator can assign co-editors (true for new events) */
   isCreator?: boolean;
   initial?: Partial<ActivityInput> & {
@@ -205,7 +208,7 @@ function initialRules(initial?: Props['initial']): RecurrenceRule[] {
   return [];
 }
 
-export function ActivityForm({ userId, activityId, initial, isCreator = true }: Props) {
+export function ActivityForm({ userId, activityId, initial, isCreator = true, editScope }: Props) {
   const router = useRouter();
   const t = useT();
   const { locale } = useLocale();
@@ -574,7 +577,67 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
     }
   }
 
+  async function saveThisDate() {
+    if (!activityId) return;
+    setFormError(null);
+    const missing: Record<string, string> = {};
+    function parseOptionalCount(raw: string): number | null | 'invalid' {
+      const v = raw.trim();
+      if (!v) return null;
+      if (!/^\d+$/.test(v) || Number(v) < 1) return 'invalid';
+      return Number(v);
+    }
+    let minNum: number | null | 'invalid' = null;
+    let maxNum: number | null | 'invalid' = null;
+    if (capacityRange) {
+      minNum = parseOptionalCount(minCapacity);
+      maxNum = parseOptionalCount(maxCapacity);
+    } else {
+      const exact = parseOptionalCount(desiredCapacity);
+      minNum = exact;
+      maxNum = exact;
+    }
+    if (minNum === 'invalid' || maxNum === 'invalid') missing.capacity = t.form.needCapacity;
+    else if (minNum == null) missing.capacity = t.form.needPeople;
+    else if (maxNum != null && minNum > maxNum) missing.capacity = t.form.capacityMinMax;
+    if (!startsAt) missing.when = t.form.needActivityStart;
+    else if (endChoice.mode !== 'none' && resolveEndMinutes(startsAt, endChoice) == null) {
+      missing.end = t.form.minDuration;
+    } else if (startsAt.getTime() < Date.now() - 30_000) missing.when = t.form.pastNotAllowed;
+    if (!enterpriseId && !venueText.trim()) missing.venue = t.form.needVenue;
+    if (Object.keys(missing).length || !startsAt || minNum === 'invalid' || minNum == null || maxNum === 'invalid') {
+      setFieldErrors(missing);
+      return;
+    }
+    setLoading(true);
+    try {
+      setFieldErrors({});
+      await updateOccurrenceBasics(activityId, userId, {
+        starts_at: startsAt.toISOString(),
+        duration_minutes: resolveEndMinutes(startsAt, endChoice),
+        min_participants: minNum,
+        max_participants: maxNum,
+        enterprise_id: geoLocation ? enterpriseId : null,
+        venue_text: venueText.trim() || null,
+        venue_latitude: geoLocation ? venueLatitude : null,
+        venue_longitude: geoLocation ? venueLongitude : null,
+      });
+      showToast(t.events.savedToast);
+      router.replace(`/activity/${activityId}`);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : t.common.error;
+      setFormError(msg);
+      Alert.alert(t.common.error, msg);
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function onSave() {
+    if (editScope === 'date') {
+      await saveThisDate();
+      return;
+    }
     setFormError(null);
     const missing: Record<string, string> = {};
     if (!title.trim()) missing.title = t.form.needActivityStart;
@@ -851,13 +914,19 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
 
   return (
     <ScrollView contentContainerStyle={styles.wrap} keyboardShouldPersistTaps="handled">
-      <Input
-        label={req(t.form.activity)}
-        value={title}
-        onChangeText={setTitle}
-        placeholder={t.form.activityPlaceholder}
-      />
-      {fieldNote('title')}
+      {editScope === 'date' ? (
+        <Text style={styles.section}>{title}</Text>
+      ) : (
+        <>
+          <Input
+            label={req(t.form.activity)}
+            value={title}
+            onChangeText={setTitle}
+            placeholder={t.form.activityPlaceholder}
+          />
+          {fieldNote('title')}
+        </>
+      )}
 
       <Text style={styles.section}>{req(t.form.neededCount)}</Text>
       <View style={styles.row}>
@@ -925,6 +994,21 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
       )}
       {fieldNote('venue')}
 
+      {editScope === 'date' ? (
+        <View>
+          <Text style={styles.section}>{req(t.form.when)}</Text>
+          <DateTimeField
+            label={req(t.events.starts)}
+            value={startsAt}
+            onChange={setStartsAt}
+            minimumDate={new Date()}
+          />
+          <EndChoiceField value={endChoice} onChange={setEndChoice} start={startsAt} />
+          {fieldNote('when')}
+          {fieldNote('end')}
+        </View>
+      ) : (
+      <>
       <Text style={styles.section}>{req(t.form.recurrence)}</Text>
       {activityId ? (
         <Muted>
@@ -1344,6 +1428,9 @@ export function ActivityForm({ userId, activityId, initial, isCreator = true }: 
           )}
         </View>
       ) : null}
+
+      </>
+      )}
 
       <View style={{ height: 16 }} />
       {fieldSummary.length ? (

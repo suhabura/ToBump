@@ -2,11 +2,12 @@ import { format } from 'date-fns';
 import { enUS, sl as slLocale } from 'date-fns/locale';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Alert, FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { WeatherBadge } from '@/components/WeatherBadge';
 import { showToast } from '@/components/Toast';
-import { Button, Chip, EmptyState, Loading, Muted, Screen } from '@/components/ui';
+import { SeriesChoiceSheet } from '@/components/SeriesChoiceSheet';
+import { Button, Chip, EmptyState, Loading, Screen } from '@/components/ui';
 import { useAuth } from '@/contexts/AuthContext';
 import { useEventsHeader } from '@/contexts/EventsHeaderContext';
 import {
@@ -14,13 +15,15 @@ import {
   clearActivityDecline,
   declineActivity,
   joinActivity,
+  leaveActivity,
   markSeriesDeclinePrompted,
+  markSeriesJoinPrompted,
   optOutOfSeries,
 } from '@/lib/api';
 import { formatDistance } from '@/lib/geo';
 import { seriesKey } from '@/lib/finance';
 import { isSeriesActivity, localDayKey } from '@/lib/recurrence';
-import { fetchSkippedDays } from '@/lib/seriesPlanner';
+import { fetchSkippedDays, setSeriesFollow } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
 import type { ActivityWithRelations } from '@/lib/types';
 import { activityCapacityRange, activityLocationLabel, activityPriceLabel, displayName, eventIsFull } from '@/lib/types';
@@ -44,7 +47,7 @@ export default function EventsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [skippedKeys, setSkippedKeys] = useState<Set<string>>(new Set());
-  const [declineChoice, setDeclineChoice] = useState<ActivityWithRelations | null>(null);
+  const [choiceItem, setChoiceItem] = useState<ActivityWithRelations | null>(null);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoaded = useRef(false);
   const visibleOpen = openItems.filter((item) => !eventIsFull(item));
@@ -212,10 +215,18 @@ export default function EventsScreen() {
     }, [load, search, userId, configured, scheduleLiveReload])
   );
 
+  function shouldAskSeriesChoice(item: ActivityWithRelations) {
+    return isSeriesActivity(item) && !item.is_series_opted_out && !item.series_join_prompted;
+  }
+
   async function onJoin(item: ActivityWithRelations) {
     if (!user) return;
     const full = item.max_participants != null && (item.join_count ?? 0) >= item.max_participants;
     if (full) return;
+    if (shouldAskSeriesChoice(item)) {
+      setChoiceItem(item);
+      return;
+    }
     setBusyId(item.id);
     try {
       await joinActivity(item.id, user.id, item.created_by, item.title);
@@ -228,15 +239,6 @@ export default function EventsScreen() {
     } finally {
       setBusyId(null);
     }
-  }
-
-  function shouldAskSeriesDecline(item: ActivityWithRelations) {
-    return (
-      isSeriesActivity(item) &&
-      !item.is_declined &&
-      !item.is_series_opted_out &&
-      !item.series_decline_prompted
-    );
   }
 
   async function onDecline(item: ActivityWithRelations) {
@@ -254,8 +256,8 @@ export default function EventsScreen() {
       }
       return;
     }
-    if (shouldAskSeriesDecline(item)) {
-      setDeclineChoice(item);
+    if (shouldAskSeriesChoice(item)) {
+      setChoiceItem(item);
       return;
     }
     setBusyId(item.id);
@@ -270,48 +272,86 @@ export default function EventsScreen() {
     }
   }
 
-  async function onDeclineThisDate() {
-    if (!user || !declineChoice) return;
-    const item = declineChoice;
-    setDeclineChoice(null);
-    setBusyId(item.id);
-    try {
-      await declineActivity(item.id, user.id);
-      await markSeriesDeclinePrompted(item.id, user.id);
-      await load({ silent: true });
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : t.common.error;
-      Alert.alert(
-        t.common.error,
-        msg === 'DECLINES_DB'
+  function choiceError(e: unknown) {
+    const msg = e instanceof Error ? e.message : t.common.error;
+    Alert.alert(
+      t.common.error,
+      /full/i.test(msg)
+        ? t.events.eventFull
+        : msg === 'DECLINES_DB'
           ? t.events.declineDbFix
           : msg === 'OPT_OUT_DB'
             ? t.events.optOutDbFix
             : msg
-      );
+    );
+  }
+
+  async function onChoiceJoinThis() {
+    if (!user || !choiceItem) return;
+    const item = choiceItem;
+    setChoiceItem(null);
+    setBusyId(item.id);
+    try {
+      await joinActivity(item.id, user.id, item.created_by, item.title);
+      await markSeriesJoinPrompted(item.id, user.id);
+      showToast(t.events.joinedToast(item.title));
+      await load({ silent: true });
+    } catch (e) {
+      choiceError(e);
+      await load({ silent: true });
     } finally {
       setBusyId(null);
     }
   }
 
-  async function onDeclineNeverSeries() {
-    if (!user || !declineChoice) return;
-    const item = declineChoice;
-    setDeclineChoice(null);
+  async function onChoiceJoinFollow() {
+    if (!user || !choiceItem) return;
+    const item = choiceItem;
+    setChoiceItem(null);
+    setBusyId(item.id);
+    try {
+      await joinActivity(item.id, user.id, item.created_by, item.title);
+      await setSeriesFollow(seriesKey(item), true);
+      await markSeriesJoinPrompted(item.id, user.id);
+      showToast(t.events.joinedToast(item.title));
+      await load({ silent: true });
+    } catch (e) {
+      choiceError(e);
+      await load({ silent: true });
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function onChoiceDeclineThis() {
+    if (!user || !choiceItem) return;
+    const item = choiceItem;
+    setChoiceItem(null);
+    setBusyId(item.id);
+    try {
+      if (item.is_joined) await leaveActivity(item.id, user.id);
+      else await declineActivity(item.id, user.id);
+      await markSeriesDeclinePrompted(item.id, user.id);
+      await markSeriesJoinPrompted(item.id, user.id);
+      await load({ silent: true });
+    } catch (e) {
+      choiceError(e);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function onChoiceNotInterested() {
+    if (!user || !choiceItem) return;
+    const item = choiceItem;
+    setChoiceItem(null);
     setBusyId(item.id);
     try {
       await optOutOfSeries(item.id, user.id);
+      await markSeriesJoinPrompted(item.id, user.id);
       await load({ silent: true });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : t.common.error;
-      Alert.alert(
-        t.common.error,
-        msg === 'DECLINES_DB'
-          ? t.events.declineDbFix
-          : msg === 'OPT_OUT_DB'
-            ? t.events.optOutDbFix
-            : msg
-      );
+      choiceError(e);
     } finally {
       setBusyId(null);
     }
@@ -458,32 +498,14 @@ export default function EventsScreen() {
         </Pressable>
       </View>
 
-      <Modal
-        visible={Boolean(declineChoice)}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDeclineChoice(null)}>
-        <Pressable style={styles.declineBackdrop} onPress={() => setDeclineChoice(null)}>
-          <Pressable style={styles.declineSheet} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.declineTitle}>{t.events.decline}</Text>
-            <Muted>{t.events.declineSeriesPrompt}</Muted>
-            <View style={{ height: 12 }} />
-            <Button
-              label={t.events.declineThisDate}
-              variant="secondary"
-              onPress={() => void onDeclineThisDate()}
-            />
-            <View style={{ height: 8 }} />
-            <Button
-              label={t.events.declineNeverSeries}
-              variant="secondary"
-              onPress={() => void onDeclineNeverSeries()}
-            />
-            <View style={{ height: 8 }} />
-            <Button label={t.common.cancel} variant="ghost" onPress={() => setDeclineChoice(null)} />
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <SeriesChoiceSheet
+        visible={Boolean(choiceItem)}
+        onClose={() => setChoiceItem(null)}
+        onJoinThis={() => void onChoiceJoinThis()}
+        onJoinFollow={() => void onChoiceJoinFollow()}
+        onDeclineThis={() => void onChoiceDeclineThis()}
+        onNotInterested={() => void onChoiceNotInterested()}
+      />
     </Screen>
   );
 }

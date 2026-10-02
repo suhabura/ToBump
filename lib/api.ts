@@ -90,7 +90,7 @@ export async function createNotification(
 }
 
 function optOutTablesMissing(message: string) {
-  return /series_opt_outs|series_decline_prompts|schema cache|does not exist|could not find the table/i.test(
+  return /series_opt_outs|series_decline_prompts|series_join_prompts|schema cache|does not exist|could not find the table/i.test(
     message
   );
 }
@@ -149,8 +149,28 @@ export async function fetchSeriesDeclinePrompts(userId: string): Promise<Set<str
   return new Set((data ?? []).map((r: { series_id: string }) => r.series_id));
 }
 
+export async function fetchSeriesJoinPrompts(userId: string): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from('series_join_prompts')
+    .select('series_id')
+    .eq('user_id', userId);
+  if (error) {
+    if (optOutTablesMissing(error.message ?? '')) return new Set();
+    return new Set();
+  }
+  return new Set((data ?? []).map((r: { series_id: string }) => r.series_id));
+}
+
 async function markSeriesDeclinePrompt(seriesId: string, userId: string) {
   const { error } = await supabase.from('series_decline_prompts').upsert(
+    { series_id: seriesId, user_id: userId },
+    { onConflict: 'series_id,user_id' }
+  );
+  if (error && !optOutTablesMissing(error.message ?? '')) throw error;
+}
+
+async function markSeriesJoinPrompt(seriesId: string, userId: string) {
+  const { error } = await supabase.from('series_join_prompts').upsert(
     { series_id: seriesId, user_id: userId },
     { onConflict: 'series_id,user_id' }
   );
@@ -162,9 +182,10 @@ async function attachSeriesOptOutFlags(
   userId: string
 ): Promise<ActivityWithRelations[]> {
   if (!activities.length) return activities;
-  const [optOuts, prompts] = await Promise.all([
+  const [optOuts, prompts, joinPrompts] = await Promise.all([
     fetchSeriesOptOuts(userId),
     fetchSeriesDeclinePrompts(userId),
+    fetchSeriesJoinPrompts(userId),
   ]);
   return activities.map((a) => {
     const sid = a.series_id || a.id;
@@ -172,6 +193,7 @@ async function attachSeriesOptOutFlags(
       ...a,
       is_series_opted_out: optOuts.has(sid),
       series_decline_prompted: prompts.has(sid) || optOuts.has(sid),
+      series_join_prompted: joinPrompts.has(sid) || optOuts.has(sid),
     };
   });
 }
@@ -757,6 +779,13 @@ export async function markSeriesDeclinePrompted(activityId: string, userId: stri
   await markSeriesDeclinePrompt(sid, userId);
 }
 
+/** Remember that the first series choice (Pridem or Ne pridem) was answered. */
+export async function markSeriesJoinPrompted(activityId: string, userId: string) {
+  const sid = await resolveSeriesId(activityId);
+  if (!sid) return;
+  await markSeriesJoinPrompt(sid, userId);
+}
+
 /**
  * Never coming to this series: decline/leave current date, opt out, leave planner,
  * and remember the dialog so it does not ask again.
@@ -1196,6 +1225,56 @@ export async function rescheduleOccurrence(activityId: string, nextStart: Date) 
       throw new Error(t.events.moveFailed);
     }
   }
+}
+
+/** Date, place, time, and headcount for this occurrence. Does not change the series template. */
+export async function updateOccurrenceBasics(
+  activityId: string,
+  userId: string,
+  input: {
+    starts_at: string;
+    duration_minutes: number | null;
+    min_participants: number | null;
+    max_participants: number | null;
+    enterprise_id: string | null;
+    venue_text: string | null;
+    venue_latitude: number | null;
+    venue_longitude: number | null;
+  }
+) {
+  const access = await userCanEditActivity(activityId, userId);
+  if (!access.canEdit) throw new Error('You do not have permission to edit this event.');
+  const { data: existing, error } = await supabase
+    .from('activities')
+    .select('starts_at')
+    .eq('id', activityId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!existing) throw new Error(getT().events.notFound);
+  const next = new Date(input.starts_at);
+  const prev = new Date(existing.starts_at as string);
+  if (Math.abs(next.getTime() - prev.getTime()) > 1000) {
+    await rescheduleOccurrence(activityId, next);
+  }
+  const endsAt =
+    input.duration_minutes != null && input.duration_minutes >= 15
+      ? new Date(next.getTime() + input.duration_minutes * 60_000).toISOString()
+      : null;
+  const { error: upd } = await supabase
+    .from('activities')
+    .update({
+      ends_at: endsAt,
+      duration_minutes: input.duration_minutes,
+      min_participants: input.min_participants,
+      max_participants: input.max_participants,
+      enterprise_id: input.enterprise_id,
+      venue_text: input.enterprise_id ? null : input.venue_text,
+      venue_latitude: input.enterprise_id ? null : input.venue_latitude,
+      venue_longitude: input.enterprise_id ? null : input.venue_longitude,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', activityId);
+  if (upd) throw upd;
 }
 
 async function assertOccurrenceRemoved(activityId: string) {

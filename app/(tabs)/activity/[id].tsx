@@ -4,8 +4,8 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useFocusEffect } from 'expo-router';
-import { DateTimeField } from '@/components/DateTimeField';
 import { showToast } from '@/components/Toast';
+import { SeriesChoiceSheet } from '@/components/SeriesChoiceSheet';
 import { WeatherBadge } from '@/components/WeatherBadge';
 import { Button, Chip, EmptyState, Loading, Muted, Screen, Title } from '@/components/ui';
 import { ActivityExtraInvitePanel } from '@/components/ActivityExtraInvitePanel';
@@ -21,13 +21,13 @@ import {
   joinActivity,
   leaveActivity,
   markSeriesDeclinePrompted,
+  markSeriesJoinPrompted,
   optOutOfSeries,
-  rescheduleOccurrence,
   userCanEditActivity,
   type DeleteActivityMode,
 } from '@/lib/api';
 import { fetchActivityGuests, removeGuestAttendance, type GuestAttendanceWithGuest } from '@/lib/guests';
-import { formatRecurrence, formatRecurrenceDates, hydrateRules, isSeriesActivity, localDayKey, rulesFromLegacy } from '@/lib/recurrence';
+import { isSeriesActivity, localDayKey } from '@/lib/recurrence';
 import { seriesKey } from '@/lib/finance';
 import { fetchSeriesFollows, fetchSkippedDays, markSeriesDaySkipped, setSeriesFollow } from '@/lib/seriesPlanner';
 import { supabase } from '@/lib/supabase';
@@ -90,18 +90,14 @@ export default function ActivityDetailScreen() {
   const [silent, setSilent] = useState<Profile[]>([]);
   const [declined, setDeclined] = useState(false);
   const [seriesOptedOut, setSeriesOptedOut] = useState(false);
-  const [seriesPrompted, setSeriesPrompted] = useState(false);
-  const [declineChoiceOpen, setDeclineChoiceOpen] = useState(false);
+  const [joinPrompted, setJoinPrompted] = useState(false);
+  const [choiceOpen, setChoiceOpen] = useState(false);
   const [guests, setGuests] = useState<GuestAttendanceWithGuest[]>([]);
   const [joined, setJoined] = useState(false);
   const [canEdit, setCanEdit] = useState(false);
   const [loading, setLoading] = useState(true);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [moveOpen, setMoveOpen] = useState(false);
-  const [moveStart, setMoveStart] = useState<Date | null>(null);
-  const [moving, setMoving] = useState(false);
-  const [moveError, setMoveError] = useState<string | null>(null);
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hasLoaded = useRef(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
@@ -283,26 +279,26 @@ export default function ActivityDetailScreen() {
         const opted = optOuts.has(sid);
         setSeriesOptedOut(opted);
         if (opted) {
-          setSeriesPrompted(true);
+          setJoinPrompted(true);
         } else {
           const { data: promptRow, error: promptErr } = await supabase
-            .from('series_decline_prompts')
+            .from('series_join_prompts')
             .select('series_id')
             .eq('series_id', sid)
             .eq('user_id', user.id)
             .maybeSingle();
-          if (promptErr) setSeriesPrompted(false);
-          else setSeriesPrompted(Boolean(promptRow));
+          if (promptErr) setJoinPrompted(false);
+          else setJoinPrompted(Boolean(promptRow));
         }
       } catch {
         setSeriesOptedOut(false);
-        setSeriesPrompted(false);
+        setJoinPrompted(false);
       }
     } else {
       setFollowing(false);
       setDateSkipped(false);
       setSeriesOptedOut(false);
-      setSeriesPrompted(false);
+      setJoinPrompted(false);
     }
     if (routeKeyRef.current !== startedFor) return;
     hasLoaded.current = true;
@@ -362,14 +358,35 @@ export default function ActivityDetailScreen() {
     }, [load, id, user?.id])
   );
 
+  function replyError(e: unknown) {
+    const msg = e instanceof Error ? e.message : t.common.error;
+    Alert.alert(
+      t.common.error,
+      /full/i.test(msg)
+        ? t.events.eventFull
+        : msg === 'DECLINES_DB'
+          ? t.events.declineDbFix
+          : msg === 'OPT_OUT_DB'
+            ? t.events.optOutDbFix
+            : msg
+    );
+  }
+
+  function askSeriesChoice() {
+    return Boolean(activity && isSeriesActivity(activity) && !seriesOptedOut && !joinPrompted);
+  }
+
   async function onJoin() {
     if (!user || !activity) return;
+    if (askSeriesChoice()) {
+      setChoiceOpen(true);
+      return;
+    }
     try {
       await joinActivity(activity.id, user.id, activity.created_by, activity.title);
       void load({ silent: true });
     } catch (e) {
-      const msg = e instanceof Error ? e.message : t.common.error;
-      Alert.alert(t.common.error, /full/i.test(msg) ? t.events.eventFull : msg);
+      replyError(e);
       void load({ silent: true });
     }
   }
@@ -377,97 +394,84 @@ export default function ActivityDetailScreen() {
   async function onNotGoing() {
     if (!user || !activity) return;
     try {
-      if (joined) {
-        await leaveActivity(activity.id, user.id);
-        void load({ silent: true });
-        return;
-      }
-      if (declined) {
+      if (declined && !joined) {
         await clearActivityDecline(activity.id, user.id);
         void load({ silent: true });
         return;
       }
-      if (
-        isSeriesActivity(activity) &&
-        !seriesOptedOut &&
-        !seriesPrompted
-      ) {
-        setDeclineChoiceOpen(true);
+      if (askSeriesChoice()) {
+        setChoiceOpen(true);
         return;
       }
-      await declineActivity(activity.id, user.id);
+      if (joined) await leaveActivity(activity.id, user.id);
+      else await declineActivity(activity.id, user.id);
       void load({ silent: true });
     } catch (e) {
       void load({ silent: true });
-      const msg = e instanceof Error ? e.message : t.common.error;
-      Alert.alert(
-        t.common.error,
-        msg === 'DECLINES_DB'
-          ? t.events.declineDbFix
-          : msg === 'OPT_OUT_DB'
-            ? t.events.optOutDbFix
-            : msg
-      );
+      replyError(e);
     }
   }
 
-  async function onDeclineThisDate() {
+  async function rememberSeriesChoice() {
     if (!user || !activity) return;
-    setDeclineChoiceOpen(false);
+    await markSeriesJoinPrompted(activity.id, user.id);
+    setJoinPrompted(true);
+  }
+
+  async function onJoinThis() {
+    if (!user || !activity) return;
+    setChoiceOpen(false);
     try {
-      await declineActivity(activity.id, user.id);
+      await joinActivity(activity.id, user.id, activity.created_by, activity.title);
+      await rememberSeriesChoice();
+      void load({ silent: true });
+    } catch (e) {
+      replyError(e);
+      void load({ silent: true });
+    }
+  }
+
+  async function onJoinAndFollow() {
+    if (!user || !activity) return;
+    setChoiceOpen(false);
+    try {
+      await joinActivity(activity.id, user.id, activity.created_by, activity.title);
+      await setSeriesFollow(seriesKey(activity), true);
+      setFollowing(true);
+      await rememberSeriesChoice();
+      void load({ silent: true });
+    } catch (e) {
+      replyError(e);
+      void load({ silent: true });
+    }
+  }
+
+  async function onDeclineThisEvent() {
+    if (!user || !activity) return;
+    setChoiceOpen(false);
+    try {
+      if (joined) await leaveActivity(activity.id, user.id);
+      else await declineActivity(activity.id, user.id);
       await markSeriesDeclinePrompted(activity.id, user.id);
+      await rememberSeriesChoice();
       void load({ silent: true });
     } catch (e) {
       void load({ silent: true });
-      const msg = e instanceof Error ? e.message : t.common.error;
-      Alert.alert(
-        t.common.error,
-        msg === 'DECLINES_DB'
-          ? t.events.declineDbFix
-          : msg === 'OPT_OUT_DB'
-            ? t.events.optOutDbFix
-            : msg
-      );
+      replyError(e);
     }
   }
 
-  async function onDeclineNeverSeries() {
+  async function onSeriesNotInterested() {
     if (!user || !activity) return;
-    setDeclineChoiceOpen(false);
+    setChoiceOpen(false);
     try {
       await optOutOfSeries(activity.id, user.id);
+      await rememberSeriesChoice();
+      setFollowing(false);
       void load({ silent: true });
     } catch (e) {
       void load({ silent: true });
-      const msg = e instanceof Error ? e.message : t.common.error;
-      Alert.alert(
-        t.common.error,
-        msg === 'DECLINES_DB'
-          ? t.events.declineDbFix
-          : msg === 'OPT_OUT_DB'
-            ? t.events.optOutDbFix
-            : msg
-      );
-    }
-  }
-
-  async function onNeverComing() {
-    if (!user || !activity) return;
-    try {
-      await optOutOfSeries(activity.id, user.id);
-      void load({ silent: true });
-    } catch (e) {
-      void load({ silent: true });
-      const msg = e instanceof Error ? e.message : t.common.error;
-      Alert.alert(
-        t.common.error,
-        msg === 'DECLINES_DB'
-          ? t.events.declineDbFix
-          : msg === 'OPT_OUT_DB'
-            ? t.events.optOutDbFix
-            : msg
-      );
+      replyError(e);
     }
   }
 
@@ -557,8 +561,7 @@ export default function ActivityDetailScreen() {
   const isOwner = user?.id === activity.created_by;
   const showJoin = !joined && !dateSkipped;
   const showDecline = !dateSkipped && (joined || !declined);
-  const showNever = Boolean(user && isSeriesActivity(activity) && !seriesOptedOut);
-  const showPlanner = Boolean(user && isSeriesActivity(activity));
+  const seriesEvent = isSeriesActivity(activity);
   const participantCount = participants.length + guests.length;
   const signupLine = signupSummary(participantCount, activity, t.events);
   const weather = eventWeatherPoint(activity);
@@ -610,12 +613,13 @@ export default function ActivityDetailScreen() {
           <View style={styles.titleMain}>
             <Title>{activity.title}</Title>
           </View>
-          {weather ? (
-            <WeatherBadge
-              inline
-              latitude={weather.latitude}
-              longitude={weather.longitude}
-              startsAt={activity.starts_at}
+          {seriesEvent ? (
+            <Chip
+              label={following ? t.events.followingOn : t.events.followingOff}
+              active={following}
+              onPress={() => {
+                if (!seriesBusy) void onToggleFollow();
+              }}
             />
           ) : null}
         </View>
@@ -655,31 +659,14 @@ export default function ActivityDetailScreen() {
             ? ` – ${format(new Date(activity.ends_at), 'HH:mm', { locale: dfLocale })}`
             : ''}
         </Text>
-        {(activity.recurrence_dates?.length ?? 0) >= 2 ? (
-          <Muted>
-            {t.events.dates}: {formatRecurrenceDates(activity.recurrence_dates ?? [], locale)}
-          </Muted>
-        ) : activity.is_recurring ? (
-          <Muted>
-            {t.events.recurring}:{' '}
-            {formatRecurrence(
-              hydrateRules(
-                activity.recurrence_rules?.length
-                  ? activity.recurrence_rules
-                  : rulesFromLegacy(
-                      activity.recurrence_weekdays ?? [],
-                      new Date(activity.starts_at).getHours(),
-                      new Date(activity.starts_at).getMinutes(),
-                      activity.duration_minutes ?? 90
-                    ),
-                activity.duration_minutes ?? 90
-              ),
-              locale
-            )}
+        {seriesEvent ? (
+          <Text style={styles.factLine}>
             {activity.recurrence_until
-              ? ` · ${t.form.seriesEnds} ${format(new Date(`${activity.recurrence_until}T12:00:00`), 'd MMM yyyy', { locale: dfLocale })}`
-              : ''}
-          </Muted>
+              ? t.events.seriesUntil(
+                  format(new Date(`${activity.recurrence_until}T12:00:00`), 'd MMM yyyy', { locale: dfLocale })
+                )
+              : t.events.seriesOpen}
+          </Text>
         ) : null}
         {activity.profiles ? (
           <View style={styles.factBlock}>
@@ -710,124 +697,19 @@ export default function ActivityDetailScreen() {
             ) : null}
           </View>
         ) : null}
+        {weather ? (
+          <WeatherBadge
+            latitude={weather.latitude}
+            longitude={weather.longitude}
+            startsAt={activity.starts_at}
+          />
+        ) : null}
         {activity.finance_enabled && activity.price != null ? (
           <Muted>
             {t.common.price}: {activityPriceLabel(activity, t.common)}
           </Muted>
         ) : null}
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>{t.events.attendanceHeading}</Text>
-          <View style={styles.action}>
-            <Text style={styles.signupLine}>{signupLine}</Text>
-            {showJoin && full && activity.max_participants != null ? (
-              <Muted>
-                {t.events.fullHint} {participantCount}/{activity.max_participants}
-              </Muted>
-            ) : null}
-            {showJoin ? (
-              <Button
-                label={full ? t.events.full : t.events.join}
-                icon="check"
-                onPress={onJoin}
-                disabled={full}
-              />
-            ) : null}
-            {showDecline ? (
-              <Button
-                label={t.events.declineThisDate}
-                variant="secondary"
-                icon="times"
-                onPress={() => void onNotGoing()}
-              />
-            ) : null}
-          </View>
-        </View>
-
-        {showPlanner || showNever ? (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>{t.events.optionsHeading}</Text>
-            {showPlanner ? (
-              <View style={styles.action}>
-                <Muted>{following ? t.planner.unfollowHint : t.planner.followHint}</Muted>
-                <Button
-                  label={following ? t.planner.unfollowSeries : t.planner.followSeries}
-                  variant="secondary"
-                  loading={seriesBusy}
-                  onPress={() => void onToggleFollow()}
-                />
-              </View>
-            ) : null}
-            {showNever ? (
-              <View style={styles.action}>
-                <Muted>{t.events.optOutHint}</Muted>
-                <Button
-                  label={t.events.neverComing}
-                  variant="secondary"
-                  onPress={() => void onNeverComing()}
-                />
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-        {canEdit || isOwner ? (
-          <View style={styles.manageSection}>
-            <Text style={styles.sectionTitle}>{t.events.manageHeading}</Text>
-            <View style={styles.manageRow}>
-              {canEdit ? (
-                <View style={styles.primarySlot}>
-                  <Button
-                    label={isSeriesActivity(activity) ? t.events.editSeries : t.events.edit}
-                    variant="outline"
-                    size="sm"
-                    icon="pencil"
-                    onPress={() => router.push(`/activity/edit/${activity.id}`)}
-                  />
-                </View>
-              ) : null}
-              {canEdit && isSeriesActivity(activity) ? (
-                <View style={styles.primarySlot}>
-                  <Button
-                    label={t.events.moveTitle}
-                    variant="outline"
-                    size="sm"
-                    icon="calendar"
-                    onPress={() => {
-                      setMoveError(null);
-                      setMoveStart(new Date(activity.starts_at));
-                      setMoveOpen(true);
-                    }}
-                  />
-                </View>
-              ) : null}
-              {isOwner ? (
-                <View style={styles.primarySlot}>
-                  <Button
-                    label={t.events.delete}
-                    variant="dangerOutline"
-                    size="sm"
-                    icon="trash"
-                    onPress={onDelete}
-                    loading={deleting}
-                  />
-                </View>
-              ) : null}
-            </View>
-            {canEdit && isSeriesActivity(activity) && !dateSkipped ? (
-              <View style={styles.action}>
-                <Muted>{t.planner.skipHint}</Muted>
-                <Button
-                  label={t.planner.skipOccurrence}
-                  variant="dangerOutline"
-                  icon="ban"
-                  loading={skipping}
-                  onPress={() => void onSkipDate()}
-                />
-              </View>
-            ) : null}
-          </View>
-        ) : null}
-        {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
+        <Text style={styles.signupLine}>{signupLine}</Text>
 
         <View style={styles.responses}>
           <Text style={styles.sectionTitle}>{t.events.participants}</Text>
@@ -866,83 +748,122 @@ export default function ActivityDetailScreen() {
           />
         </View>
 
-        {canEdit && user ? (
-          <ActivityExtraInvitePanel
-            activity={activity}
-            userId={user.id}
-            onChanged={() => void load({ silent: true })}
-          />
+        <View style={styles.section}>
+          {showJoin && full && activity.max_participants != null ? (
+            <Muted>
+              {t.events.fullHint} {participantCount}/{activity.max_participants}
+            </Muted>
+          ) : null}
+          {showJoin ? (
+            <Button
+              label={full ? t.events.full : t.events.join}
+              icon="check"
+              onPress={() => void onJoin()}
+              disabled={full}
+            />
+          ) : null}
+          {showDecline ? (
+            <Button
+              label={t.events.decline}
+              variant="secondary"
+              icon="times"
+              onPress={() => void onNotGoing()}
+            />
+          ) : null}
+        </View>
+
+        {canEdit || isOwner ? (
+          <View style={styles.manageSection}>
+            <Text style={styles.sectionTitle}>
+              {seriesEvent ? t.events.thisEventHeading : t.events.manageHeading}
+            </Text>
+            {canEdit && user ? (
+              <ActivityExtraInvitePanel
+                activity={activity}
+                userId={user.id}
+                onChanged={() => void load({ silent: true })}
+              />
+            ) : null}
+            {canEdit ? (
+              <Button
+                label={seriesEvent ? t.events.editThisParams : t.events.edit}
+                variant="outline"
+                icon="pencil"
+                onPress={() =>
+                  router.push({
+                    pathname: '/activity/edit/[id]',
+                    params: seriesEvent ? { id: activity.id, scope: 'date' } : { id: activity.id },
+                  })
+                }
+              />
+            ) : null}
+            {canEdit && seriesEvent && !dateSkipped ? (
+              <View style={styles.action}>
+                <Muted>{t.planner.skipHint}</Muted>
+                <Button
+                  label={t.planner.skipOccurrence}
+                  variant="dangerOutline"
+                  icon="ban"
+                  loading={skipping}
+                  onPress={() => void onSkipDate()}
+                />
+              </View>
+            ) : null}
+            {seriesEvent ? (
+              <>
+                <Text style={[styles.sectionTitle, { marginTop: 12 }]}>{t.events.seriesHeading}</Text>
+                {canEdit ? (
+                  <Button
+                    label={t.events.editSeries}
+                    variant="outline"
+                    icon="pencil"
+                    onPress={() => router.push(`/activity/edit/${activity.id}`)}
+                  />
+                ) : null}
+                {isOwner ? (
+                  <View style={styles.action}>
+                    <Muted>{t.events.deleteSeriesHint}</Muted>
+                    <Button
+                      label={t.events.deleteSeries}
+                      variant="dangerOutline"
+                      icon="trash"
+                      onPress={onDelete}
+                      loading={deleting}
+                    />
+                  </View>
+                ) : null}
+              </>
+            ) : isOwner ? (
+              <Button
+                label={t.events.delete}
+                variant="dangerOutline"
+                icon="trash"
+                onPress={onDelete}
+                loading={deleting}
+              />
+            ) : null}
+          </View>
         ) : null}
+        {deleteError ? <Text style={styles.deleteError}>{deleteError}</Text> : null}
           </>
         )}
       </ScrollView>
-
-      <Modal visible={moveOpen} transparent animationType="fade" onRequestClose={() => setMoveOpen(false)}>
-        <Pressable style={styles.deleteBackdrop} onPress={() => !moving && setMoveOpen(false)}>
-          <Pressable style={styles.deleteSheet} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.deleteTitle}>{t.events.moveTitle}</Text>
-            <Muted>{t.events.moveHint}</Muted>
-            <View style={{ height: 12 }} />
-            <DateTimeField
-              label={t.form.start}
-              value={moveStart}
-              onChange={setMoveStart}
-              minimumDate={new Date()}
-            />
-            {moveError ? <Text style={styles.deleteError}>{moveError}</Text> : null}
-            <Button
-              label={t.events.save}
-              loading={moving}
-              onPress={() => {
-                if (!moveStart || moving) return;
-                setMoving(true);
-                setMoveError(null);
-                void rescheduleOccurrence(activity.id, moveStart)
-                  .then(async () => {
-                    setMoveOpen(false);
-                    await load();
-                  })
-                  .catch((e: unknown) => {
-                    setMoveError(e instanceof Error ? e.message : t.events.moveFailed);
-                  })
-                  .finally(() => setMoving(false));
-              }}
-            />
-            <View style={{ height: 8 }} />
-            <Button label={t.common.cancel} variant="ghost" disabled={moving} onPress={() => setMoveOpen(false)} />
-          </Pressable>
-        </Pressable>
-      </Modal>
 
       <Modal visible={deleteOpen} transparent animationType="fade" onRequestClose={() => setDeleteOpen(false)}>
         <Pressable style={styles.deleteBackdrop} onPress={() => setDeleteOpen(false)}>
           <Pressable style={styles.deleteSheet} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.deleteTitle}>
-              {activity.is_recurring ? t.events.deleteChoiceTitle : t.events.delete}
+              {seriesEvent ? t.events.deleteSeries : t.events.delete}
             </Text>
-            {activity.is_recurring ? null : <Muted>{t.events.deleteConfirmPrompt}</Muted>}
+            <Muted>{seriesEvent ? t.events.deleteSeriesHint : t.events.deleteConfirmPrompt}</Muted>
             <View style={{ height: 12 }} />
-            {activity.is_recurring ? (
-              <View style={styles.deleteChoices}>
-                <View style={styles.action}>
-                  <Muted>{t.events.deleteThisOnlyHint}</Muted>
-                  <Button
-                    label={t.events.deleteThisOnly}
-                    variant="secondary"
-                    loading={deleting}
-                    onPress={() => confirmDelete('occurrence')}
-                  />
-                </View>
-                <View style={styles.action}>
-                  <Muted>{t.events.deleteSeriesHint}</Muted>
-                  <Button
-                    label={t.events.deleteSeries}
-                    variant="danger"
-                    loading={deleting}
-                    onPress={() => confirmDelete('series')}
-                  />
-                </View>
-              </View>
+            {seriesEvent ? (
+              <Button
+                label={t.events.deleteSeries}
+                variant="danger"
+                loading={deleting}
+                onPress={() => confirmDelete('series')}
+              />
             ) : (
               <Button
                 label={t.events.delete}
@@ -957,36 +878,14 @@ export default function ActivityDetailScreen() {
         </Pressable>
       </Modal>
 
-      <Modal
-        visible={declineChoiceOpen}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setDeclineChoiceOpen(false)}>
-        <Pressable style={styles.deleteBackdrop} onPress={() => setDeclineChoiceOpen(false)}>
-          <Pressable style={styles.deleteSheet} onPress={(e) => e.stopPropagation()}>
-            <Text style={styles.deleteTitle}>{t.events.decline}</Text>
-            <Muted>{t.events.declineSeriesPrompt}</Muted>
-            <View style={{ height: 12 }} />
-            <Button
-              label={t.events.declineThisDate}
-              variant="secondary"
-              onPress={() => void onDeclineThisDate()}
-            />
-            <View style={{ height: 8 }} />
-            <Button
-              label={t.events.declineNeverSeries}
-              variant="secondary"
-              onPress={() => void onDeclineNeverSeries()}
-            />
-            <View style={{ height: 8 }} />
-            <Button
-              label={t.common.cancel}
-              variant="ghost"
-              onPress={() => setDeclineChoiceOpen(false)}
-            />
-          </Pressable>
-        </Pressable>
-      </Modal>
+      <SeriesChoiceSheet
+        visible={choiceOpen}
+        onClose={() => setChoiceOpen(false)}
+        onJoinThis={() => void onJoinThis()}
+        onJoinFollow={() => void onJoinAndFollow()}
+        onDeclineThis={() => void onDeclineThisEvent()}
+        onNotInterested={() => void onSeriesNotInterested()}
+      />
     </Screen>
   );
 }
@@ -1039,6 +938,7 @@ const styles = StyleSheet.create({
     color: theme.colors.text,
     fontSize: 15,
     fontWeight: '600',
+    marginTop: 12,
   },
   when: {
     color: theme.colors.primaryDark,
