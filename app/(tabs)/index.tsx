@@ -141,6 +141,12 @@ export default function EventsScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      setList('open');
+    }, [])
+  );
+
+  useFocusEffect(
+    useCallback(() => {
       void load({ silent: hasLoaded.current });
       if (!userId || !configured) return;
 
